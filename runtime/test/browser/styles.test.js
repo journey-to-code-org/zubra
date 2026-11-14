@@ -206,6 +206,55 @@ test('a component whose CSS a bundler put in the page adopts it only into shadow
   await page.close();
 });
 
+test("a component whose page has its CSS and whose module has only the address fetches it for a shadow root, and only then", async () => {
+  const { page, messages } = await open('<div id="host"></div><div id="other"></div>', {
+    beforeModules: `
+      import { $define } from '@zubra/runtime';
+      // What @zubra/server's joined module has for a light-DOM component (stylesHref): the page's
+      // <style> carries the CSS, so the module doesn't.
+      document.head.insertAdjacentHTML('beforeend', '<style data-zb-components="other-card linked-card">@scope (linked-card) { p { color: rgb(255, 0, 0) } }</style>');
+      window.fetched = [];
+      const real = window.fetch;
+      window.fetch = (url, ...rest) => { window.fetched.push(String(url)); return real(url, ...rest); };
+      $define('linked-card', { abi: 3, props: {}, styled: true, inPage: true, stylesHref: 'data:text/css,' + encodeURIComponent('@scope (linked-card) { p { color: rgb(255, 0, 0) } }'), template: '<p>hi</p>', setup: () => [] });
+    `,
+  });
+  const inDocument = await page.evaluate(async () => {
+    const card = document.createElement('linked-card');
+    document.body.append(card);
+    await card.updateComplete;
+    return { sheets: document.adoptedStyleSheets.length, fetched: window.fetched.length, color: getComputedStyle(card.querySelector('p')).color };
+  });
+  assert.deepEqual(inDocument, { sheets: 0, fetched: 0, color: RED }, "in the document the page's CSS is the CSS: nothing adopted, nothing fetched");
+  await page.evaluate(async () => {
+    for (const id of ['host', 'other']) {
+      const root = document.getElementById(id).attachShadow({ mode: 'open' });
+      root.append(document.createElement('linked-card'));
+    }
+  });
+  await page.waitForFunction((red) => ['host', 'other'].every((id) => getComputedStyle(document.getElementById(id).shadowRoot.querySelector('p')).color === red), RED);
+  const inShadow = await page.evaluate(() => ({ sheets: ['host', 'other'].map((id) => document.getElementById(id).shadowRoot.adoptedStyleSheets.length), fetched: window.fetched.length, shared: document.getElementById('host').shadowRoot.adoptedStyleSheets[0] === document.getElementById('other').shadowRoot.adoptedStyleSheets[0] }));
+  assert.deepEqual(inShadow, { sheets: [1, 1], fetched: 1, shared: true }, 'one sheet, fetched once, for every shadow root that needs it');
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test("a component with only its stylesheet's address, on a page that doesn't say it has the CSS, fetches it for the document", async () => {
+  const { page, messages } = await open('', {
+    beforeModules: `
+      import { $define } from '@zubra/runtime';
+      // The page names another component's CSS, not this one's (a fragment from another page).
+      document.head.insertAdjacentHTML('beforeend', '<style data-zb-components="linked-card-two other-card">p { margin: 0 }</style>');
+      $define('linked-card', { abi: 3, props: {}, styled: true, inPage: true, stylesHref: 'data:text/css,' + encodeURIComponent('@scope (linked-card) { p { color: rgb(255, 0, 0) } }'), template: '<p>hi</p>', setup: () => [] });
+    `,
+  });
+  await page.evaluate(() => document.body.append(document.createElement('linked-card'), document.createElement('linked-card')));
+  await page.waitForFunction((red) => getComputedStyle(document.querySelector('linked-card p')).color === red, RED);
+  assert.equal(await page.evaluate(() => document.adoptedStyleSheets.length), 1, 'adopted once, for both');
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
 // ::slotted() in light DOM: the compiler rewrites it to the slotted mark, so a layout component
 // can place what it's given, as in shadow DOM, without reaching into it.
 const layout = (page, selector) => page.$eval(selector, (el) => {

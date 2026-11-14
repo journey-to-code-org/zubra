@@ -190,6 +190,13 @@ export interface Definition {
   styled?: boolean;
   /** Its stylesheet, when the module carries it (otherwise the bundler adds it to the page). */
   styles?: string | CSSStyleSheet | null;
+  /**
+   * Where its stylesheet is served, when the page carries the CSS and the module doesn't
+   * (with `inPage`): fetched once, for an element inside a shadow root.
+   */
+  stylesHref?: string | null;
+  /** The page already has the stylesheet: the document doesn't adopt it again. */
+  inPage?: boolean;
   /** Runs once per element; returns the template's parts. */
   setup?: (props: Record<string, unknown>, emit: (name: string, detail?: unknown) => boolean) => unknown[];
 }

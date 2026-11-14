@@ -167,6 +167,7 @@ fn run() -> Result<(), String> {
                         // A bundler resolves `.zb` imports itself.
                         component_extension: (!keep_imports && style_imports.is_none()).then_some(".js"),
                         style_imports,
+                        styles_href: None,
                         devtools,
                     },
                     &zubra::filesystem,

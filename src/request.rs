@@ -8,7 +8,8 @@
 //! { "command": "compile", "emit": "js", "path": "/app/inbox.zb",
 //!   "files": { "/app/inbox.zb": "…", "/app/badge.zb": "…" },
 //!   "runtime": "@zubra/runtime", "keepImports": true, "devtools": true,
-//!   "cssImport": "…", "cssImportInline": "…", "framework": "react",
+//!   "cssImport": "…", "cssImportInline": "…", "stylesHref": "/_zubra/components/inbox.css",
+//!   "framework": "react",
 //!   "modulePath": "inbox.js", "props": {}, "slots": {}, "slotSource": "html", "partial": true,
 //!   "pending": ["reviews"], "gaps": true }
 //! ```
@@ -360,6 +361,8 @@ fn respond(request: &Map<String, Value>) -> Value {
                     component_extension: (!flag("keepImports") && style_imports.is_none())
                         .then_some(".js"),
                     style_imports,
+                    // `stylesHref`: the page already has this component's CSS; see `JsOptions`.
+                    styles_href: text("stylesHref").filter(|_| style_imports.is_none()),
                     devtools: flag("devtools"),
                 },
                 &loader,
@@ -626,6 +629,47 @@ mod tests {
 
     fn call(request: Value) -> Value {
         serde_json::from_str(&handle(&request.to_string())).unwrap()
+    }
+
+    #[test]
+    fn styles_href_replaces_a_light_dom_components_css_text_and_nothing_elses() {
+        let component = |host: &str| {
+            format!("<style>\n  b {{ color: red; }}\n</style>\n<x-tag{host}><b>x</b></x-tag>")
+        };
+        let js = |source: &str, href: Option<&str>| {
+            let mut request = json!({ "path": "/app/x-tag.zb", "files": { "/app/x-tag.zb": source }, "emit": "js" });
+            if let Some(href) = href {
+                request["stylesHref"] = json!(href);
+            }
+            call(request)["output"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        };
+        // Light DOM: the address, and that the page has the CSS; not the text.
+        let light = js(&component(""), Some("/_zubra/components/x-tag.css"));
+        assert!(light.contains("  styled: true,\n  stylesHref: \"/_zubra/components/x-tag.css\",\n  inPage: true,\n"), "{light}");
+        assert!(
+            !light.contains("styles:") && !light.contains("color: red"),
+            "{light}"
+        );
+        // Without the option, as before.
+        let plain = js(&component(""), None);
+        assert!(
+            plain.contains("  styles: \"")
+                && plain.contains("color: red")
+                && !plain.contains("stylesHref")
+                && !plain.contains("inPage"),
+            "{plain}"
+        );
+        // A shadow component keeps its text: each of its roots adopts the sheet.
+        assert_eq!(
+            js(&component(" shadow"), Some("/x.css")),
+            js(&component(" shadow"), None)
+        );
+        // Nothing to say for a component with no styles.
+        let bare = "<x-tag><b>x</b></x-tag>";
+        assert_eq!(js(bare, Some("/x.css")), js(bare, None));
     }
 
     #[test]

@@ -173,9 +173,11 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     }
     return found;
   });
-  const js = (name) => once(`js:${name}`, () => {
+  // `stylesHref`: for a module of a page that carries the component's CSS, the stylesheet's
+  // address in place of its text (a light-DOM component's; see the joined module below).
+  const js = (name, stylesHref) => once(`js:${name}${stylesHref ? `:${stylesHref}` : ''}`, () => {
     const path = pathOf(name);
-    const response = request({ emit: 'js', runtime: '@zubra/runtime', devtools, path, files: sourcesOf(path) });
+    const response = request({ emit: 'js', runtime: '@zubra/runtime', devtools, path, files: sourcesOf(path), ...(stylesHref ? { stylesHref } : {}) });
     if (!response.ok) throw new Error(response.error);
     return resolved(needs(name, response.output));
   });
@@ -248,7 +250,13 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     if (set.length < 2 || id.length > JOINED_NAMES || set.some((name) => !/^[\w./@-]+$/.test(name))) return null;
     // A package's copy of a tag the app has too is served as the app's module (see `serve`).
     if (set.some((name) => fromPackage(name) && owners().shadows.get(name) !== undefined)) return null;
-    const response = request({ command: 'join', at: 'b/joined.js', modules: set.map((name) => ({ path: `components/${name}.js`, code: String(js(name)) })) });
+    // The page a joined module is for has its components' CSS in the head (and says so: see
+    // `carries`), so a light-DOM component's module needn't have the text as well: it gets
+    // the stylesheet's address, which the runtime fetches for an element inside a shadow root.
+    // Not where a component of the set has a shadow root of its own, though: a light-DOM
+    // component rendered inside it would lose its styles until the fetch came back.
+    const linked = !set.some((name) => describe(name).shadow);
+    const response = request({ command: 'join', at: 'b/joined.js', modules: set.map((name) => ({ path: `components/${name}.js`, code: String(js(name, linked ? `${base}/components/${name}.css` : undefined)) })) });
     if (!response.ok) {
       if (!response.apart) throw new Error(`@zubra/server: joining ${set.join(', ')}: ${response.error}`);
       warn(`@zubra/server: ${set.join(', ')} are served as separate modules, not as one: ${response.error}`);
@@ -268,16 +276,20 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     return one ? [one.url] : names.map(componentUrl);
   };
   const preloads = (names, options) => (preload ? moduleGraph(entries(shipped(names))).map((url) => `<link rel="modulepreload" href="${escapeAttribute(url)}"${nonceAttribute(options)}>`).join('\n') : '');
+  // `bundle`: whose CSS a `<style>` or stylesheet link has, by tag (the components named and
+  // the ones they import: a component's CSS comes with its children's). A joined module's
+  // light-DOM components read it to know the page has their CSS (`stylesHref`).
+  const carries = (names) => (bundle ? `="${escapeAttribute(componentSet(names).map((name) => describe(name).tag).join(' '))}"` : '');
   const head = (names, options) => {
     // A component that needs a package that isn't installed fails here, while the page is built,
     // with the reason, rather than later in the browser as an unresolved import.
     for (const name of names) js(name);
     const links = preloads(names, options);
     // Without inline elements: a stylesheet link per component that has CSS, and no import map.
-    if (!inline) return [...names.filter((name) => css(name)).map((name) => `<link rel="stylesheet" href="${escapeAttribute(`${base}/components/${name}.css`)}" data-zb-components>`), ...(links ? [links] : [])].join('\n');
+    if (!inline) return [...names.filter((name) => css(name)).map((name) => `<link rel="stylesheet" href="${escapeAttribute(`${base}/components/${name}.css`)}" data-zb-components${carries([name])}>`), ...(links ? [links] : [])].join('\n');
     const styles = names.map(css).join('\n');
     // The preload links come after the import map: a module fetched before it couldn't be one the map names.
-    return `${styles ? `<style data-zb-components${nonceAttribute(options)}>${styles}</style>\n` : ''}${importMap(options)}${links ? `\n${links}` : ''}`;
+    return `${styles ? `<style data-zb-components${carries(names)}${nonceAttribute(options)}>${styles}</style>\n` : ''}${importMap(options)}${links ? `\n${links}` : ''}`;
   };
   // `clientModules: 'needed'`: a component whose server HTML is complete on its own (the
   // compiler's `client` list is empty: no state, handlers, hooks or values computed in the
@@ -298,7 +310,8 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     // takes down a server written as `if (zubra.handle(req, res)) return;`.
     try { rest = decodeURIComponent(pathname.slice(base.length + 1)); } catch { return { status: 400, type: 'text/plain', body: 'Bad request' }; }
     // A component's stylesheet, for the `<link>` a page without inline elements has.
-    if (!inline && rest.startsWith('components/') && rest.endsWith('.css')) {
+    // (And, with `bundle`, for a light-DOM component of a joined module inside a shadow root.)
+    if ((!inline || bundle) && rest.startsWith('components/') && rest.endsWith('.css')) {
       const name = rest.slice('components/'.length, -4);
       return files.has(name) ? { status: 200, type: TYPES['.css'], body: css(name) } : { status: 404, type: 'text/plain', body: 'Not found' };
     }
