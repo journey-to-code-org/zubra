@@ -86,6 +86,17 @@ test("without the server half loaded, a wrapper renders the bare host (it doesn'
   assert.match(await vueToString(createSSRApp({ render: () => h(VueField, { value: 3 }) })), /<template shadowrootmode="open"><b>3<\/b><\/template>/);
 });
 
+test("in Vue a bare attribute is true for a boolean prop, and still '' for a string one", async () => {
+  // `<Field required label>` in a template gives the component `{ required: '', label: '' }`.
+  const { createSSRApp, h } = await import('vue');
+  const { renderToString: vueToString } = await import('vue/server-renderer');
+  const meta = (name, value) => ({ attribute: name, default: value, required: false, model: false });
+  const Field = wrapVue({ zubra: { tag: 'zb-bare-field', props: { required: meta('required', false), open: meta('open', true), label: meta('label', 'x'), count: meta('count', 0) }, events: [], slots: [], shadow: false, form: false } });
+  const props = async (given) => JSON.parse((await vueToString(createSSRApp({ render: () => h(Field, given) }))).match(/zb-props="([^"]*)"/)[1].replaceAll('&quot;', '"'));
+  assert.deepEqual(await props({ required: '', open: '', label: '', count: '' }), { required: true, open: true, label: '', count: '' });
+  assert.deepEqual(await props({ required: false, open: false, label: 'Seats' }), { required: false, open: false, label: 'Seats' });
+});
+
 test('the Vue wrapper declares the props, events and v-model it supports', () => {
   const Picker = wrapVue(element({ value: '', label: 'x' }, ['valuechange', 'open']));
   assert.equal(Picker.name, 'ZbPicker');

@@ -103,11 +103,17 @@ export function wrap(Element) {
       let element = null;
       const defaults = {}; // one copy per instance, so re-rendering doesn't set a new one
       expose({ get element() { return element; } });
+      // What the app gave for a prop. A bare attribute in a template (`<Field required>`) reaches
+      // a component as `''`, as it would an element: for a prop whose default is a boolean that
+      // is `true`, as HTML reads it.
+      const read = (name) => {
+        const value = primary && name === primary.prop && given.modelValue !== undefined ? given.modelValue : given[name];
+        return value === '' && typeof props[name].default === 'boolean' ? true : value;
+      };
       return () => {
         const values = {};
         for (const name of Object.keys(props)) {
-          let value = given[name];
-          if (primary && name === primary.prop && given.modelValue !== undefined) value = given.modelValue;
+          const value = read(name);
           values[name] = value === undefined ? (defaults[name] ??= clone(props[name].default)) : value;
         }
         const children = [];
@@ -116,7 +122,7 @@ export function wrap(Element) {
           children.push(...(name === 'default' ? nodes : named(name, nodes)));
         }
         // The given props as JSON, on the server and in the browser alike (see the React adapter).
-        const json = propsJson(Object.fromEntries(Object.keys(props).map((name) => [name, primary && name === primary.prop && given.modelValue !== undefined ? given.modelValue : given[name]])));
+        const json = propsJson(Object.fromEntries(Object.keys(props).map((name) => [name, read(name)])));
         // An element with no children: on the server, its content (a shadow-DOM element's
         // declarative shadow root, a light-DOM element's rendered children) as the host's inner
         // HTML, so it shows before JavaScript. In the browser the vnode has no children at all
