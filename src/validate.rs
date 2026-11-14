@@ -613,9 +613,19 @@ fn lower_rest(
 
 /// What the JavaScript backend needs: the prop interface and the script's names, after the
 /// same script evaluation and resolver checks the HTML backend runs.
-/// A prop's TypeScript type, when the script says it: `declare const value: T`; `value={initial}`
-/// where `const initial: T = …`; or `size={Size.Small}`, a member of the script's enum `Size`.
+/// A prop's TypeScript type, when the component says it: `@prop {T} value` in its description;
+/// `declare const value: T`; `value={initial}` where `const initial: T = …`; or
+/// `size={Size.Small}`, a member of the script's enum `Size`.
 pub(crate) fn declared_type(component: &crate::ast::ComponentAst, prop: &str) -> Option<String> {
+    // The description's: `@prop {Type} name`.
+    if let Some(text) = component
+        .prop_docs
+        .iter()
+        .find(|doc| doc.name == prop)
+        .and_then(|doc| doc.declared.as_ref())
+    {
+        return Some(text.clone());
+    }
     if let Some((_, text, _)) = component
         .script
         .prop_types
@@ -798,8 +808,10 @@ pub struct Interface {
 
 pub struct PropInterface {
     pub name: String,
-    /// The TypeScript type, when the default is an annotated binding (`<script lang="ts">`).
+    /// The TypeScript type, when the component declares it (see [`declared_type`]).
     pub declared: Option<String>,
+    /// What the prop is for: the text of its `@prop` line in the description.
+    pub description: Option<String>,
     pub attribute: String,
     /// `None` for a required prop, or one whose default is only known at runtime.
     pub default: Option<Value>,
@@ -815,7 +827,12 @@ impl Interface {
         for prop in self.props.iter().filter(|prop| prop.model) {
             let name = format!("{}change", prop.name.to_ascii_lowercase());
             let detail = crate::emit_interface::prop_type(prop);
-            if let Some(event) = self.events.iter_mut().find(|event| event.name == name) {
+            // (Unless the description says what it carries: `@fires {Type} valuechange`.)
+            if let Some(event) = self
+                .events
+                .iter_mut()
+                .find(|event| event.name == name && !event.declared)
+            {
                 event.detail = detail;
             }
         }
@@ -914,9 +931,15 @@ pub fn analyze(component: &ast::ComponentAst) -> Result<Interface, Diagnostic> {
                     .props
                     .iter()
                     .any(|declaration| declaration.name == prop.name && declaration.model);
+                let description = component
+                    .prop_docs
+                    .iter()
+                    .find(|doc| doc.name == prop.name)
+                    .and_then(|doc| doc.description.clone());
                 PropInterface {
                     name: prop.name,
                     declared,
+                    description,
                     attribute: prop.attribute,
                     default: prop.default,
                     runtime_default,

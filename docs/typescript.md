@@ -108,6 +108,8 @@ The types aren't thrown away. Three things in the script carry their type text i
 2. **`declare const name: Type`** types a prop whose default can't say enough, or a required prop (which otherwise is `unknown`): `declare const size: 'small' | 'large'`. A `declare const` that names no prop is an error.
 3. **`emit<Detail>("name", detail)`** types the event: the typings get `CustomEvent<Detail>` where a plain `emit("name", variable)` would get `CustomEvent<unknown>` (a literal's shape is inferred: `emit("select", { id: 1 })` is `CustomEvent<{ id: number }>`).
 
+A component with a plain `<script>` (or an `emit` in its template, where there is no `<Detail>` to write) says the same in its description comment: `@prop {Type} name - text` for a prop and `@fires {Type} name - text` for an event's detail. The type between the braces is TypeScript, and in a `<script lang="ts">` component it can name the script's own types, which the typings export. One place per prop: typed both there and in the script is an error.
+
 **`interface Props`** (or `type Props = { … }`) types every prop in one place, as Vue's and Svelte's components do:
 
 ```html

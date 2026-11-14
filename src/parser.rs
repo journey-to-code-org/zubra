@@ -266,10 +266,14 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
         crate::ast::for_each_expression(&nodes, &mut |expression, _| record(expression));
         script::elide_type_only_imports(&mut script, &used)?;
     }
+    // `@prop {Type} name - text` in the description: each names a prop (after `interface Props`
+    // has typed its own, so a prop typed in both places is caught).
+    let prop_docs = crate::events::prop_docs(description.as_deref(), &props, &script, host.span)?;
     Ok(ComponentAst {
         tag: host.name,
         tag_span: host.span,
         description,
+        prop_docs,
         shadow,
         form_associated,
         host_reset: host_reset.is_some(),

@@ -19,6 +19,8 @@ pub struct ComponentAst {
     pub tag_span: Span,
     /// From an HTML comment above the host tag (or above the script).
     pub description: Option<String>,
+    /// `@prop {Type} name - text` lines of the description: a prop's type and what it is for.
+    pub prop_docs: Vec<PropDoc>,
     /// `shadow` on the host opts into shadow DOM (light DOM is the default).
     pub shadow: bool,
     /// `form-associated` on the host makes the element a form control (ElementInternals).
@@ -58,6 +60,15 @@ pub struct Style {
     pub lang: Option<String>,
     /// Where the CSS starts.
     pub span: Span,
+}
+
+/// One `@prop` line of a component's description.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PropDoc {
+    pub name: String,
+    /// `{Type}`: the prop's TypeScript type, as written.
+    pub declared: Option<String>,
+    pub description: Option<String>,
 }
 
 impl ComponentAst {

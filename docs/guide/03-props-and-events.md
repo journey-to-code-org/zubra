@@ -20,7 +20,7 @@ Components talk to the outside the way built-in elements do: **properties in, DO
 ```
 
 - `emit(name, detail)` fires a `CustomEvent` from the element. It bubbles, and `detail` carries the value.
-- Calling `emit` declares the event: it appears in the typings and the docs. Here it's `colorpick: CustomEvent<unknown>`, because `color` is a variable; in a `<script lang="ts">`, `emit<string>('colorpick', color)` makes it `CustomEvent<string>`. There's nothing to register.
+- Calling `emit` declares the event: it appears in the typings and the docs. Here it's `colorpick: CustomEvent<unknown>`, because `color` is a variable; in a `<script lang="ts">`, `emit<string>('colorpick', color)` makes it `CustomEvent<string>`. There's nothing to register. In any script, `@fires {string} colorpick - text` in the description comment says it too, and `@prop {Type} name - text` types a prop.
 - Names are lowercase, like the platform's own (`colorpick`, not `colorPick`): every framework can listen to those declaratively. A camelCase name is an error that suggests the right one.
 - `before…` events are cancelable: `if (!emit('beforeclose')) return` stops when a listener called `preventDefault()`.
 
