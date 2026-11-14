@@ -498,12 +498,14 @@ function walk(range, path) {
       first = node.nextSibling;
       stop = matchingClose(node);
     } else {
-      first = node.firstChild;
+      // (The native getter: a light-DOM host answers `firstChild` with the page's first child.)
+      first = (nativeFirst ??= Object.getOwnPropertyDescriptor(Node.prototype, 'firstChild').get).call(node);
       stop = null;
     }
   }
   return node;
 }
+let nativeFirst; // looked up on first use, so the module loads without a DOM
 
 const childRange = (parent) => ({ first: parent.firstChild, stop: null });
 const regionRange = (open, close) => ({ first: open.nextSibling, stop: close });
@@ -951,6 +953,29 @@ function bindSlot(part, open, hydrating, context) {
 // rendered (inside an zb-if branch that's off) they're parked in a fragment. A slot's own text
 // nodes are watched too: Angular creates `{{ }}` text empty and fills it afterwards, and empty
 // text is a marker until it has words.
+//
+// The default slot's nodes are also the page's children in order: an element for another slot
+// leaves a stand-in there, a comment where the page put it. A framework that removes a run of
+// siblings (Vue a fragment, Svelte and Lit a block, from one node to another) walks from sibling
+// to sibling, which can't reach an element that was moved to another slot; it does reach the
+// stand-in, and the element goes when its stand-in does. `host.firstChild` answers from the
+// same list (Solid writes a lone text child through it).
+
+const standIns = new WeakMap(); // an element in a named slot → its stand-in
+const standsFor = new WeakMap(); // a stand-in → its element
+function standIn(node) {
+  let comment = standIns.get(node);
+  if (!comment) {
+    comment = document.createComment('zb-slot');
+    standIns.set(node, comment);
+    standsFor.set(comment, node);
+  }
+  return comment;
+}
+function forget(node) {
+  standsFor.delete(standIns.get(node));
+  standIns.delete(node);
+}
 
 function slotRecord(context, name) {
   let slot = context.slots.get(name);
@@ -1016,23 +1041,34 @@ function assignSlots(nodes) {
 }
 let nativeText, nativeHTML; // looked up on first use, so the module loads without a DOM
 
-const ROUTED = ['insertBefore', 'appendChild', 'append', 'removeChild', 'replaceChild', 'replaceChildren', 'textContent', 'innerHTML'];
+const ROUTED = ['insertBefore', 'appendChild', 'append', 'removeChild', 'replaceChild', 'replaceChildren', 'textContent', 'innerHTML', 'firstChild'];
 
 /** Route the host's child methods to its slots (see above). */
 function routeChildren(host, context, slots, tag) {
+  const home = slotRecord(context, 'default');
   const holding = (node) => {
     for (const slot of context.slots.values()) if (slot.nodes.includes(node)) return slot;
     return null;
   };
+  // `node` left its slot. A stand-in takes its element with it, and an element its stand-in.
+  const lose = (node) => {
+    unmark(node, context.slotted);
+    const other = standsFor.get(node) ?? standIns.get(node);
+    if (!other) return;
+    forget(standsFor.has(node) ? other : node);
+    const slot = take(other);
+    unmark(other, context.slotted);
+    other.remove();
+    if (slot) show(slot);
+  };
   // Drop content that left through its real parent (or was moved elsewhere), except `keep`,
   // which is arriving now.
   const prune = (slot, keep) => {
-    const home = slot.region?.provided ? slot.region.open.parentNode : slot.park;
-    const kept = slot.nodes.filter((node) => node === keep || node.parentNode === home);
-    for (const node of slot.nodes) if (!kept.includes(node)) unmark(node, context.slotted);
-    const changed = kept.length !== slot.nodes.length;
-    slot.nodes = kept;
-    return changed;
+    const parent = slot.region?.provided ? slot.region.open.parentNode : slot.park;
+    const left = slot.nodes.filter((node) => node !== keep && node.parentNode !== parent);
+    if (!left.length) return;
+    slot.nodes = slot.nodes.filter((node) => !left.includes(node));
+    left.forEach(lose);
   };
   const show = (slot, keep) => {
     prune(slot, keep);
@@ -1045,6 +1081,16 @@ function routeChildren(host, context, slots, tag) {
     if (slot) slot.nodes.splice(slot.nodes.indexOf(node), 1);
     return slot;
   };
+  const put = (slot, node, before) => {
+    const at = before ? slot.nodes.indexOf(before) : -1;
+    if (at >= 0) slot.nodes.splice(at, 0, node);
+    else slot.nodes.push(node);
+  };
+  const named = (node) => {
+    const name = slotName(node);
+    if (!slots.includes(name) && isContent(node)) console.warn(`zubra: <${tag}> has no slot named "${name}"; that content is not shown${see('slots')}`);
+    return slotRecord(context, name);
+  };
   // A slot's text node counts as content only while it has words: hear when that changes.
   const watch = (node) => { if (node.nodeType === TEXT) context.observer.observe(node, { characterData: true }); };
   const insert = (node, before) => {
@@ -1053,22 +1099,40 @@ function routeChildren(host, context, slots, tag) {
       return;
     }
     watch(node);
-    const from = take(node);
+    const content = isContent(node);
     // A marker or whitespace goes in the slot of what it's inserted before.
-    const name = isContent(node) ? slotName(node) : (before && holding(before)?.name) || 'default';
-    if (!slots.includes(name) && isContent(node)) console.warn(`zubra: <${tag}> has no slot named "${name}"; that content is not shown${see('slots')}`);
-    const slot = slotRecord(context, name);
-    const at = before ? slot.nodes.indexOf(before) : -1;
-    if (at >= 0) slot.nodes.splice(at, 0, node);
-    else slot.nodes.push(node);
-    if (from && from !== slot) show(from);
+    const slot = content ? named(node) : slotRecord(context, (before && holding(before)?.name) || 'default');
+    const from = take(node);
+    // Among the page's children it goes before `before`, or last: so does its stand-in.
+    let comment = standIns.get(node);
+    if (comment) take(comment);
+    const seat = before && (standIns.get(before) ?? before);
+    if (slot === home) {
+      if (comment) { forget(node); comment.remove(); }
+      put(home, node, seat);
+    } else {
+      put(slot, node, before);
+      if (content) put(home, (comment = standIn(node)), seat);
+    }
+    // (The stand-in is placed before anything else looks at the default slot: one that isn't
+    // where it belongs reads as removed.)
     show(slot, node);
+    const seated = slot !== home && content;
+    if (seated) show(home, comment);
+    if (from && from !== slot && !(seated && from === home)) show(from);
+  };
+  // Content that is in the wrong slot (its `slot` attribute changed, or a framework put it next
+  // to its own marker in another slot's region, or its text was a marker while it was empty)
+  // goes to its own, and keeps its place among the page's children.
+  const reslot = (node) => {
+    const at = home.nodes.indexOf(standIns.get(node) ?? node);
+    insert(node, (at >= 0 && home.nodes[at + 1]) || null);
   };
   const remove = (node) => {
     const slot = take(node);
     if (!slot) return false;
-    unmark(node, context.slotted);
     node.remove();
+    lose(node);
     show(slot);
     return true;
   };
@@ -1108,6 +1172,8 @@ function routeChildren(host, context, slots, tag) {
       set(value) { clear(); if (value != null && value !== '') insert(document.createTextNode(String(value)), null); },
       configurable: true,
     },
+    // The page's first child, wherever its slot is: what a framework that reads it means.
+    firstChild: { get() { const [first] = home.nodes; return first ? standsFor.get(first) ?? first : null; }, configurable: true },
     innerHTML: {
       get() { return (nativeHTML ??= Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')).get.call(host); },
       set(value) {
@@ -1127,7 +1193,30 @@ function routeChildren(host, context, slots, tag) {
     for (const record of records) {
       if (record.type === 'characterData') written.push(record.target);
       const slot = record.type === 'attributes' && holding(record.target);
-      if (slot && slotName(record.target) !== slot.name) insert(record.target, null);
+      if (slot && slotName(record.target) !== slot.name) reslot(record.target);
+      // Solid clears a run of nodes one by one, skipping those that aren't where the first is
+      // (an element moved to its slot), and puts an empty text node in the first one's place:
+      // the stand-ins right after that node are the rest of the run.
+      const [added] = record.addedNodes;
+      if (record.removedNodes.length === 1 && record.addedNodes.length === 1 && added.nodeType === TEXT && !added.data) {
+        while (standsFor.has(added.nextSibling)) added.nextSibling.remove();
+      }
+    }
+    // Svelte removes a block from its first node to its last, sibling by sibling. When the last
+    // is an element that was moved to another slot, the walk never meets it and carries on to
+    // the end of the parent, taking the block's own anchor, this slot's closing marker and the
+    // template's nodes after it. Those go back: everything from the first comment after a
+    // stand-in (the anchor), or else from the closing marker.
+    for (const { region } of context.slots.values()) {
+      const parent = region?.open.parentNode;
+      if (!parent || region.close.parentNode === parent) continue;
+      const gone = records.filter((record) => record.target === parent).flatMap((record) => [...record.removedNodes]);
+      let cut = gone.indexOf(region.close);
+      for (let i = 0, seen = false; i < cut; i++) {
+        if (standsFor.has(gone[i])) seen = true;
+        else if (seen && gone[i].nodeType === COMMENT) cut = i;
+      }
+      if (cut >= 0) for (const node of gone.slice(cut)) if (!node.parentNode) Node.prototype.insertBefore.call(parent, node, null);
     }
     // Each slot's nodes are what's actually in it: frameworks also insert and remove content
     // next to their own markers there, without going through the host.
@@ -1143,13 +1232,14 @@ function routeChildren(host, context, slots, tag) {
         // The same nodes, but one's text was written: it may have become content, or stopped being.
         if (!written.some((node) => slot.nodes.includes(node))) continue;
       } else {
-        for (const node of slot.nodes) if (!actual.includes(node)) unmark(node, context.slotted);
+        const left = slot.nodes.filter((node) => !actual.includes(node));
         slot.nodes = actual;
+        left.forEach(lose);
         actual.forEach(watch);
       }
       // Content that belongs to another slot goes there: an element added next to a marker here,
       // or text that was a marker while it was empty. (A copy: moving one takes it out of the list.)
-      for (const node of [...slot.nodes]) if (isContent(node) && slotName(node) !== slot.name) insert(node, null);
+      for (const node of [...slot.nodes]) if (isContent(node) && slotName(node) !== slot.name) reslot(node);
       show(slot);
     }
     // Content a parent adds inside a slot itself (its zb-if or zb-each there) is slotted too;
@@ -1899,7 +1989,7 @@ function defineElement(tag, definition) {
         for (const fn of this.#hooks.unmount) fn();
       }
       const kept = this.#hooks.states.map((signal) => untrack(() => signal.get()));
-      const slotted = shadow ? [] : [...this.#context.slots.values()].flatMap((slot) => slot.nodes);
+      const slotted = shadow ? [] : [...this.#context.slots.values()].flatMap((slot) => slot.nodes).filter((node) => !standsFor.has(node));
       this.#context.observer?.disconnect();
       // The host's child methods are routed to the old slots (see routeChildren); back to native.
       for (const key of ROUTED) delete this[key];
@@ -2020,7 +2110,11 @@ function defineElement(tag, definition) {
           if ((server || [...root.childNodes].some((node) => node.data === '')) && !shadow && slots.length) {
             // Not server markup: the page's own children for this element, to be slotted.
             const children = [...root.childNodes];
-            assignSlots(children).forEach((name, i) => slotRecord(context, name).nodes.push(children[i]));
+            assignSlots(children).forEach((name, i) => {
+              slotRecord(context, name).nodes.push(children[i]);
+              // An element for a named slot keeps its place among the page's children (see routeChildren).
+              if (name !== 'default' && isContent(children[i])) slotRecord(context, 'default').nodes.push(standIn(children[i]));
+            });
             for (const [name, slot] of context.slots) {
               if (!slots.includes(name) && slot.nodes.some(isContent)) console.warn(`zubra: <${tag}> has no slot named "${name}"; that content is not shown${see('slots')}`);
             }

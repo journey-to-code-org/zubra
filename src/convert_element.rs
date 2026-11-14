@@ -108,6 +108,10 @@ const GENERATED: &[&str] = &[
     "isContent",
     "slotName",
     "assignSlots",
+    "standIns",
+    "standsFor",
+    "standIn",
+    "dropStandIn",
 ];
 
 fn generated(name: &str) -> bool {

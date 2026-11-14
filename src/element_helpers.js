@@ -519,6 +519,27 @@ function @assignSlots(nodes) {
   return nodes.map((node, i) => named[i] ?? (node.nodeType === 8 ? near(i, 1) ?? near(i, -1) : near(i, -1) ?? near(i, 1)) ?? "default");
 }
 
+// The default slot's nodes are also the page's children in order: an element for another slot
+// leaves a stand-in there, a comment where the page put it. A framework that removes a run of
+// siblings (Vue a fragment, Svelte and Lit a block) walks from sibling to sibling, which can't
+// reach an element that was moved to another slot; it does reach the stand-in, and the element
+// goes when its stand-in does.
+const @standIns = new WeakMap(); // an element in a named slot → its stand-in
+const @standsFor = new WeakMap(); // a stand-in → its element
+function @standIn(node) {
+  let comment = @standIns.get(node);
+  if (!comment) {
+    comment = document.createComment("zb-slot");
+    @standIns.set(node, comment);
+    @standsFor.set(comment, node);
+  }
+  return comment;
+}
+function @dropStandIn(node) {
+  @standsFor.delete(@standIns.get(node));
+  @standIns.delete(node);
+}
+
 //@@ class:slots: slotted move
   // ---- slots
   // Light DOM has no <slot>, so this element places the page's children itself: each slot's
@@ -544,6 +565,12 @@ function @assignSlots(nodes) {
       const record = this.#slot(name);
       record.nodes.push(children[i]);
       record.park.append(children[i]);
+      // An element for a named slot keeps its place among the page's children.
+      if (name !== "default" && @isContent(children[i])) {
+        const home = this.#slot("default");
+        home.nodes.push(@standIn(children[i]));
+        home.park.append(@standIn(children[i]));
+      }
     });
   }
   /** A slot between `start` and `end`, showing its nodes or `fallback()`. */
@@ -557,7 +584,11 @@ function @assignSlots(nodes) {
       update: (keep = null) => {
         // Content a framework removed through its real parent (Vue does) has left, even before the
         // MutationObserver says so: it mustn't be put back.
-        record.nodes = record.nodes.filter((node) => node === keep || node.parentNode === start.parentNode || node.parentNode === record.park);
+        const left = record.nodes.filter((node) => node !== keep && node.parentNode !== start.parentNode && node.parentNode !== record.park);
+        if (left.length) {
+          record.nodes = record.nodes.filter((node) => !left.includes(node));
+          for (const node of left) this.#lose(node);
+        }
         region.provided = record.nodes.some(@isContent);
         if (region.provided) {
           if (region.fallback) {
@@ -604,12 +635,25 @@ function @assignSlots(nodes) {
     for (const record of this.#slots.values()) if (record.nodes.includes(node)) return record;
     return null;
   }
+  // `node` left its slot. A stand-in takes its element with it, and an element its stand-in.
+  #lose(node) {
+    this.#unmark(node);
+    const other = @standsFor.get(node) ?? @standIns.get(node);
+    if (!other) return;
+    @dropStandIn(@standsFor.has(node) ? other : node);
+    const record = this.#take(other);
+    this.#unmark(other);
+    other.remove();
+    if (record) this.#show(record);
+  }
   // Drops content that left through its real parent (or was moved elsewhere), except `keep`.
   #show(record, keep) {
-    const home = record.region?.provided ? record.region.start.parentNode : record.park;
-    const kept = record.nodes.filter((node) => node === keep || node.parentNode === home);
-    for (const node of record.nodes) if (!kept.includes(node)) this.#unmark(node);
-    record.nodes = kept;
+    const parent = record.region?.provided ? record.region.start.parentNode : record.park;
+    const left = record.nodes.filter((node) => node !== keep && node.parentNode !== parent);
+    if (left.length) {
+      record.nodes = record.nodes.filter((node) => !left.includes(node));
+      for (const node of left) this.#lose(node);
+    }
     if (record.region) record.region.update(keep);
     else record.park.append(...record.nodes);
     this.#requestUpdate(); // hasSlot() and the rest may have changed
@@ -625,21 +669,49 @@ function @assignSlots(nodes) {
       return;
     }
     this.#watch(node);
-    const from = this.#take(node);
+    const content = @isContent(node);
     // A marker or whitespace goes in the slot of what it's inserted before.
-    const name = @isContent(node) ? @slotName(node) : (before && this.#holding(before)?.name) || "default";
+    const name = content ? @slotName(node) : (before && this.#holding(before)?.name) || "default";
     this.#warnSlot(name, node);
     const record = this.#slot(name);
-    const at = before ? record.nodes.indexOf(before) : -1;
-    record.nodes.splice(at < 0 ? record.nodes.length : at, 0, node);
-    if (from && from !== record) this.#show(from);
+    const home = this.#slot("default");
+    const from = this.#take(node);
+    // Among the page's children it goes before `before`, or last: so does its stand-in.
+    let comment = @standIns.get(node);
+    if (comment) this.#take(comment);
+    const put = (slot, item, ref) => {
+      const at = ref ? slot.nodes.indexOf(ref) : -1;
+      slot.nodes.splice(at < 0 ? slot.nodes.length : at, 0, item);
+    };
+    const seat = before && (@standIns.get(before) ?? before);
+    if (record === home) {
+      if (comment) {
+        @dropStandIn(node);
+        comment.remove();
+      }
+      put(home, node, seat);
+    } else {
+      put(record, node, before);
+      if (content) put(home, (comment = @standIn(node)), seat);
+    }
+    // (The stand-in is placed before anything else looks at the default slot: one that isn't
+    // where it belongs reads as removed.)
     this.#show(record, node);
+    const seated = record !== home && content;
+    if (seated) this.#show(home, comment);
+    if (from && from !== record && !(seated && from === home)) this.#show(from);
+  }
+  // Content that is in the wrong slot goes to its own, and keeps its place among the page's children.
+  #reslot(node) {
+    const home = this.#slot("default");
+    const at = home.nodes.indexOf(@standIns.get(node) ?? node);
+    this.#route(node, (at >= 0 && home.nodes[at + 1]) || null);
   }
   #remove(node) {
     const record = this.#take(node);
     if (!record) return false;
-    this.#unmark(node);
     node.remove();
+    this.#lose(node);
     this.#show(record);
     return true;
   }
@@ -683,7 +755,30 @@ function @assignSlots(nodes) {
       for (const record of records) {
         if (record.type === "characterData") written.add(record.target);
         const slot = record.type === "attributes" && this.#holding(record.target);
-        if (slot && @slotName(record.target) !== slot.name) this.#route(record.target, null);
+        if (slot && @slotName(record.target) !== slot.name) this.#reslot(record.target);
+        // Solid clears a run of nodes one by one, skipping those that aren't where the first is
+        // (an element moved to its slot), and puts an empty text node in the first one's place:
+        // the stand-ins right after that node are the rest of the run.
+        const [added] = record.addedNodes;
+        if (record.removedNodes.length === 1 && record.addedNodes.length === 1 && added.nodeType === 3 && !added.data) {
+          while (@standsFor.has(added.nextSibling)) added.nextSibling.remove();
+        }
+      }
+      // Svelte removes a block from its first node to its last, sibling by sibling. When the last
+      // is an element that was moved to another slot, the walk never meets it and carries on to
+      // the end of the parent, taking the block's own anchor, this slot's closing marker and what
+      // this element rendered after it. Those go back: everything from the first comment after a
+      // stand-in (the anchor), or else from the closing marker.
+      for (const { region } of this.#slots.values()) {
+        const parent = region?.start.parentNode;
+        if (!parent || region.end.parentNode === parent) continue;
+        const gone = records.filter((record) => record.target === parent).flatMap((record) => [...record.removedNodes]);
+        let cut = gone.indexOf(region.end);
+        for (let i = 0, seen = false; i < cut; i++) {
+          if (@standsFor.has(gone[i])) seen = true;
+          else if (seen && gone[i].nodeType === 8) cut = i;
+        }
+        if (cut >= 0) for (const node of gone.slice(cut)) if (!node.parentNode) @insert(parent, node, null);
       }
       for (const slot of this.#slots.values()) {
         let actual;
@@ -696,13 +791,14 @@ function @assignSlots(nodes) {
         if (actual.length === slot.nodes.length && actual.every((node, i) => node === slot.nodes[i])) {
           if (!slot.nodes.some((node) => written.has(node))) continue;
         } else {
-          for (const node of slot.nodes) if (!actual.includes(node)) this.#unmark(node);
+          const left = slot.nodes.filter((node) => !actual.includes(node));
           slot.nodes = actual;
+          for (const node of left) this.#lose(node);
           for (const node of actual) this.#watch(node);
         }
         // Content that belongs to another slot goes there: an element added next to a marker
         // here, or text that was a marker while it was empty. (A copy: moving one takes it out.)
-        for (const node of [...slot.nodes]) if (@isContent(node) && @slotName(node) !== slot.name) this.#route(node, null);
+        for (const node of [...slot.nodes]) if (@isContent(node) && @slotName(node) !== slot.name) this.#reslot(node);
         this.#show(slot);
       }
     });
@@ -744,6 +840,13 @@ function @assignSlots(nodes) {
     if (!this.#started) return super.replaceChildren(...items);
     this.#clearSlots();
     this.append(...items);
+  }
+  // The page's first child, wherever its slot is: what a framework that reads it means (Solid
+  // writes a lone text child through it).
+  get firstChild() {
+    if (!this.#started) return super.firstChild;
+    const [first] = this.#slot("default").nodes;
+    return first ? @standsFor.get(first) ?? first : null;
   }
   get textContent() {
     return super.textContent;

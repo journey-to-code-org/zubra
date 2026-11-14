@@ -28,13 +28,16 @@ const BUDGETS = {
   // place, about 100 B, to 16 KB. Keeping what someone did to a form before the element started,
   // about 90 B, to 16.25 KB. Watching a slot's own text nodes, so text a framework writes after
   // creating it empty (Angular's `{{ }}`) is slotted, about 90 B, to 16.5 KB; the production
-  // build's budget didn't move.)
-  'src/index.js': { gzip: 16.5 * 1024 },
+  // build's budget didn't move. Light-DOM slots that hold up in Vue, Svelte and Solid — the
+  // page's children kept in order, a stand-in where each element for a named slot belongs, so a
+  // run of siblings a framework removes takes those elements with it, and `host.firstChild` —
+  // about 450 B, to 17 KB.)
+  'src/index.js': { gzip: 17 * 1024 },
   // The production build (the `production` export condition): the same, without hot reloading
   // (12.5 KB until 3.2, 13 KB until 4.2, 13.5 KB until `animate`, 14 KB until the list work,
   // 14.25 KB until the faster Signals core, 14.75 KB until rows without markers, 15 KB until
-  // form input kept through hydration).
-  'dist/production/index.js': { gzip: 15.25 * 1024 },
+  // form input kept through hydration, 15.25 KB until slots' stand-ins).
+  'dist/production/index.js': { gzip: 15.75 * 1024 },
   // An app that only uses Signals and effects.
   'src/effect.js': { gzip: 4 * 1024 },
   // `animate`'s leave() and glide(), loaded only by components that animate.
