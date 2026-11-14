@@ -37,6 +37,7 @@ mod events;
 mod expression;
 mod format;
 mod ir;
+mod joined;
 mod jsx;
 mod namespaces;
 mod parser;

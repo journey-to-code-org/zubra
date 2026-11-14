@@ -65,6 +65,8 @@ export interface EdgeOptions {
    * `true`: the pages load the runtime as one file, `<prefix>/runtime/zubra.js`, where they loaded
    * its entry and the six modules that imports. Serve `@zubra/runtime`'s `dist/bundled` under
    * `<prefix>/runtime/` (where `dist/production` would go). Off by default in 5.x.
+   * A page's components are one module too (`<prefix>/b/<names>.<hash>.js`), unless the compiler
+   * says the set must stay apart (the reason goes to `warn`).
    */
   bundle?: boolean;
 }
