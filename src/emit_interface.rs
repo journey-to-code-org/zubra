@@ -157,8 +157,18 @@ pub fn manifest(component: &ComponentAst, module_path: &str) -> Result<String, D
         if let Some(default) = &default {
             attribute.insert("default".into(), json!(default));
         }
-        if matches!(prop.default, Some(Value::Array(_) | Value::Object(_))) {
-            attribute.insert("description".into(), json!("JSON"));
+        let json_value = matches!(prop.default, Some(Value::Array(_) | Value::Object(_)));
+        match (&prop.description, json_value) {
+            (Some(description), true) => {
+                attribute.insert("description".into(), json!(format!("{description} JSON")));
+            }
+            (Some(description), false) => {
+                attribute.insert("description".into(), json!(description));
+            }
+            (None, true) => {
+                attribute.insert("description".into(), json!("JSON"));
+            }
+            (None, false) => {}
         }
         attributes.push(Value::Object(attribute));
 
@@ -170,6 +180,9 @@ pub fn manifest(component: &ComponentAst, module_path: &str) -> Result<String, D
             field.insert("default".into(), json!(default));
         }
         field.insert("attribute".into(), json!(prop.attribute));
+        if let Some(description) = &prop.description {
+            field.insert("description".into(), json!(description));
+        }
         members.push(Value::Object(field));
     }
     // The manifest names the default slot "".
@@ -265,7 +278,11 @@ pub fn html_data(component: &ComponentAst) -> Result<String, Diagnostic> {
     let interface = validate::analyze(component)?;
     let mut attributes = Vec::new();
     for prop in &interface.props {
-        let mut description = format!("Type: `{}`.", prop_type(prop));
+        let mut description = prop
+            .description
+            .as_ref()
+            .map_or_else(String::new, |text| format!("{text} "));
+        description.push_str(&format!("Type: `{}`.", prop_type(prop)));
         match (&prop.default, prop.runtime_default.is_some()) {
             (Some(default), _) => description.push_str(&format!(" Default: `{default}`.")),
             (None, true) => description.push_str(" Default: computed by the component."),
@@ -397,19 +414,23 @@ pub fn declarations(
         "export declare class {class} extends HTMLElement {{\n"
     ));
     for prop in &interface.props {
+        // What it's for (its `@prop` line), then how it's set.
+        let about = prop.description.as_ref().map_or_else(String::new, |text| {
+            format!("{} ", text.replace("*/", "*\\/"))
+        });
         if let Some(default) = &prop.default {
             out.push_str(&format!(
-                "  /** Attribute `{}`. Default: `{default}`. */\n",
+                "  /** {about}Attribute `{}`. Default: `{default}`. */\n",
                 prop.attribute
             ));
         } else if prop.runtime_default.is_some() {
             out.push_str(&format!(
-                "  /** Attribute `{}`. Default: computed by the component. */\n",
+                "  /** {about}Attribute `{}`. Default: computed by the component. */\n",
                 prop.attribute
             ));
         } else {
             out.push_str(&format!(
-                "  /** Attribute `{}`. Required. */\n",
+                "  /** {about}Attribute `{}`. Required. */\n",
                 prop.attribute
             ));
         }

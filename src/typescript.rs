@@ -70,6 +70,19 @@ pub struct Types {
 }
 
 /// Strip the types from `source` (a `<script lang="ts">` body starting at `start`).
+/// Whether `text` is one TypeScript type (`string[]`, `{ id: number } | null`): what goes
+/// between the braces of `@prop {…}` and `@fires {…}` in a component's description.
+pub(crate) fn is_type(text: &str) -> bool {
+    let allocator = Allocator::default();
+    let source = format!("type T = ({text}\n);");
+    let parsed = Parser::new(&allocator, &source, SourceType::ts()).parse();
+    parsed.diagnostics.is_empty()
+        && matches!(
+            parsed.program.body.as_slice(),
+            [Statement::TSTypeAliasDeclaration(_)]
+        )
+}
+
 pub fn strip(source: &str, start: Span) -> Result<(String, Types), Diagnostic> {
     let options = crate::tsconfig::current();
     let allocator = Allocator::default();

@@ -648,6 +648,10 @@ fn is_text_typed(component: &ComponentAst, name: &str) -> bool {
         .prop_types
         .iter()
         .any(|(prop, _, _)| prop == name)
+        || component
+            .prop_docs
+            .iter()
+            .any(|doc| doc.name == name && doc.declared.is_some())
 }
 
 fn camel(name: &str) -> String {

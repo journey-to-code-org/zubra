@@ -2,7 +2,10 @@
 
 use std::collections::HashMap;
 
-use zubra::{compile_declarations, compile_html_with, compile_js, compile_manifest, Diagnostic};
+use zubra::{
+    compile_declarations, compile_html_data, compile_html_with, compile_js, compile_manifest,
+    Diagnostic,
+};
 
 fn with_script(script: &str) -> String {
     format!("<script>\n  import {{ emit }} from '@zubra/runtime'\n{script}\n</script>\n<zb-picker value=\"\">\n  <p>{{value}}</p>\n</zb-picker>")
@@ -246,4 +249,181 @@ fn framework_declarations_type_the_wrappers() {
     assert!(vue.contains("\"update:value\": (value: number) => true; \"update:modelValue\": (value: number) => true }>;"), "{vue}");
     let plain = compile_declarations_for(source, "picker.zb", Framework::None).unwrap();
     assert!(plain.contains("export default ZbPicker;\n"), "{plain}");
+}
+
+// ---- types said in the description: `@prop {Type} name` and `@fires {Type} name` (#270)
+
+const CARD: &str = r#"<!--
+  One playing card.
+  @prop {{ kind: "pip"; suit: "spades" | "hearts"; rank: number } | { kind: "joker"; size: "big" | "little" }} card - The card to draw.
+  @prop playable - Whether a tap picks it.
+  @fires pick - A playable card was tapped.
+  @fires {number | "nil" | "blind-nil"} bid - A bid was chosen.
+-->
+<script>
+  import { emit } from '@zubra/runtime'
+</script>
+<playing-card card={{ kind: "pip", suit: "spades", rank: 14 }} playable={false}>
+  <button onclick={() => emit('pick')}>{card.kind}</button>
+  <button onclick={() => emit('bid', 3)}>3</button>
+  <button onclick={() => emit('bid', 'nil')}>nil</button>
+</playing-card>"#;
+const CARD_TYPE: &str = r#"{ kind: "pip"; suit: "spades" | "hearts"; rank: number } | { kind: "joker"; size: "big" | "little" }"#;
+
+#[test]
+fn a_prop_tag_gives_a_prop_its_type_and_its_description() {
+    // The default alone says `{ kind: string; suit: string; rank: number }`: one shape of three,
+    // its literals widened.
+    let declarations = compile_declarations(CARD, "playing-card.zb").unwrap();
+    assert!(
+        declarations.contains(&format!("  /** The card to draw. Attribute `card`. Default: `{{\"kind\":\"pip\",\"suit\":\"spades\",\"rank\":14}}`. */\n  card: {CARD_TYPE};\n")),
+        "{declarations}"
+    );
+    assert!(
+        declarations.contains(&format!(
+            "export interface PlayingCardProps {{\n  card?: {CARD_TYPE};\n"
+        )),
+        "the props interface too: {declarations}"
+    );
+    // A tag with no type documents the prop, whose type stays the default's.
+    assert!(
+        declarations.contains("  /** Whether a tap picks it. Attribute `playable`. Default: `false`. */\n  playable: boolean;\n"),
+        "{declarations}"
+    );
+    assert!(
+        declarations.contains("/**\n * One playing card.\n */\n"),
+        "the tags' lines are theirs, not the component's description: {declarations}"
+    );
+
+    let manifest: serde_json::Value =
+        serde_json::from_str(&compile_manifest(CARD, "playing-card.js").unwrap()).unwrap();
+    let declaration = &manifest["modules"][0]["declarations"][0];
+    assert_eq!(declaration["description"], "One playing card.");
+    assert_eq!(declaration["members"][0]["type"]["text"], CARD_TYPE);
+    assert_eq!(
+        declaration["members"][0]["description"],
+        "The card to draw."
+    );
+    assert_eq!(
+        declaration["attributes"][0]["description"],
+        "The card to draw. JSON"
+    );
+    assert_eq!(
+        declaration["attributes"][1]["description"],
+        "Whether a tap picks it."
+    );
+    let data = compile_html_data(CARD).unwrap();
+    assert!(
+        data.contains("Whether a tap picks it. Type: `boolean`. Default: `false`."),
+        "{data}"
+    );
+}
+
+#[test]
+fn a_fires_tag_can_say_what_the_detail_is() {
+    // `emit('bid', 3)` and `emit('bid', 'nil')` read as `number | string`; a variable as `unknown`.
+    let declarations = compile_declarations(CARD, "playing-card.zb").unwrap();
+    assert!(
+        declarations.contains(
+            "  /** A bid was chosen. */\n  bid: CustomEvent<number | \"nil\" | \"blind-nil\">;"
+        ),
+        "{declarations}"
+    );
+    assert!(
+        declarations.contains("  pick: CustomEvent<null>;"),
+        "one without a type is still read off its calls: {declarations}"
+    );
+    // The type may follow the name, where `@fires name - text` already had it.
+    let after = CARD.replace(
+        "@fires {number | \"nil\" | \"blind-nil\"} bid -",
+        "@fires bid {number | \"nil\" | \"blind-nil\"} -",
+    );
+    assert_eq!(
+        compile_declarations(&after, "playing-card.zb").unwrap(),
+        declarations
+    );
+    let manifest: serde_json::Value =
+        serde_json::from_str(&compile_manifest(CARD, "playing-card.js").unwrap()).unwrap();
+    assert_eq!(
+        manifest["modules"][0]["declarations"][0]["events"][1],
+        serde_json::json!({ "name": "bid", "type": { "text": "CustomEvent<number | \"nil\" | \"blind-nil\">" }, "description": "A bid was chosen." })
+    );
+    // A two-way prop's event carries the prop's type, unless its tag says otherwise.
+    let model = "<!--\n  @fires {string | null} valuechange - Changed.\n-->\n<zb-field value:model=\"\">\n  <input value={value} oninput={(event) => (value = event.target.value)}>\n</zb-field>";
+    let declarations = compile_declarations(model, "field.zb").unwrap();
+    assert!(
+        declarations.contains("  valuechange: CustomEvent<string | null>;"),
+        "{declarations}"
+    );
+    let untyped = model.replace("{string | null} ", "");
+    let declarations = compile_declarations(&untyped, "field.zb").unwrap();
+    assert!(
+        declarations.contains("  valuechange: CustomEvent<string>;"),
+        "{declarations}"
+    );
+}
+
+#[test]
+fn a_tags_type_may_name_the_scripts_own_types() {
+    // A TypeScript script's types go into the typings, so a tag can use their names.
+    let source = "<!--\n  @prop {Card} card - The card.\n  @fires {Bid} bid\n-->\n<script lang=\"ts\">\n  import { emit } from '@zubra/runtime'\n  export type Card = { kind: 'pip'; rank: number } | { kind: 'joker' }\n  type Bid = number | 'nil'\n</script>\n<playing-card card={{ kind: \"pip\", rank: 14 }}>\n  <button onclick={() => emit('bid', 3)}>{card.kind}</button>\n</playing-card>";
+    let declarations = compile_declarations(source, "playing-card.zb").unwrap();
+    assert!(
+        declarations.contains("export type Card = "),
+        "{declarations}"
+    );
+    assert!(declarations.contains("  card: Card;\n"), "{declarations}");
+    assert!(
+        declarations.contains("  bid: CustomEvent<Bid>;"),
+        "{declarations}"
+    );
+    // JSDoc's other spelling of the tag.
+    let long = source.replace("@prop {Card}", "@property {Card}");
+    assert_eq!(
+        compile_declarations(&long, "playing-card.zb").unwrap(),
+        declarations
+    );
+}
+
+#[test]
+fn a_tag_that_cannot_be_right_is_an_error() {
+    let message = |source: &str| {
+        let error = js(source).unwrap_err();
+        (error.message, error.help)
+    };
+    // A prop that isn't there.
+    let (text, help) = message(&CARD.replace("} card -", "} crad -"));
+    assert!(
+        text.contains("documents `@prop crad`, but there's no prop `crad`"),
+        "{text}"
+    );
+    assert_eq!(help.as_deref(), Some("did you mean `card`?"));
+    // The same prop twice.
+    let (text, _) = message(&CARD.replace("@prop playable", "@prop card"));
+    assert!(text.contains("`@prop card` twice"), "{text}");
+    // Not a type, or more than one.
+    for wrong in ["{number |}", "{number); (string}", "{}"] {
+        let (text, help) = message(&CARD.replace("{number | \"nil\" | \"blind-nil\"}", wrong));
+        assert!(text.contains("isn't a TypeScript type"), "{wrong}: {text}");
+        assert!(help.unwrap_or_default().contains("{string[]}"));
+    }
+    // A brace left open.
+    let (text, _) = message(&CARD.replace("\"blind-nil\"} bid", "\"blind-nil\" bid"));
+    assert!(text.contains("is never closed"), "{text}");
+    // Typed in the script as well: one of them is wrong, sooner or later.
+    let twice = "<!--\n  @prop {number} size\n-->\n<script lang=\"ts\">\n  declare const size: number | null\n</script>\n<zb-x size={1}><p>{size}</p></zb-x>";
+    let error = js(twice).unwrap_err();
+    assert!(
+        error.message.contains("`size` is given a type twice"),
+        "{}",
+        error.message
+    );
+    assert_eq!(error.span.line, 5, "at the script's declaration");
+    // A brace inside a string in the type doesn't end it.
+    let odd = CARD.replace("\"blind-nil\"}", "\"}\"}");
+    let declarations = compile_declarations(&odd, "playing-card.zb").unwrap();
+    assert!(
+        declarations.contains("  bid: CustomEvent<number | \"nil\" | \"}\">;"),
+        "{declarations}"
+    );
 }
