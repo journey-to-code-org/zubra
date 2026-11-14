@@ -61,6 +61,12 @@ export interface EdgeOptions {
    * load. By default it has one per module, so the browser fetches them together.
    */
   preload?: boolean;
+  /**
+   * `true`: the pages load the runtime as one file, `<prefix>/runtime/zubra.js`, where they loaded
+   * its entry and the six modules that imports. Serve `@zubra/runtime`'s `dist/bundled` under
+   * `<prefix>/runtime/` (where `dist/production` would go). Off by default in 5.x.
+   */
+  bundle?: boolean;
 }
 
 export declare function createZubra(options: EdgeOptions): EdgeZubra;

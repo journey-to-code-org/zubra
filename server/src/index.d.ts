@@ -113,6 +113,12 @@ export interface ZubraOptions {
    * load. By default it has one per module, so the browser fetches them together.
    */
   preload?: boolean;
+  /**
+   * `true`: in production the runtime is served as one file (`runtime/zubra.js`, from
+   * `@zubra/runtime`'s `dist/bundled`) where a page loaded its entry and the six modules that
+   * imports. No effect in development or with the DevTools. Off by default in 5.x.
+   */
+  bundle?: boolean;
 }
 
 export declare function createZubra(options?: ZubraOptions): Zubra;

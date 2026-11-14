@@ -123,3 +123,13 @@ test('dist/production as served fits its budget', (t) => {
   t.diagnostic(`dist/production/index.js and its ${sizes.size - 1} imports: ${total} B gzip, file by file`);
   assert.ok(total <= SERVED, `${total} B gzip > ${SERVED} B`);
 });
+
+// The same as one file (`dist/bundled/zubra.js`, what `@zubra/server` sends with `bundle`): the
+// modules compress together. 18.6 KB file by file, 16.0 KB as one (5.15).
+const BUNDLED = 16.25 * 1024;
+
+test('dist/bundled/zubra.js fits its budget, under the file-by-file build', (t) => {
+  const size = gzipSync(readFileSync(join(here, '../../dist/bundled/zubra.js'), 'utf8')).length;
+  t.diagnostic(`dist/bundled/zubra.js: ${size} B gzip`);
+  assert.ok(size <= BUNDLED, `${size} B gzip > ${BUNDLED} B`);
+});

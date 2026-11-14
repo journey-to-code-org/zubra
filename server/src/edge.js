@@ -14,7 +14,7 @@
 // the import map at a CDN with `imports`. Everything else, including streaming (`page().streamResponse`)
 // and `injectShadowRoots`, is the Node entry's, from the same code (`core.js`).
 import { createCompiler } from '@zubra/compiler/wasm';
-import runtimeModules from '@zubra/runtime/modules';
+import runtimeModules, { bundled as bundledModules } from '@zubra/runtime/modules';
 import { createCore, parseAttributes, propsFrom, SOURCE_EXTENSION } from './core.js';
 
 export { parseAttributes, propsFrom };
@@ -36,9 +36,11 @@ function normalize(path) {
  * or with it (`forms/field.zb`, `card.zb.tsx`) when the extension isn't `.zb`. Components import
  * each other by relative path, as they do on disk. The other options are `createZubra`'s: `prefix`,
  * `cache`, `devtools` (off by default here: the DevTools need the runtime's development build,
- * which you would have to serve yourself) and `imports`.
+ * which you would have to serve yourself) and `imports`. `bundle: true`: the pages load the
+ * runtime as one file, `<prefix>/runtime/zubra.js`; serve `@zubra/runtime`'s `dist/bundled` there
+ * (where `dist/production` would otherwise go).
  */
-export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : null, components = {}, prefix = '/_zubra', cache = true, devtools = false, imports = {}, warn, gaps, clientModules, inline, preload } = {}) {
+export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : null, components = {}, prefix = '/_zubra', cache = true, devtools = false, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false } = {}) {
   if (!compiler) throw new Error("@zubra/server/edge: createZubra() needs the compiler's WebAssembly module (`wasm`), or a `compiler` from createCompiler()");
   const sources = new Map(); // path → source
   const files = new Map(); // name → path
@@ -79,7 +81,8 @@ export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : nul
     clientModules,
     inline,
     preload,
-    runtimeModules,
+    bundle: Boolean(bundle),
+    runtimeModules: bundle ? bundledModules : runtimeModules,
     request: (body) => compiler.request(body),
     files,
     sourcesOf: (path) => sourcesOf(path),

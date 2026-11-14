@@ -5,3 +5,9 @@
  */
 declare const modules: Record<string, string[]>;
 export default modules;
+
+/**
+ * The same for the bundled build (`dist/bundled/<name>`), where the entry and the modules it
+ * imports are one file, `zubra.js`.
+ */
+export declare const bundled: Record<string, string[]>;

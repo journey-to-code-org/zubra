@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { production } from '../../scripts/build-production.js';
+import { production, bundle, BUNDLE } from '../../scripts/build-production.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -41,4 +41,55 @@ test('@hot and @dev fences', () => {
   assert.throws(() => production('a\n// @dev\nb'), /without its end/);
   assert.throws(() => production('// @hot-end'), /@hot-end without its start/);
   assert.throws(() => production('// @dev-end'), /@dev-end without its start/);
+});
+
+test('dist/bundled: the entry and what it imports are one module, and every other module shares it', async () => {
+  const dir = join(root, 'dist/bundled');
+  const [prod, one, entry] = await Promise.all([import('../../dist/production/index.js'), import('../../dist/bundled/zubra.js'), import('../../dist/bundled/index.js')]);
+  // zubra.js imports nothing, statically: it is the whole of the entry's graph.
+  assert.doesNotMatch(readFileSync(join(dir, BUNDLE), 'utf8'), /(?:\bfrom|\bimport)\s*["']/);
+  // The entry's exports, and what the other modules take from inside (an effect's root).
+  assert.deepEqual(Object.keys(entry).sort(), Object.keys(prod).sort());
+  for (const name of Object.keys(prod)) assert.equal(entry[name], one[name], name);
+  for (const name of ['root', 'batch', 'wrap']) assert.equal(typeof one[name], 'function', name);
+  // The modules that went in are still there by name, and give the same things: one signal
+  // graph, whichever file a module (or @zubra/sync) imports from.
+  const [signal, effect, element, track] = await Promise.all(['signal.js', 'effect.js', 'element.js', 'track.js'].map((name) => import(`../../dist/bundled/${name}`)));
+  assert.equal(signal.Signal, one.Signal);
+  assert.equal(effect.effect, one.effect);
+  assert.equal(effect.root, one.root);
+  assert.equal(element.define, one.define);
+  for (const name of ['spread.js', 'track.js', 'bridge.js', 'context-element.js', 'zag.js']) {
+    const code = readFileSync(join(dir, name), 'utf8');
+    assert.match(code, /from"\.\/zubra\.js"/, name);
+    assert.doesNotMatch(code, /from"\.\/(?:signal|effect|element|deep|resource|index|signal-impl)\.js"/, name);
+  }
+  // And it runs: an effect from one file sees a signal from another.
+  const count = new signal.Signal.State(1);
+  const seen = [];
+  const stop = effect.effect(() => seen.push(count.get()));
+  count.set(2);
+  one.flush();
+  assert.deepEqual(seen, [1, 2]);
+  stop();
+  assert.equal(Object.keys(track).length, 1);
+});
+
+test('bundle(): a name is given only by the module it belongs to, and a module that takes another is refused', () => {
+  const sources = {
+    'index.js': 'import{a as x}from"./one.js";import{pick as y}from"./pick.js";export{x as a,y as pick};',
+    'one.js': 'export const a=1;export const inner=2;',
+    'pick.js': 'import{pick as p}from"./impl.js";export const pick=globalThis.pick??p;',
+    'impl.js': 'export const pick=3;',
+    'other.js': 'import{inner as i}from"./one.js";export const b=i;',
+    'lone.js': 'export const c=4;',
+  };
+  const out = bundle(sources);
+  assert.deepEqual(Object.keys(out).sort(), ['index.js', 'lone.js', 'one.js', 'other.js', 'pick.js', BUNDLE].sort(), 'impl.js has nothing of its own to give');
+  assert.match(out['one.js'], /export\{a,inner\}from"\.\/zubra\.js"/);
+  assert.match(out['pick.js'], /export\{pick\}from"\.\/zubra\.js"/);
+  assert.equal(out['other.js'], 'import{inner as i}from"./zubra.js";export const b=i;');
+  assert.equal(out['lone.js'], sources['lone.js'], 'a module outside the graph is as it was');
+  assert.throws(() => bundle({ ...sources, 'other.js': 'import{pick as p}from"./impl.js";export const b=p;' }), /other\.js imports pick from impl\.js/);
+  assert.throws(() => bundle({ ...sources, 'other.js': 'import*as all from"./one.js";export const b=all.a;' }), /other than by name/);
 });
