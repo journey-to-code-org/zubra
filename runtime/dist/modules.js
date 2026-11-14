@@ -69,3 +69,63 @@ export default {
     "element.js"
   ]
 };
+
+// The same for dist/bundled, where the entry and what it imports are one file (zubra.js).
+export const bundled = {
+  "bridge.js": [
+    "zubra.js"
+  ],
+  "context-element.js": [
+    "zubra.js"
+  ],
+  "context.js": [
+    "context-element.js"
+  ],
+  "deep.js": [
+    "zubra.js"
+  ],
+  "effect.js": [
+    "zubra.js"
+  ],
+  "element.js": [
+    "zubra.js"
+  ],
+  "forms.js": [],
+  "index.js": [
+    "zubra.js"
+  ],
+  "motion.js": [],
+  "navigation.js": [],
+  "outlet.js": [],
+  "primitives.js": [],
+  "react.js": [
+    "outlet.js",
+    "navigation.js",
+    "context-element.js",
+    "bridge.js"
+  ],
+  "remark.js": [],
+  "resource.js": [
+    "zubra.js"
+  ],
+  "server.js": [],
+  "signal.js": [
+    "zubra.js"
+  ],
+  "spread.js": [
+    "zubra.js"
+  ],
+  "testing.js": [],
+  "track.js": [
+    "zubra.js"
+  ],
+  "vue.js": [
+    "navigation.js",
+    "context-element.js",
+    "bridge.js"
+  ],
+  "zag.js": [
+    "zubra.js"
+  ],
+  "zubra.js": []
+};

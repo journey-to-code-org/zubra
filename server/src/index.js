@@ -22,7 +22,7 @@ import { StringDecoder } from 'node:string_decoder';
 import * as nodeStream from 'node:stream';
 const { Transform } = nodeStream;
 import { findCompiler } from './compiler.js';
-import runtimeModules from '@zubra/runtime/modules';
+import runtimeModules, { bundled as bundledModules } from '@zubra/runtime/modules';
 import { createCore, joinPath, parseAttributes, propsFrom, SOURCE_EXTENSION as SOURCE, TYPES } from './core.js';
 
 export { findCompiler, parseAttributes, propsFrom };
@@ -44,10 +44,13 @@ const posix = (path) => path.split(sep).join('/');
  * page's head and scripts (stylesheet links, module scripts by `src`, and no import map: the
  * modules are served with their imports resolved), for a Content-Security-Policy without
  * `'unsafe-inline'`; `page({ nonce })` is the other way, where each response can have a nonce.
+ * `bundle: true`: in production, serve the runtime as one file (`@zubra/runtime`'s `dist/bundled`):
+ * a page loads `runtime/zubra.js` where it loaded `runtime/index.js` and the six modules that
+ * imports. Off by default in 5.x; it has no effect in development or with the DevTools.
  *
  * Everything that doesn't need a disk is in `core.js`, shared with `edge.js` (Workers).
  */
-export function createZubra({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = process.env.NODE_ENV === 'production', devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload } = {}) {
+export function createZubra({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = process.env.NODE_ENV === 'production', devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false } = {}) {
   const root = resolve(components);
   // The folder as the disk has it, links resolved: what a served module's real path must be inside.
   const realRoot = existsSync(root) ? realpathSync(root) : root;
@@ -55,7 +58,11 @@ export function createZubra({ components = 'components', packages = [], prefix =
   const sourceDir = dirname(fileURLToPath(import.meta.resolve('@zubra/runtime')));
   const productionDir = join(sourceDir, '..', 'dist', 'production');
   // The Zubra DevTools need the runtime's development build, whose hook the production one leaves out.
-  const runtimeDir = production && !devtools && existsSync(productionDir) ? productionDir : sourceDir;
+  // `bundle`: the production build with the entry and its imports as one file. Development and
+  // the DevTools keep the runtime file by file, as it is read and edited.
+  const bundledDir = join(sourceDir, '..', 'dist', 'bundled');
+  const bundling = Boolean(bundle) && production && !devtools && existsSync(bundledDir);
+  const runtimeDir = bundling ? bundledDir : production && !devtools && existsSync(productionDir) ? productionDir : sourceDir;
   const base = prefix.replace(/\/$/, '');
 
   // @zubra/sync, for components that start with 'use collection': found from the components
@@ -136,7 +143,8 @@ export function createZubra({ components = 'components', packages = [], prefix =
     clientModules,
     inline,
     preload,
-    runtimeModules,
+    bundle: bundling,
+    runtimeModules: bundling ? bundledModules : runtimeModules,
     // The compiler keys a context by its module's path, joined to the importing component's.
     contextKey: ({ module, export: name }) => `${joinPath(posix(root), module)}#${name}`,
     // A `.js` file in the components folder, served as it is (core serves only those a browser
