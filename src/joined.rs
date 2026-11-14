@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 
 use oxc_ast::ast::{
     ExportDefaultDeclarationKind, Expression, ImportDeclarationSpecifier, ImportExpression,
-    ImportMeta, Statement,
+    ImportMeta, Statement, StringLiteral, TemplateLiteral,
 };
 use oxc_ast_visit::Visit;
 use oxc_span::GetSpan;
@@ -409,6 +409,7 @@ fn part(
     for (start, end, text) in edits {
         body.replace_range(start as usize..end as usize, &text);
     }
+    let body = compact(&body);
     let mut globals: Vec<String> = scoping
         .root_unresolved_references()
         .keys()
@@ -421,6 +422,103 @@ fn part(
         needs,
         globals,
     })
+}
+
+/// Text whose line breaks and spaces are part of a value: a template literal, and a string
+/// carried over a line end.
+#[derive(Default)]
+struct Kept {
+    spans: Vec<(usize, usize)>,
+}
+
+impl<'a> Visit<'a> for Kept {
+    fn visit_template_literal(&mut self, literal: &TemplateLiteral<'a>) {
+        self.spans
+            .push((literal.span.start as usize, literal.span.end as usize));
+    }
+
+    fn visit_string_literal(&mut self, literal: &StringLiteral<'a>) {
+        self.spans
+            .push((literal.span.start as usize, literal.span.end as usize));
+    }
+}
+
+/// `code` without what only a reader needs: comments, the spaces a line starts and ends with,
+/// and empty lines. Lines stay lines (a line end can end a statement), and nothing inside a
+/// template literal or a string changes. Code that doesn't parse is returned as it is.
+fn compact(code: &str) -> String {
+    let allocator = oxc_allocator::Allocator::default();
+    let parsed = oxc_parser::Parser::new(&allocator, code, oxc_span::SourceType::mjs()).parse();
+    if !parsed.diagnostics.is_empty() {
+        return code.to_owned();
+    }
+    let mut kept = Kept::default();
+    kept.visit_program(&parsed.program);
+    kept.spans.sort_unstable();
+    let mut comments: Vec<(usize, usize)> = parsed
+        .program
+        .comments
+        .iter()
+        .map(|comment| (comment.span.start as usize, comment.span.end as usize))
+        .collect();
+    comments.sort_unstable();
+    // Without the comments: a block comment leaves what it stood for (a space, or a line end if
+    // it had one), a line comment nothing. Where the kept text is afterwards, in `out`.
+    let mut out = String::with_capacity(code.len());
+    let mut kept_out: Vec<(usize, usize)> = Vec::new();
+    let mut at = 0;
+    let mut next_kept = kept.spans.iter().peekable();
+    for (start, end) in comments {
+        if start < at {
+            continue;
+        }
+        while let Some(&&(from, to)) = next_kept.peek() {
+            if from >= start {
+                break;
+            }
+            if from >= at {
+                kept_out.push((out.len() + from - at, out.len() + to - at));
+            }
+            next_kept.next();
+        }
+        out.push_str(&code[at..start]);
+        let text = &code[start..end];
+        if text.starts_with("/*") {
+            out.push(if text.contains('\n') { '\n' } else { ' ' });
+        }
+        at = end;
+    }
+    for &(from, to) in next_kept {
+        if from >= at {
+            kept_out.push((out.len() + from - at, out.len() + to - at));
+        }
+    }
+    out.push_str(&code[at..]);
+    // Line by line: trimmed at each end that isn't inside kept text, and dropped if empty.
+    let inside = |offset: usize| {
+        kept_out
+            .iter()
+            .any(|&(from, to)| from < offset && offset < to)
+    };
+    let mut lines = String::with_capacity(out.len());
+    let mut start = 0;
+    for line in out.split_inclusive('\n') {
+        let end = start + line.trim_end_matches('\n').len();
+        let (open, close) = (inside(start), inside(end));
+        let mut text = &out[start..end];
+        if !open {
+            text = text.trim_start();
+        }
+        if !close {
+            text = text.trim_end();
+        }
+        if !text.is_empty() || open || close {
+            lines.push_str(text);
+            lines.push('\n');
+        }
+        start += line.len();
+    }
+    lines
 }
 
 #[cfg(test)]
@@ -457,8 +555,8 @@ import { $define, emit, state as s } from \"@zubra/runtime\";\n\
 import { money } from \"../components/lib/money.js\";\n\
 import theme from \"/vendor/theme.js\";\n\
 import * as all from \"/vendor/theme.js\";\n\
-{\n\n\nconst tag = \"ds-badge\";\nconst helper = () => s(theme, all);\nvoid ($define(tag, { helper }));\n}\n\
-{\n\n\n\nconst tag = \"ds-table\";\nvoid ($define(tag, { setup() { return money(emit) } }));\n}\n"
+{\nconst tag = \"ds-badge\";\nconst helper = () => s(theme, all);\nvoid ($define(tag, { helper }));\n}\n\
+{\nconst tag = \"ds-table\";\nvoid ($define(tag, { setup() { return money(emit) } }));\n}\n"
         );
     }
 
@@ -481,7 +579,7 @@ import * as all from \"/vendor/theme.js\";\n\
             "{joined}"
         );
         assert!(
-            joined.contains("{\nvoid (class {});\n}\n{\nfunction one() {}\nclass Two {}\nconst three = 3;\n\nfunction five() {}\n}\n{\nvoid ({ a: 1 });\n}\n"),
+            joined.contains("{\nvoid (class {});\n}\n{\nfunction one() {}\nclass Two {}\nconst three = 3;\nfunction five() {}\n}\n{\nvoid ({ a: 1 });\n}\n"),
             "{joined}"
         );
     }
@@ -592,7 +690,7 @@ import * as all from \"/vendor/theme.js\";\n\
         assert!(joined.starts_with("// Generated by zubra: components/b.js, components/a.js, components/c.js as one module. Do not edit.\nimport { emit } from \"@zubra/runtime\";\nimport { format } from \"../lib/format.js\";\n{\n"), "{joined}");
         assert!(joined.contains("const text = \"import x from './nowhere.js'\";"));
         assert!(
-            joined.contains("{\n\n\nconst format = 1;\nemit(format);\n}"),
+            joined.contains("{\nconst format = 1;\nemit(format);\n}"),
             "{joined}"
         );
         assert_eq!(
@@ -601,6 +699,30 @@ import * as all from \"/vendor/theme.js\";\n\
             "two imports, and the text"
         );
         assert!(joined.contains("return import('pkg/lazy');"));
+    }
+
+    #[test]
+    fn a_block_has_no_comments_indentation_or_empty_lines_and_its_text_is_untouched() {
+        let code = "// Generated. Do not edit.\n\nconst a = 1; // one\n  const b = /* two */ 2;   \n\n  function run() {\n    /* a note\n       over lines */ return a\n    + b;\n  }\n  const text = `\n    kept // as is\n\n  /* too */  `;\n  const long = 'one \\\n    two';\n  const url = 'http://x/y'; const re = /\\/\\/ x/;\n\t\n";
+        assert_eq!(
+            compact(code),
+            "const a = 1;\nconst b =   2;\nfunction run() {\nreturn a\n+ b;\n}\nconst text = `\n    kept // as is\n\n  /* too */  `;\nconst long = 'one \\\n    two';\nconst url = 'http://x/y'; const re = /\\/\\/ x/;\n"
+        );
+        // What doesn't parse is left alone.
+        assert_eq!(compact("const = ; // x\n"), "const = ; // x\n");
+        // And in a joined module: each block's body, compacted.
+        let joined = join(
+            &modules(&[(
+                "components/a.js",
+                "// Generated by zubra from a.zb. Do not edit.\nexport default $define('x-a', {\n  template: `\n  <b> x </b>`,\n  setup() {\n    // parts\n    return [];\n  },\n});\n",
+            )]),
+            "b/x.js",
+        )
+        .unwrap();
+        assert_eq!(
+            joined,
+            "// Generated by zubra: components/a.js as one module. Do not edit.\n{\nvoid ($define('x-a', {\ntemplate: `\n  <b> x </b>`,\nsetup() {\nreturn [];\n},\n}));\n}\n"
+        );
     }
 
     #[test]
