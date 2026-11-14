@@ -126,6 +126,8 @@ The folder (relative to the app's root) mirrors the root: `src/rating.zb` is typ
 { "compilerOptions": { "paths": { "@acme/ui/*": ["./.zubra/types/__/ui/*", "../ui/*"] } } }
 ```
 
+Keep the typings folder first in `paths`, before the real source folder. TypeScript reads a `.d.zb.ts` beside a component through the source path, so a source path listed first hides the typings folder.
+
 Set the option in every app that builds the shared folder and delete the `*.d.zb.ts` files already beside the components: TypeScript reads one beside a component first, and the build warns when it finds one. Ignore the folder in git, and run `tsc` after a build: before the first one the folder is empty and `.zb` imports are typed loosely, by `@zubra/unplugin/client`.
 
 In the editor you don't need these files: the VS Code extension's TypeScript plugin types `.zb` imports from the components directly, updated each time one is saved (see [Editor support](../docs/editor-support.md)). They're for `tsc` in builds and CI.

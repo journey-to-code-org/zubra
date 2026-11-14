@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,6 +52,73 @@ test('every bundler entry has typings, and a Vite config type-checks with option
     `,
   });
   assert.deepEqual(errors, []);
+});
+
+/** An app as the README sets it up, inside plugin/, where `@zubra/unplugin` resolves to this package. */
+function appProject(name, files) {
+  const root = join(here, '.tmp', `dts-${name}`);
+  rmSync(root, { recursive: true, force: true });
+  mkdirSync(join(root, 'node_modules', '@zubra'), { recursive: true });
+  symlinkSync(join(here, '..'), join(root, 'node_modules', '@zubra', 'unplugin'), 'dir');
+  for (const [file, source] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, file)), { recursive: true });
+    writeFileSync(join(root, file), source);
+  }
+  return root;
+}
+
+/** The app's `tsc -p`, with its errors (or none). */
+function checkApp(root) {
+  const result = spawnSync(process.execPath, [tsc, '-p', join(root, 'app', 'tsconfig.json')], { encoding: 'utf8', cwd: root });
+  return (result.stdout + result.stderr).split('\n').filter((line) => /error TS\d+/.test(line));
+}
+
+/** An app's tsconfig: the typings folder's mapping first, then the real source, as the README has it. */
+function appConfig(paths) {
+  return JSON.stringify({
+    compilerOptions: {
+      module: 'esnext', moduleResolution: 'bundler', strict: true, noEmit: true,
+      allowArbitraryExtensions: true, types: ['@zubra/unplugin/client'],
+      paths: { '@ui/*': paths },
+    },
+    include: ['src'],
+  });
+}
+const ui = ['./.zubra/types/__/ui/*', '../ui/*'];
+const main = "import Badge from '@ui/src/status-badge.zb';\nexport const badge: number = Badge;\n";
+
+test('a fresh checkout: an aliased .zb import type-checks before the first build', () => {
+  const root = appProject('fresh', {
+    'app/tsconfig.json': appConfig(ui),
+    'app/src/main.ts': "import Badge from '@ui/src/status-badge.zb';\nexport const badge = Badge;\n",
+    'ui/src/status-badge.zb': '<status-badge></status-badge>\n',
+  });
+  assert.deepEqual(checkApp(root), []);
+});
+
+test('with typings, an aliased .zb import is typed by the typings folder', () => {
+  const root = appProject('typed', {
+    'app/tsconfig.json': appConfig(ui),
+    'app/src/main.ts': main,
+    'app/.zubra/types/__/ui/src/status-badge.d.zb.ts': 'declare const Badge: { variant: string };\nexport default Badge;\n',
+    'ui/src/status-badge.zb': '<status-badge></status-badge>\n',
+  });
+  const errors = checkApp(root);
+  assert.equal(errors.length, 1, errors.join('\n'));
+  assert.match(errors[0], /\{ variant: string; \}/);
+});
+
+test('a typings file beside a component is read first when the source path is listed first', () => {
+  const files = {
+    'app/src/main.ts': main,
+    'app/.zubra/types/__/ui/src/status-badge.d.zb.ts': 'declare const Badge: { variant: string };\nexport default Badge;\n',
+    'ui/src/status-badge.zb': '<status-badge></status-badge>\n',
+    'ui/src/status-badge.d.zb.ts': 'declare const Badge: { size: number };\nexport default Badge;\n',
+  };
+  const inOrder = checkApp(appProject('order-ok', { ...files, 'app/tsconfig.json': appConfig(ui) }));
+  assert.match(inOrder.join('\n'), /\{ variant: string; \}/, 'the typings folder first: the app reads its own typings');
+  const reversed = checkApp(appProject('order-bad', { ...files, 'app/tsconfig.json': appConfig([...ui].reverse()) }));
+  assert.match(reversed.join('\n'), /\{ size: number; \}/, 'the source first: the typings beside the component hide the folder');
 });
 
 test('a wrong option is a type error', () => {
