@@ -142,12 +142,19 @@ test('bundle: in a browser the page works and asks for one runtime module', asyn
 const scriptOf = (html) => html.match(/<script type="module"[^>]*>([^<]*)<\/script>/)?.[1] ?? html.match(/<script type="module"[^>]* src="([^"]+)"/)?.[1];
 const withComponents = (sources, run) => {
   const dir = mkdtempSync(join(tmpdir(), 'zubra-joined-'));
+  const done = () => rmSync(dir, { recursive: true, force: true });
+  let result;
   try {
     for (const [name, source] of Object.entries(sources)) writeFileSync(join(dir, name), source);
-    return run(dir);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+    result = run(dir);
+  } catch (error) {
+    done();
+    throw error;
   }
+  // (A test that goes on in a browser keeps the folder until it is through.)
+  if (typeof result?.then === 'function') return result.finally(done);
+  done();
+  return result;
 };
 const using = (tag, script, body = '<button onclick={() => (n = n + 1)}>{n}</button>') => `<script>\n${script}\n  let n = 0\n</script>\n<${tag}>\n  ${body}\n</${tag}>\n`;
 
@@ -280,4 +287,90 @@ test('bundle with inline: false: the page names the joined module by src, and it
   const body = get(zubra, url).body;
   assert.match(body, /^import \{[^}]*\} from "\/_zubra\/runtime\/zubra\.js";$/m);
   assert.doesNotMatch(body, /@zubra\/runtime"/);
+});
+
+// A joined module's light-DOM components don't carry the CSS the page's head already has.
+const styled = (tag, script, color, host = '') => `<script>\n${script}\n  let n = 0\n</script>\n<style>\n  button { color: ${color}; }\n</style>\n<${tag}${host}>\n  <button onclick={() => (n = n + 1)}>{n}</button>${tag.endsWith('-one') ? `<${tag.replace('-one', '-two')}></${tag.replace('-one', '-two')}>` : ''}\n</${tag}>\n`;
+const lightPair = { 'd-one.zb': styled('d-one', "  import './d-two.zb'", 'rgb(255, 0, 0)'), 'd-two.zb': styled('d-two', '', 'rgb(0, 0, 255)') };
+
+test("bundle: the head says whose CSS it has, and a joined light-DOM component has its stylesheet's address, not the text", () => {
+  withComponents(lightPair, (dir) => {
+    const zubra = createZubra({ components: dir, production: true, bundle: true });
+    const page = zubra.page();
+    page.render('d-one', {});
+    const html = page.finish(layout(''));
+    assert.match(html, /<style data-zb-components="d-one d-two">/, 'the component rendered and the one it imports');
+    assert.ok(html.includes('rgb(255, 0, 0)') && html.includes('rgb(0, 0, 255)'), 'both are in the head');
+    const body = get(zubra, html.match(/\/_zubra\/b\/[^'"]+\.js/)[0]).body;
+    assert.match(body, /styled: true,\n\s*stylesHref: "\/_zubra\/components\/d-one\.css",\n\s*inPage: true,/);
+    assert.match(body, /stylesHref: "\/_zubra\/components\/d-two\.css"/);
+    assert.ok(!body.includes('rgb(') && !/\bstyles:/.test(body), 'no CSS text in the module');
+    // The address is served (for an element inside a shadow root), with what the head has for it.
+    const sheet = get(zubra, '/_zubra/components/d-two.css');
+    assert.equal(sheet.status, 200);
+    assert.ok(sheet.body.includes('rgb(0, 0, 255)'));
+    // The component's own module, by its own URL, is as it always was.
+    assert.ok(get(zubra, '/_zubra/components/d-one.js').body.includes('rgb(255, 0, 0)'));
+    // Without `bundle` nothing changes: no names in the head, no stylesheet URL.
+    const plain = createZubra({ components: dir, production: true });
+    const plainPage = plain.page();
+    plainPage.render('d-one', {});
+    assert.match(plainPage.finish(layout('')), /<style data-zb-components>/);
+    assert.equal(get(plain, '/_zubra/components/d-two.css').status, 404);
+  });
+});
+
+test('bundle: where a component of the set has a shadow root, every module keeps its CSS text', () => {
+  withComponents({ 'e-one.zb': styled('e-one', "  import './e-two.zb'", 'rgb(255, 0, 0)', ' shadow'), 'e-two.zb': styled('e-two', '', 'rgb(0, 0, 255)') }, (dir) => {
+    const zubra = createZubra({ components: dir, production: true, bundle: true });
+    const page = zubra.page();
+    page.render('e-one', {});
+    const body = get(zubra, page.finish(layout('')).match(/\/_zubra\/b\/[^'"]+\.js/)[0]).body;
+    assert.ok(body.includes('rgb(255, 0, 0)') && body.includes('rgb(0, 0, 255)') && !body.includes('stylesHref'));
+  });
+});
+
+test('bundle with inline: false: each stylesheet link says whose CSS it has', () => {
+  withComponents(lightPair, (dir) => {
+    const page = createZubra({ components: dir, production: true, bundle: true, inline: false }).page();
+    page.render('d-one', {});
+    page.render('d-two', {});
+    const html = page.finish(layout(''));
+    assert.match(html, /<link rel="stylesheet" href="\/_zubra\/components\/d-one\.css" data-zb-components="d-one d-two">/);
+    assert.match(html, /<link rel="stylesheet" href="\/_zubra\/components\/d-two\.css" data-zb-components="d-two">/);
+  });
+});
+
+test("bundle: in a browser the joined light-DOM components are styled by the page's CSS, and fetch nothing for it", async () => {
+  await withComponents(lightPair, async (dir) => {
+    const zubra = createZubra({ components: dir, production: true, bundle: true });
+    const server = createServer((request, response) => {
+      if (zubra.handle(request, response)) return;
+      const page = zubra.page();
+      const body = page.render('d-one', {});
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end(page.finish(layout(`${body}<div id="host"></div>`)));
+    });
+    await new Promise((done) => server.listen(0, '127.0.0.1', done));
+    servers.push(server);
+    const page = await browser.newPage();
+    const asked = [];
+    const errors = [];
+    page.on('request', (request) => asked.push(new URL(request.url()).pathname));
+    page.on('pageerror', (error) => errors.push(String(error)));
+    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await page.waitForFunction(() => customElements.get('d-one') && customElements.get('d-two'));
+    await page.locator('d-one > button').click();
+    await page.waitForFunction(() => document.querySelector('d-one > button').textContent === '1');
+    const colors = await page.evaluate(() => ['d-one > button', 'd-two > button'].map((selector) => getComputedStyle(document.querySelector(selector)).color));
+    assert.deepEqual(colors, ['rgb(255, 0, 0)', 'rgb(0, 0, 255)']);
+    assert.equal(await page.evaluate(() => document.adoptedStyleSheets.length), 0, "the page's <style> is the only copy");
+    assert.deepEqual(asked.filter((path) => path.endsWith('.css')), []);
+    // Inside a shadow root the page's CSS doesn't reach: there the stylesheet is fetched.
+    await page.evaluate(() => document.getElementById('host').attachShadow({ mode: 'open' }).append(document.createElement('d-two')));
+    await page.waitForFunction(() => getComputedStyle(document.getElementById('host').shadowRoot.querySelector('button')).color === 'rgb(0, 0, 255)');
+    assert.deepEqual(asked.filter((path) => path.endsWith('.css')), ['/_zubra/components/d-two.css']);
+    assert.deepEqual(errors, []);
+    await page.close();
+  });
 });

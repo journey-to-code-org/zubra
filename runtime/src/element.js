@@ -1669,6 +1669,17 @@ function toSheet(css) {
   return sheet;
 }
 
+/**
+ * A sheet whose CSS is at `href`, fetched now: empty until it arrives (and for good if it
+ * doesn't). For a light-DOM component whose page carries its CSS, where only an element inside
+ * a shadow root needs the sheet at all (`stylesHref`).
+ */
+function fetchedSheet(href) {
+  const sheet = new CSSStyleSheet();
+  fetch(href).then((response) => (response.ok ? response.text() : '')).then((css) => sheet.replaceSync(css), () => {});
+  return sheet;
+}
+
 function adopt(root, sheets) {
   let has = adopted.get(root);
   if (!has) adopted.set(root, (has = new Set()));
@@ -1772,13 +1783,20 @@ const compiledAs = ({ template = '', styles = null, props = {}, shadow = false, 
 // @dev-end
 
 function defineElement(tag, definition) {
-  const { props = {}, shadow = false, form = false, events = [], styled = false, inPage = false } = definition;
+  const { props = {}, shadow = false, form = false, events = [], styled = false, inPage = false, stylesHref = null } = definition;
   let { roots, template = '', slots = [], styles = null, setup } = definition;
   // On a server (no DOM), a stand-in with the same `zubra` description, so a module that imports a
   // component loads there: adapters render the host tag, and `@zubra/runtime/server` renders it.
   if (typeof HTMLElement === 'undefined') return serverElement(tag, { props, shadow, form, slots, events, styled });
   let sheet; // created on first use, so define() needs no document
-  const ownSheets = () => (styles == null ? [] : [(sheet ??= toSheet(styles))]);
+  // A module with only the address takes the page's word for the CSS being there: the server
+  // names the components its `<style>` (or stylesheet links) carry, `data-zb-components="a-tag
+  // b-tag"`. On a page that doesn't name this one (a fragment swapped into another page, a
+  // page built without the server's head), the document gets the fetched sheet like any root.
+  let carried;
+  const pageHasStyles = () => styles != null || (carried ??= document.querySelector(`[data-zb-components~="${tag}"]`) !== null);
+  // (`stylesHref`: the page has the CSS and the module only its address; see `fetchedSheet`.)
+  const ownSheets = () => (styles == null ? (stylesHref ? [(sheet ??= fetchedSheet(stylesHref))] : []) : [(sheet ??= toSheet(styles))]);
   const existing = customElements.get(tag);
   if (existing) {
     // @hot (left out of the production build: scripts/build-production.js)
@@ -1908,13 +1926,13 @@ function defineElement(tag, definition) {
 
     connectedCallback() {
       // A light-DOM component's styles go where it is: the document, or a shadow root.
-      if (!shadow && styles != null) {
+      if (!shadow && (styles != null || stylesHref)) {
         // A light-DOM component's sheet goes to the root it's in, unless the bundler already put
         // it in the page (`inPage`) and that root is the document.
         // (A callback can run after the element was moved out again: then the root is a detached
         // tree, which has no stylesheets of its own.)
         const root = this.getRootNode();
-        if (root.adoptedStyleSheets && !(inPage && root === document)) adopt(root, ownSheets());
+        if (root.adoptedStyleSheets && !(inPage && root === document && pageHasStyles())) adopt(root, ownSheets());
       }
       if (this.#scope) this.#scope.resume();
       else if (!remarker && claimed(this) && lostComments(shadow ? this.shadowRoot : this, componentTemplate.content, roots)) {

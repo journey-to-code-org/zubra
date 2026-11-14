@@ -45,6 +45,12 @@ pub struct Options<'a> {
     /// How the `<style>` reaches the page: `None` inlines it in the module; `Some` imports it
     /// through the bundler's CSS pipeline (so Tailwind, PostCSS and preprocessors run on it).
     pub style_imports: Option<StyleImports<'a>>,
+    /// Where a light-DOM component's stylesheet is served, for a page that already carries it
+    /// (a server's `<style>` in the head): the module then has the address and not the text
+    /// (`stylesHref`, with `inPage`), and the runtime fetches it only for an element that turns
+    /// up inside a shadow root, where the page's CSS doesn't reach. A shadow component keeps
+    /// its text: every one of its roots needs the sheet at once.
+    pub styles_href: Option<&'a str>,
     /// For the browser DevTools (`--devtools`): the component's path, recorded with its host tag's
     /// location as the definition's `source`, with each part's line and column in it (`at`) and the script's
     /// signals by name (`$dev`). `None` emits none of it.
@@ -210,6 +216,7 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     // The stylesheet: inlined, or through the bundler.
     let mut styles = None;
     let mut in_page = false;
+    let mut href = None;
     if let Some(style) = &component.style {
         match options.style_imports {
             Some(imports) if component.shadow => {
@@ -233,6 +240,11 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
                     ));
                 }
                 styles = crate::styles::stylesheet(component).map(|css| json(&css));
+                if let (Some(address), false, true) =
+                    (options.styles_href, component.shadow, styles.is_some())
+                {
+                    href = Some(json(address));
+                }
             }
         }
     }
@@ -292,6 +304,10 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
         match (component.style.is_some(), styles) {
             (false, _) => String::new(),
             (true, None) => "  styled: true,\n".to_owned(),
+            (true, Some(_)) if href.is_some() => format!(
+                "  styled: true,\n  stylesHref: {},\n  inPage: true,\n",
+                href.as_deref().unwrap_or_default()
+            ),
             (true, Some(styles)) if in_page => format!("  styled: true,\n  styles: {styles},\n  inPage: true,\n"),
             (true, Some(styles)) => format!("  styled: true,\n  styles: {styles},\n"),
         },

@@ -555,6 +555,7 @@ pub fn compile_js(source: &str, runtime: &str, source_name: &str) -> Result<Stri
                 source_name,
                 component_extension: Some(".js"),
                 style_imports: None,
+                styles_href: None,
                 devtools: None,
             },
         )
@@ -591,6 +592,7 @@ pub fn compile_js_with(
             runtime,
             component_extension,
             style_imports: None,
+            styles_href: None,
             devtools: false,
         },
         loader,
@@ -606,6 +608,9 @@ pub struct JsOptions<'a> {
     pub component_extension: Option<&'a str>,
     /// Import the `<style>` through the bundler instead of inlining it.
     pub style_imports: Option<StyleImports<'a>>,
+    /// Where a light-DOM component's stylesheet is served, for a page that already has it: the
+    /// module carries this address in place of the CSS text (see `emit_js::Options`).
+    pub styles_href: Option<&'a str>,
     /// For the browser DevTools (`--devtools`): record the path, each part's source location and
     /// the script's signals by name. For development builds only; it adds bytes.
     pub devtools: bool,
@@ -631,6 +636,7 @@ pub fn compile_js_options(
                 source_name: &source_name,
                 component_extension: options.component_extension,
                 style_imports: options.style_imports,
+                styles_href: options.styles_href,
                 devtools: options.devtools.then_some(path),
             },
         )
@@ -692,6 +698,7 @@ pub fn compile_js_for_bundler(
             runtime,
             component_extension: None,
             style_imports: Some(style_imports),
+            styles_href: None,
             devtools: false,
         },
         loader,
