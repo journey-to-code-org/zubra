@@ -787,12 +787,46 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
             "{html}"
         );
         assert!(html.contains("data-zb-filled=\"default\""), "{html}");
-        // Nothing filled: no attribute.
+        // Nothing filled: the attribute names no slot. It is still there, since a light-DOM
+        // host with slots always says the server rendered it.
         let html = render(json!({}))["output"]
             .as_str()
             .expect("html")
             .to_owned();
-        assert!(!html.contains("data-zb-filled"), "{html}");
+        assert!(html.starts_with("<zb-card data-zb-filled>"), "{html}");
+    }
+
+    #[test]
+    fn a_light_dom_host_with_slots_names_the_slots_the_server_filled() {
+        // Whether `hasSlot` asks or not: the element tells its own markup from the page's
+        // content for a slot by this attribute, when the markers were stripped (#267).
+        let render = |source: &str, slots: Value| {
+            call(
+                json!({ "path": "/app/c.zb", "files": { "/app/c.zb": source }, "emit": "html", "slots": slots, "slotSource": "html" }),
+            )["output"]
+                .as_str()
+                .expect("html")
+                .to_owned()
+        };
+        let badge = "<zb-badge>\n  <span><zb-slot></zb-slot> <zb-slot name=\"icon\"></zb-slot> <zb-slot name=\"after\"></zb-slot></span>\n</zb-badge>";
+        let html = render(badge, json!({}));
+        assert!(html.starts_with("<zb-badge data-zb-filled>"), "{html}");
+        let html = render(
+            badge,
+            json!({ "icon": "<i>!</i>", "default": "3", "after": " " }),
+        );
+        assert!(
+            html.starts_with("<zb-badge data-zb-filled=\"default icon\">"),
+            "in a fixed order, and whitespace isn't content: {html}"
+        );
+        // No slots: nothing to tell apart. Shadow DOM: the shadow root is the element's alone.
+        let html = render("<zb-plain>\n  <b>Hi</b>\n</zb-plain>", json!({}));
+        assert!(html.starts_with("<zb-plain>"), "{html}");
+        let html = render(
+            "<zb-shade shadow>\n  <span><zb-slot></zb-slot></span>\n</zb-shade>",
+            json!({ "default": "3" }),
+        );
+        assert!(html.starts_with("<zb-shade>"), "{html}");
     }
 
     #[test]

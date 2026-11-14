@@ -653,11 +653,11 @@ fn fills_named_and_default_slots_from_parsed_template_fragments() {
         r#"{"heading":"<h2>{title}</h2>","default":"<p>Supplied default</p>"}"#,
     )
     .unwrap();
-    assert_eq!(html, "<zb-panel title=\"Panel title\"><main><?zb [!?><h2>Panel title</h2><?zb ]?><?zb [!?><p>Supplied default</p><?zb ]?></main></zb-panel>");
+    assert_eq!(html, "<zb-panel title=\"Panel title\" data-zb-filled=\"default heading\"><main><?zb [!?><h2>Panel title</h2><?zb ]?><?zb [!?><p>Supplied default</p><?zb ]?></main></zb-panel>");
     assert!(!html.contains("zb-slot"));
     assert_eq!(
         compile(source, r#"{"title":"Fallback title"}"#).unwrap(),
-        "<zb-panel title=\"Fallback title\"><main><?zb [?><h1>Fallback title</h1><?zb ]?><?zb [?><p>Default fallback</p><?zb ]?></main></zb-panel>"
+        "<zb-panel title=\"Fallback title\" data-zb-filled><main><?zb [?><h1>Fallback title</h1><?zb ]?><?zb [?><p>Default fallback</p><?zb ]?></main></zb-panel>"
     );
 }
 
@@ -1043,7 +1043,7 @@ fn server_rendered_slot_html_is_kept_as_written() {
         compile_html_from(source, "panel.zb", "{}", &slots, SlotSource::Html, &loader).unwrap();
     assert_eq!(
         html,
-        "<zb-panel><main><?zb [!?><p data-x=\"{a}\">{\"json\"}</p><!--astro:end--><script type=\"application/json\">{\"a\":1}</script><input value=\"raw\" onclick=\"go()\"><zb-slot></zb-slot><?zb ]?></main></zb-panel>"
+        "<zb-panel data-zb-filled=\"default\"><main><?zb [!?><p data-x=\"{a}\">{\"json\"}</p><!--astro:end--><script type=\"application/json\">{\"a\":1}</script><input value=\"raw\" onclick=\"go()\"><zb-slot></zb-slot><?zb ]?></main></zb-panel>"
     );
     // A component the server already rendered keeps its hydration markers (processing
     // instructions since 5.0), so it can hydrate where it lands.
@@ -1062,7 +1062,7 @@ fn server_rendered_slot_html_is_kept_as_written() {
     .unwrap();
     assert_eq!(
         html,
-        "<zb-panel><main><?zb [!?><x-inner label=\"hi\"><?zb [?><p>hi</p><?zb ]?></x-inner><?zb ]?></main></zb-panel>"
+        "<zb-panel data-zb-filled=\"default\"><main><?zb [!?><x-inner label=\"hi\"><?zb [?><p>hi</p><?zb ]?></x-inner><?zb ]?></main></zb-panel>"
     );
     assert!(compile_html_from(
         source,

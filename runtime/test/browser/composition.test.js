@@ -66,7 +66,7 @@ test('parent changes flow into child props and slotted content; keyed children m
 
 test('hydrates a parent and its children from nested server markup', { skip: runtimeOnly }, async () => {
   const html = compiler(join(here, 'fixtures/inbox.zb'));
-  assert.match(html, /<zb-badge class="row" data-who="Ada" label="Ada" count="3" info="\{&quot;color&quot;:&quot;red&quot;\}">/, 'the child is rendered inline, with its props on the host');
+  assert.match(html, /<zb-badge class="row" data-who="Ada" label="Ada" count="3" info="\{&quot;color&quot;:&quot;red&quot;\}" data-zb-filled="default icon">/, 'the child is rendered inline, with its props on the host, and the slots it was given');
   assert.match(html, /<\?zb \[!\?><em slot="icon">\*<\/em><\?zb \]\?>/, 'slotted content is where the child puts it');
   assert.match(html, /<x-widget config="\{&quot;size&quot;:2\}" mode="plain">/);
   const { page, messages } = await open(html, {
@@ -88,8 +88,8 @@ test('hydrates a parent and its children from nested server markup', { skip: run
 test("an element whose children aren't server markup isn't mistaken for it", async () => {
   // A badge used directly in a page, with content that happens to resemble its template.
   const { page, messages } = await open('<zb-badge label="Hi"><span class="badge">mine</span></zb-badge>', { modules: ['badge'] });
-  // Content shaped like the template looks like server markup with its comments stripped, so the
-  // element loads remark.js to check before it renders: wait for that, not just for the module.
+  // Content shaped like the template looks like server markup with its comments stripped; the
+  // host has no data-zb-filled, so it is the page's (see slots.test.js).
   await page.waitForSelector('zb-badge b');
   assert.equal(await page.$eval('zb-badge b', (b) => b.textContent), 'Hi');
   assert.equal(await page.$eval('zb-badge .badge .badge', (inner) => inner.textContent), 'mine', 'it is slotted, not hydrated');

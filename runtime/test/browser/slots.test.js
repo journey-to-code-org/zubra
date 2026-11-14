@@ -10,6 +10,8 @@ useBrowser({
   card: join(here, 'fixtures/card.zb'),
   panel: join(here, 'fixtures/panel.zb'),
   either: join(here, 'fixtures/either-link.zb'),
+  'status-badge': join(here, 'fixtures/status-badge.zb'),
+  'alert-banner': join(here, 'fixtures/alert-banner.zb'),
 });
 
 const readCard = (page) =>
@@ -459,4 +461,76 @@ test('updateComplete waits for a first render that is waiting on the check for s
   assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('remark'))), true, 'it had to load remark.js');
   assert.deepEqual(messages, []);
   await page.close();
+});
+
+const clean = (html) => html.replace(/<!--.*?-->|<\?zb.*?>/g, '').replace(/\s+/g, ' ').trim();
+
+test("a child shaped like the component's own root is the page's content, not server markup that lost its markers", async () => {
+  // The badge's template is one <span> around its slot, so a page's <span> child has the shape of
+  // the badge's server markup with its markers stripped. It used to be adopted as the badge's own
+  // root: it got the badge's class and its text became the slot's content (#267).
+  const { page, messages } = await open('<status-badge id="one"><span id="mine">hi</span></status-badge><status-badge id="two"><span id="blank"></span></status-badge>', {
+    beforeModules: "window.mine = document.getElementById('mine'); window.blank = document.getElementById('blank');",
+    modules: ['status-badge'],
+  });
+  const read = (id) => page.evaluate((id) => document.getElementById(id).innerHTML, id);
+  assert.equal(clean(await read('one')), '<span class="badge-neutral"><span id="mine">hi</span></span>');
+  assert.equal(clean(await read('two')), '<span class="badge-neutral"><span id="blank"></span></span>', 'an empty one too');
+  assert.equal(await page.evaluate(() => document.getElementById('mine') === window.mine && document.getElementById('blank') === window.blank), true, 'the same nodes, moved');
+  assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('remark'))), false, 'nothing to put back: remark.js was not loaded');
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test("a child shaped like the component's own root keeps text a framework writes into it later (Angular's {{ }} in @for)", async () => {
+  // The blank text node was dropped when the <span> was taken for the badge's root, so the text
+  // written a moment later went nowhere (#267).
+  const { page, messages } = await open('<main></main>', {
+    modules: ['status-badge'],
+    beforeModules: `
+      const badge = document.createElement('status-badge');
+      window.span = document.createElement('span');
+      window.text = document.createTextNode('');
+      window.span.append(window.text);
+      badge.append(window.span);
+      document.querySelector('main').append(badge);`,
+  });
+  await page.evaluate(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); window.text.data = 'later'; });
+  assert.equal(clean(await page.evaluate(() => document.querySelector('status-badge').innerHTML)), '<span class="badge-neutral"><span>later</span></span>');
+  assert.equal(await page.evaluate(() => window.text.isConnected && window.text.parentNode === window.span), true);
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test('server markup that lost its markers is told from page content by data-zb-filled on the host', { skip: runtimeOnly }, async () => {
+  // The server writes data-zb-filled on a light-DOM host that has slots, naming the ones it
+  // filled: that host's marker-less children are its own markup, and hydrate in place.
+  const strip = (html) => html.replace(/<!--[^]*?-->|<\?zb[^]*?>/g, '');
+  writeFileSync(join(site, 'badge-slots.json'), JSON.stringify({ default: '<span id="given">3</span>' }));
+  const empty = strip(compiler(join(here, 'fixtures/status-badge.zb')));
+  const given = strip(compiler(join(here, 'fixtures/status-badge.zb'), '--slots', join(site, 'badge-slots.json'), '--slots-html'));
+  assert.match(empty, /^<status-badge data-zb-filled>\s*<span class="badge-neutral"><\/span>/);
+  assert.match(given, /^<status-badge data-zb-filled="default">\s*<span class="badge-neutral"><span id="given"[^>]*>3<\/span><\/span>/);
+  const { page, messages } = await open(`<div id="empty">${empty}</div><div id="given-to">${given}</div>`, {
+    modules: ['status-badge'],
+    beforeModules: "window.roots = [...document.querySelectorAll('status-badge > span')];",
+  });
+  await page.waitForFunction(() => [...document.querySelectorAll('status-badge')].every((el) => el.matches(':state(hydrated)')));
+  assert.equal(await page.evaluate(() => window.roots.every((root, i) => root === document.querySelectorAll('status-badge')[i].firstElementChild)), true, "the server's spans are the badges' roots: nothing rendered fresh");
+  assert.equal(clean(await page.evaluate(() => document.querySelector('#given-to status-badge').innerHTML)), '<span class="badge-neutral"><span id="given">3</span></span>');
+  // And they're live: the slot takes new content, the class follows the prop.
+  await page.evaluate(async () => {
+    const badge = document.querySelector('#empty status-badge');
+    badge.variant = 'success';
+    badge.append('9');
+    await badge.updateComplete;
+  });
+  assert.equal(clean(await page.evaluate(() => document.querySelector('#empty status-badge').innerHTML)), '<span class="badge-success">9</span>');
+  assert.deepEqual(messages, []);
+  await page.close();
+  // A slot the host doesn't name holds its fallback or nothing: content there isn't the server's.
+  const odd = await open('<status-badge data-zb-filled><span id="mine">hi</span></status-badge>', { modules: ['status-badge'] });
+  await odd.page.waitForSelector('status-badge:state(hydrated)');
+  assert.equal(clean(await odd.page.evaluate(() => document.querySelector('status-badge').innerHTML)), '<span class="badge-neutral"><span id="mine">hi</span></span>');
+  await odd.page.close();
 });

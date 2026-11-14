@@ -600,7 +600,7 @@ test('astro: server-rendered pages, hydrated with a client directive', async () 
     await astroBuild({ root, configFile: false, logLevel: 'error', integrations: [zubraAstro({ compiler })], outDir: join(root, 'dist') });
     const html = readFileSync(join(root, 'dist/index.html'), 'utf8');
     // Static components are HTML only, with props, host attributes and slot content.
-    assert.match(html, /<zb-card data-kind="static" heading="Astro">/);
+    assert.match(html, /<zb-card data-kind="static" heading="Astro" data-zb-filled="default title">/);
     // (Astro takes the `slot` attribute off what it passes.)
     assert.match(html, /<header><\?zb \[!\?><h2>Custom \{braces\}<\/h2><\?zb \]\?><\/header>[^]*<section><\?zb \[!\?><p>Body<\/p><\?zb \]\?><\/section>/);
     assert.match(html, /<zb-badge class="row" data-who="Ada" label="Ada" count="3"/, 'nested components render too');

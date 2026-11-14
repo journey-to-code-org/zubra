@@ -1,0 +1,4 @@
+<!-- A badge whose root is a plain <span>: what a page is most likely to put inside it too. -->
+<status-badge variant="neutral">
+  <span class="badge-{variant}"><zb-slot></zb-slot></span>
+</status-badge>

@@ -1713,6 +1713,12 @@ function defineElement(tag, definition) {
   }
   const componentTemplate = { content: blueprint({ template }) };
   let templateSignature = signature(childRange(componentTemplate.content));
+  // Whether children that have the template's shape but no markers can be the server's markup
+  // with its markers stripped. In light DOM they can just as well be the page's own content for
+  // a slot (`<status-badge><span>3</span></status-badge>`, where the badge's root is a <span>),
+  // so there the server says it rendered the host: it writes `data-zb-filled` on every light-DOM
+  // host that has slots, naming the ones it filled. Without it, such children are the page's.
+  const claimed = (host) => shadow || !slots.length || host.hasAttribute('data-zb-filled');
   let instances = 0;
   // @hot (left out of the production build: scripts/build-production.js)
   const live = new Set(); // WeakRefs to the elements, kept only for hot reloads
@@ -1821,7 +1827,7 @@ function defineElement(tag, definition) {
         if (root.adoptedStyleSheets && !(inPage && root === document)) adopt(root, ownSheets());
       }
       if (this.#scope) this.#scope.resume();
-      else if (!remarker && lostComments(shadow ? this.shadowRoot : this, componentTemplate.content, roots)) {
+      else if (!remarker && claimed(this) && lostComments(shadow ? this.shadowRoot : this, componentTemplate.content, roots)) {
         // Server markup without its comments: start once the code that puts them back is here.
         this.#starting ??= loadRemark().then(() => {
           this.#starting = null;
@@ -1999,8 +2005,8 @@ function defineElement(tag, definition) {
         this.#context = context;
         const server = hasContent(root);
         // Server markup whose comments were stripped: put them back, where the template says.
-        const stripped = server && !reloading && hasComment(componentTemplate.content) && !hasComment(root);
-        const restored = stripped && !!remarker?.remark(root, componentTemplate.content, parts, { blueprint, isOpen, isClose, read: $r, untrack, State: Signal.State });
+        const stripped = server && !reloading && claimed(this) && hasComment(componentTemplate.content) && !hasComment(root);
+        const restored = stripped && !!remarker?.remark(root, componentTemplate.content, parts, { blueprint, isOpen, isClose, read: $r, untrack, State: Signal.State, filled: shadow ? [] : (this.getAttribute('data-zb-filled') ?? '').split(' ') });
         // Server markup has the template's shape; anything else is the page's own children.
         const nodes = server && !reloading && signature(childRange(root)) === templateSignature
           ? locate(childRange(root), parts, true)

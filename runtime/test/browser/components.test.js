@@ -645,6 +645,21 @@ test('stripped markup with content given to a slot keeps that content', { skip: 
   await page.close();
 });
 
+test("stripped markup with slot content that reads like the fallback keeps it as content: the host says the slot was filled", { skip: runtimeOnly }, async () => {
+  // By shape and words alone, this <em> was taken for the fallback (<em>No notes</em>), and went
+  // when more content arrived.
+  writeFileSync(join(site, 'stripped-em.json'), JSON.stringify({ default: '<em>No notes</em>' }));
+  const html = strip(compiler(join(here, 'fixtures/stripped-card.zb'), '--slots', join(site, 'stripped-em.json'), '--slots-html'));
+  assert.match(html, /^<zb-stripped data-zb-filled="default">/);
+  const { page, messages } = await open(html, { modules: ['stripped'], beforeModules: keepNodes('zb-stripped') });
+  await page.waitForSelector('zb-stripped:state(hydrated)');
+  await page.evaluate(() => document.querySelector('zb-stripped').append('!'));
+  assert.equal(await page.textContent('zb-stripped footer'), 'No notes!');
+  assert.equal(await page.evaluate(() => window.kept.every((node) => node.isConnected)), true);
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
 test('stripped markup with a pending zb-await hydrates in place: the region is found by the pending block, and only it re-renders', { skip: runtimeOnly }, async () => {
   const html = strip(compiler(join(here, 'fixtures/stripped-await.zb'), '--partial'));
   assert.match(html, /<span>waiting<\/span>/, 'the server rendered the pending block');

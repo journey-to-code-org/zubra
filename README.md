@@ -500,8 +500,10 @@ HTML minifiers mostly keep them: html-minifier-terser and @minify-html/node as s
 A tool that removes them costs one extra script. An element whose markup lost every marker puts them back by structure and hydrates in place anyway. It walks its template against the markup:
 - a text anchor's text runs up to the next element;
 - an `zb-if` holds the branch the current values choose, and an `zb-each` one row per item, checked element by element;
-- a light-DOM slot that ends its range holds the rest (its fallback, if it has the fallback's shape);
+- a light-DOM slot that ends its range holds the rest: the content it was given, if the host says the server filled it, and otherwise its fallback or nothing;
 - an `zb-await` holds its `zb-then` block for a value the server knew at build time, or its pending block, which the element renders afresh anyway (so only where the region ends has to be found).
+
+A light-DOM component with slots does this only on a host the server marked: `data-zb-filled`, which the server writes on every such host, names the slots it gave content (none, for a bare attribute). Without it the children are the page's own content for a slot, however much they look like the template: `<status-badge><span>3</span></status-badge>` is a `<span>` to slot, even where the badge's own root is a `<span>`. Keep that attribute through a sanitizer, with the host's others.
 
 The code that does this (`remark.js`) is loaded only when an element meets such markup. Where the shape can't be placed for sure (content projected into a child component, or markup that isn't the template's), the element renders fresh, with a warning that the markers are missing. Every registry component hydrates in place this way (`registry/test/stripped.test.js`, `service-status` with its pending `zb-await` included), and so do settled `zb-await`s (`runtime/test/browser/components.test.js`), keeping text typed and focus taken before JavaScript.
 
