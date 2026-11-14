@@ -557,6 +557,52 @@ test("a 'use collection' component without @zubra/sync installed says what to in
   }
 });
 
+test("a 'use route' component without @zubra/router installed says what to install", () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-no-router-'));
+  try {
+    writeFileSync(join(dir, 'home-page.zb'), "<script>'use route /'</script>\n<home-page><h1>Home</h1></home-page>\n");
+    writeFileSync(join(dir, 'farm-shell.zb'), "<script>'use layout /farm'</script>\n<farm-shell><zb-slot></zb-slot></farm-shell>\n");
+    const zubra = createZubra({ components: dir });
+    for (const [name, directive] of [['home-page', "'use route /'"], ['farm-shell', "'use layout /farm'"]]) {
+      const page = zubra.page();
+      const body = page.render(name);
+      assert.throws(() => page.finish(`<html><head></head><body>${body}</body></html>`), new RegExp(`starts with ${directive}, which needs @zubra/router\\. Install it: npm install @zubra/router`));
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("what only a route's load imports is never served (audit Z1)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-z1-load-'));
+  const app = mkdtempSync(join(tmpdir(), 'zubra-with-router-'));
+  try {
+    // @zubra/router installed (an empty package is enough for the check).
+    mkdirSync(join(dir, 'node_modules', '@zubra', 'router'), { recursive: true });
+    writeFileSync(join(dir, 'node_modules', '@zubra', 'router', 'package.json'), '{"name":"@zubra/router","main":"index.js"}');
+    writeFileSync(join(dir, 'node_modules', '@zubra', 'router', 'index.js'), '');
+    writeFileSync(join(dir, 'db.js'), "export const db = { secret: 'sk_live_123' };\n");
+    writeFileSync(join(dir, 'farm-page.zb'), `<script>
+  'use route /farms/:id'
+  import { db } from './db.js'
+  export async function load({ params }) {
+    return { name: db.secret + params.id }
+  }
+</script>
+<farm-page name=""><h1>{name}</h1></farm-page>
+`);
+    const zubra = createZubra({ components: dir });
+    const component = await (await zubra.fetch(new Request('http://x/_zubra/components/farm-page.js'))).text();
+    assert.doesNotMatch(component, /db\.js|sk_live|function load/);
+    assert.equal((await zubra.fetch(new Request('http://x/_zubra/components/db.js')))?.status ?? 404, 404);
+    const page = zubra.page();
+    assert.match(page.finish(`<html><head></head><body>${page.render('farm-page', { name: 'Hilltop' })}</body></html>`), /<h1>Hilltop<\/h1>/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(app, { recursive: true, force: true });
+  }
+});
+
 test('only the plain modules a browser module imports are served, never what a server function imports (audit Z1)', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'zubra-z1-'));
   const outside = mkdtempSync(join(tmpdir(), 'zubra-z1-outside-'));

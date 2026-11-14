@@ -140,6 +140,14 @@ pub struct Script {
     /// `'use collection tasks'` at the top of the script: its top-level `let`s are the fields of
     /// a document in a local store, kept by `@zubra/sync`.
     pub collection: Option<Collection>,
+    /// `'use route /farms/:id'` or `'use layout /farm'` at the top of the script: the component
+    /// is a page or a layout that `@zubra/router` serves.
+    pub route: Option<Route>,
+    /// `export async function load(…) { … }` in a route or layout: it runs on the server only,
+    /// before the component renders, and what it returns becomes the props. It leaves the
+    /// browser module (like a `'use server'` function), but it is not an action: nothing can
+    /// post to it (`--emit server` exports it as `load`, beside `actions`).
+    pub load: Option<Load>,
     /// `let editing = ephemeral(false)` (from `@zubra/sync`): state that isn't stored.
     pub ephemeral: Vec<String>,
     /// `let cursor = presence({ x: 0, y: 0 })`: state shared live with the document's other
@@ -238,6 +246,56 @@ pub struct Collection {
     /// The props whose values make the document's key (`doc` unless `by` says otherwise; not
     /// `id`, which is every element's own DOM id and must be unique on a page).
     pub keys: Vec<String>,
+    pub span: Span,
+}
+
+/// `'use route <pattern>'` (a page) or `'use layout <prefix> [root]'` (a layout).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Route {
+    pub kind: RouteKind,
+    /// A URLPattern pathname: `/farms/:id`. For a layout, the prefix its pages share. `None`
+    /// for a bare `'use route'` in a `routes/` folder, whose path is its place in the folder
+    /// (`@zubra/router` works it out and checks its parameters).
+    pub pattern: Option<String>,
+    /// The pattern's named parameters, in order (`id` for `/farms/:id`).
+    pub params: Vec<String>,
+    /// `'use layout /farm root'`: the layout replaces `app.zb` for its prefix.
+    pub root: bool,
+    pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RouteKind {
+    Page,
+    Layout,
+}
+
+impl RouteKind {
+    /// The directive's word: `route` or `layout`.
+    pub fn word(self) -> &'static str {
+        match self {
+            RouteKind::Page => "route",
+            RouteKind::Layout => "layout",
+        }
+    }
+
+    /// What the server module and the interface call it: `page` or `layout`.
+    pub fn name(self) -> &'static str {
+        match self {
+            RouteKind::Page => "page",
+            RouteKind::Layout => "layout",
+        }
+    }
+}
+
+/// A route's or layout's `load`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Load {
+    /// The declaration without `export` (`async function load({ params }) { … }`).
+    pub text: String,
+    /// The route parameters it reads (`params.id`, `{ params: { id } }`), or `None` when it
+    /// uses `params` (or its whole argument) in a way the compiler can't follow.
+    pub reads: Option<Vec<String>>,
     pub span: Span,
 }
 

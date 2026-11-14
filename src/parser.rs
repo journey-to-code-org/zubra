@@ -182,6 +182,35 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
         }
     }
 
+    // A route's parameters reach the component through `load` (or as props, without one), so
+    // each must be read by one of them.
+    if let Some(route) = &script.route {
+        for param in &route.params {
+            let prop = props.iter().any(|prop| &prop.name == param);
+            let read = match &script.load {
+                Some(load) => load
+                    .reads
+                    .as_ref()
+                    .is_none_or(|reads| reads.contains(param)),
+                None => false,
+            };
+            if !prop && !read {
+                let word = route.kind.word();
+                return Err(Diagnostic::new(
+                    route.span,
+                    format!(
+                        "'use {word} {}' has the parameter `{param}`, which neither `load` nor a prop reads",
+                        route.pattern.as_deref().unwrap_or_default()
+                    ),
+                )
+                .with_help(format!(
+                    "read it in `load`: `export async function load({{ params }}) {{ … params.{param} … }}`, or declare it on the host tag: `{}=\"\"`",
+                    kebab_attribute(param)
+                )));
+            }
+        }
+    }
+
     // Events emitted from the template's runtime expressions count too.
     if let Some(emit) = script.emit.clone() {
         let mut found = Ok(Vec::new());

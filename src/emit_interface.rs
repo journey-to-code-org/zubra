@@ -133,6 +133,16 @@ pub fn server_interface(component: &ComponentAst) -> Result<String, Diagnostic> 
         "form": component.form_associated,
         "props": props,
         "events": events,
+        "route": component.script.route.as_ref().map(|route| json!({
+            "kind": route.kind.name(),
+            "pattern": route.pattern,
+            "params": route.params,
+            "root": route.root,
+            "load": component.script.load.is_some(),
+            // The parameters `load` reads (null: it can't tell), for a route whose path comes
+            // from its folder, which @zubra/router checks.
+            "reads": component.script.load.as_ref().map(|load| load.reads.clone()),
+        })),
     }))
     .expect("JSON serializes"))
 }

@@ -23,7 +23,8 @@ export async function serverHalves(root) {
   for (const path of sources(resolve(root))) {
     const response = request({ emit: 'server', path, files: read(path) });
     if (!response.ok) throw new Error(response.error);
-    if (/^export (async )?function /m.test(response.output)) halves.push({ path, output: response.output });
+    // Only components with actions: a route's `load` is in its server half too, but it isn't one.
+    if (!/^export const actions = \{\};$/m.test(response.output)) halves.push({ path, output: response.output });
   }
   return halves;
 }
