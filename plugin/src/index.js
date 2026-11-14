@@ -272,7 +272,7 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
    * folder several apps share) is mirrored under `__`, one per folder up: `../ui/rating.zb` by
    * `<dir>/__/ui/rating.d.zb.ts`. TypeScript finds them through `rootDirs`, which pairs each
    * mirrored folder with the real one; `<dir>/tsconfig.json` has that list, for the app's
-   * tsconfig to extend.
+   * tsconfig to copy (not extend: it isn't there on a fresh checkout, #276).
    */
   function typingsTarget(path) {
     const base = resolve(root ?? process.cwd());

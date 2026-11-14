@@ -154,6 +154,7 @@ function typecheck(root, files, extra = {}) {
     compilerOptions: {
       strict: true, noEmit: true, jsx: 'react-jsx', module: 'esnext', moduleResolution: 'bundler', target: 'es2022',
       lib: ['es2022', 'dom'], allowArbitraryExtensions: true, skipLibCheck: true, types: [],
+      ...extra.compilerOptions,
     },
     files,
   }));
@@ -226,8 +227,9 @@ test('dts: { dir }: apps in different frameworks type one shared components fold
   assert.match(readFileSync(join(roots.react, '.zubra/types/__/ui/rating.d.zb.ts'), 'utf8'), /react/i);
   assert.notEqual(readFileSync(join(roots.react, '.zubra/types/__/ui/rating.d.zb.ts'), 'utf8'), readFileSync(join(roots.vue, '.zubra/types/__/ui/rating.d.zb.ts'), 'utf8'));
 
-  // Each app's tsconfig extends the one written with its typings.
-  const own = { extends: './.zubra/types/tsconfig.json' };
+  // Each app's own tsconfig pairs the mirrored folders with the real ones. It doesn't extend the
+  // one written with the typings: on a fresh checkout that file isn't there yet (#276).
+  const own = { compilerOptions: { rootDirs: ['.', '.zubra/types', '..', '.zubra/types/__'] } };
   writeFileSync(join(roots.react, 'src/client.d.ts'), "/// <reference path=\"../../../../../client.d.ts\" />\n");
   writeFileSync(join(roots.react, 'src/bad.tsx'), `
     import Rating from '../../ui/rating.zb';
@@ -243,6 +245,27 @@ test('dts: { dir }: apps in different frameworks type one shared components fold
     export const bad = h(Rating, { value: 'two' });
   `);
   assert.equal(typecheck(roots.vue, ['src/check.ts'], own), '');
+
+  // Components imported through an alias: `rootDirs` only pairs folders for relative imports, so
+  // the alias lists the typings folder as well as the components.
+  const alias = { compilerOptions: { paths: { '@shared/ui/*': ['./.zubra/types/__/ui/*', '../ui/*'] } } };
+  writeFileSync(join(roots.react, 'src/alias.tsx'), `
+    import Rating from '@shared/ui/rating.zb';
+    export const ok = <Rating value={2} />;
+    export const bad = <Rating value="2" />;
+  `);
+  const aliased = typecheck(roots.react, ['src/client.d.ts', 'src/alias.tsx'], alias);
+  assert.equal(aliased.split('\n').filter((line) => /error TS\d+/.test(line)).length, 1, aliased);
+  assert.match(aliased, /alias\.tsx\(4,.*Type 'string' is not assignable to type 'number'/);
+  // A fresh checkout, before the first build: no typings folder, and the tsconfig still loads and
+  // every import still resolves (loosely typed, from @zubra/unplugin/client). One that extended
+  // the generated tsconfig couldn't be read at all, by tsc or by Vite.
+  const fresh = join(shared, 'fresh');
+  cpSync(roots.react, fresh, { recursive: true, filter: (path) => !path.includes('.zubra') && !path.includes('dist') });
+  assert.equal(existsSync(join(fresh, '.zubra')), false);
+  const loose = typecheck(fresh, ['src/client.d.ts', 'src/App.tsx', 'src/kinds.ts', 'src/alias.tsx'], { compilerOptions: { ...own.compilerOptions, ...alias.compilerOptions, strict: false } });
+  assert.equal(loose, '');
+  assert.match(typecheck(fresh, ['src/client.d.ts', 'src/App.tsx'], { extends: './.zubra/types/tsconfig.json' }), /TS5083/);
 
   // The app's own components (inside the root) are mirrored as they are.
   cpSync(join(fixtures, 'badge.zb'), join(roots.react, 'src/own-badge.zb'));

@@ -109,10 +109,24 @@ zubra({ dts: { dir: '.zubra/types' } })
 ```
 
 ```json
-{ "extends": "./.zubra/types/tsconfig.json", "compilerOptions": { "types": ["@zubra/unplugin/client"] } }
+{
+  "compilerOptions": {
+    "allowArbitraryExtensions": true,
+    "types": ["@zubra/unplugin/client"],
+    "rootDirs": [".", ".zubra/types", "..", ".zubra/types/__"]
+  }
+}
 ```
 
-The folder (relative to the app's root) mirrors the root: `src/rating.zb` is typed by `.zubra/types/src/rating.d.zb.ts`, and a component above the root by a `__` per folder up (`../ui/rating.zb` by `.zubra/types/__/ui/rating.d.zb.ts`). The `tsconfig.json` written there sets `allowArbitraryExtensions` and the `rootDirs` that pair each mirrored folder with the real one, so imports stay as written; if your tsconfig has its own `rootDirs`, add those to it. Set the option in every app that builds the shared folder and delete the `*.d.zb.ts` files already beside the components: TypeScript reads one beside a component first, and the build warns when it finds one. Ignore the folder in git.
+The folder (relative to the app's root) mirrors the root: `src/rating.zb` is typed by `.zubra/types/src/rating.d.zb.ts`, and a component above the root by a `__` per folder up (`../ui/rating.zb` by `.zubra/types/__/ui/rating.d.zb.ts`). `rootDirs` pairs each mirrored folder with the real one, so relative imports stay as written: the root with the folder, and one more pair per folder up that the components are (`"../.."` with `".zubra/types/__/__"`, and so on). The plugin writes the list it found to `.zubra/types/tsconfig.json`, for reference; don't `extends` it, because on a fresh checkout it isn't there until the first build, and neither `tsc` nor Vite can read a tsconfig that extends a missing file.
+
+`rootDirs` only applies to relative imports. If the components are imported through a `paths` alias, give the alias the typings folder as well as the components:
+
+```json
+{ "compilerOptions": { "paths": { "@acme/ui/*": ["./.zubra/types/__/ui/*", "../ui/*"] } } }
+```
+
+Set the option in every app that builds the shared folder and delete the `*.d.zb.ts` files already beside the components: TypeScript reads one beside a component first, and the build warns when it finds one. Ignore the folder in git, and run `tsc` after a build: before the first one the folder is empty and `.zb` imports are typed loosely, by `@zubra/unplugin/client`.
 
 In the editor you don't need these files: the VS Code extension's TypeScript plugin types `.zb` imports from the components directly, updated each time one is saved (see [Editor support](../docs/editor-support.md)). They're for `tsc` in builds and CI.
 
