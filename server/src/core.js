@@ -215,12 +215,59 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
    * parsing the one before (the component, the runtime's entry, the entry's modules, theirs),
    * a round trip per level; told up front, it fetches them all at once.
    */
-  const moduleGraph = (names) => {
-    const found = new Set(names.map((name) => `${base}/components/${name}.js`));
+  const moduleGraph = (urls) => {
+    const found = new Set(urls);
     for (const url of found) for (const to of importsOf(url)) found.add(to);
     return [...found];
   };
-  const preloads = (names, options) => (preload ? moduleGraph(shipped(names)).map((url) => `<link rel="modulepreload" href="${escapeAttribute(url)}"${nonceAttribute(options)}>`).join('\n') : '');
+  const componentUrl = (name) => `${base}/components/${name}.js`;
+  /**
+   * `bundle`: a page's components as one module, `<base>/b/<names>.<hash>.js`, where each was a
+   * request of its own. The set is the components the page ships and the components those
+   * import, by name and sorted, so pages that use the same components share a module and any
+   * instance of the server can build it from its URL alone; the hash is of the module, so the
+   * URL can be cached for good and a deploy that changes a component changes it. The compiler
+   * joins them (`command: 'join'`): each module a block, their other imports merged. A set it
+   * says must stay apart (two components import different things under one name, say), one whose
+   * names don't fit a URL, and a single component are served as before, module by module.
+   */
+  const JOINED_NAMES = 160; // the most characters of a URL the names may take
+  const joinedKey = (set) => `joined:${set.join('+')}`;
+  const componentSet = (names) => {
+    const found = [...names];
+    for (const name of found) {
+      for (const to of importsOf(componentUrl(name))) {
+        const other = to.startsWith(`${base}/components/`) && to.endsWith('.js') ? to.slice(`${base}/components/`.length, -3) : null;
+        if (other !== null && files.has(other) && !found.includes(other)) found.push(other);
+      }
+    }
+    return found.sort();
+  };
+  const join = (set) => {
+    const id = set.map((name) => name.replaceAll('/', '~')).join('+');
+    if (set.length < 2 || id.length > JOINED_NAMES || set.some((name) => !/^[\w./@-]+$/.test(name))) return null;
+    // A package's copy of a tag the app has too is served as the app's module (see `serve`).
+    if (set.some((name) => fromPackage(name) && owners().shadows.get(name) !== undefined)) return null;
+    const response = request({ command: 'join', at: 'b/joined.js', modules: set.map((name) => ({ path: `components/${name}.js`, code: String(js(name)) })) });
+    if (!response.ok) {
+      if (!response.apart) throw new Error(`@zubra/server: joining ${set.join(', ')}: ${response.error}`);
+      warn(`@zubra/server: ${set.join(', ')} are served as separate modules, not as one: ${response.error}`);
+      return null;
+    }
+    return { url: `${base}/b/${id}.${hashOf(response.output)}.js`, body: response.output };
+  };
+  /** The one module for the page's shipped components (`{ url, body }`), or null: serve each. */
+  const joined = (names) => {
+    if (!bundle || !names.length) return null;
+    const set = componentSet(names);
+    return once(joinedKey(set), () => join(set));
+  };
+  /** The modules a page's script loads itself: its components', or the one they are joined as. */
+  const entries = (names) => {
+    const one = joined(names);
+    return one ? [one.url] : names.map(componentUrl);
+  };
+  const preloads = (names, options) => (preload ? moduleGraph(entries(shipped(names))).map((url) => `<link rel="modulepreload" href="${escapeAttribute(url)}"${nonceAttribute(options)}>`).join('\n') : '');
   const head = (names, options) => {
     // A component that needs a package that isn't installed fails here, while the page is built,
     // with the reason, rather than later in the browser as an unresolved import.
@@ -238,9 +285,9 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   // those components' props from script.
   const shipped = (names) => (clientModules === 'needed' ? names.filter((name) => (describe(name).client ?? ['unknown']).length > 0) : names);
   const scripts = (all, async = false, options) => {
-    const names = shipped(all);
-    if (!inline) return names.map((name) => `<script type="module"${async ? ' async' : ''} src="${escapeAttribute(`${base}/components/${name}.js`)}"></script>`).join('');
-    return names.length ? `<script type="module"${async ? ' async' : ''}${nonceAttribute(options)}>${names.map((name) => `import '${base}/components/${name}.js';`).join(' ')}</script>` : '';
+    const urls = entries(shipped(all));
+    if (!inline) return urls.map((url) => `<script type="module"${async ? ' async' : ''} src="${escapeAttribute(url)}"></script>`).join('');
+    return urls.length ? `<script type="module"${async ? ' async' : ''}${nonceAttribute(options)}>${urls.map((url) => `import '${url}';`).join(' ')}</script>` : '';
   };
 
   /** What a request for `pathname` gets: `{ status, type, body }`, or null if it isn't ours. */
@@ -254,6 +301,17 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     if (!inline && rest.startsWith('components/') && rest.endsWith('.css')) {
       const name = rest.slice('components/'.length, -4);
       return files.has(name) ? { status: 200, type: TYPES['.css'], body: css(name) } : { status: 404, type: 'text/plain', body: 'Not found' };
+    }
+    // A page's components as one module: built from the names in its URL (any instance of
+    // the server can), and there only under the hash of what they make now.
+    if (bundle && rest.startsWith('b/') && rest.endsWith('.js')) {
+      const set = rest.slice('b/'.length, rest.lastIndexOf('.', rest.length - 4)).split('+').map((name) => name.replaceAll('~', '/'));
+      const known = set.every((name) => files.has(name)) && set.join('+') === componentSet(set).join('+');
+      // (A set nobody rendered yet is built to answer, and kept only if this is its URL.)
+      const one = known ? (memo.get(joinedKey(set)) ?? join(set)) : null;
+      if (!one || one.url !== `${base}/${rest}`) return { status: 404, type: 'text/plain', body: 'Not found' };
+      memo.set(joinedKey(set), one);
+      return { status: 200, type: TYPES['.js'], body: one.body, immutable: true };
     }
     if (rest.startsWith('components/') && rest.endsWith('.js')) {
       const name = rest.slice('components/'.length, -3);
@@ -281,12 +339,14 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     return asset && !inline && asset.status === 200 && rest.endsWith('.js') ? { ...asset, body: resolved(asset.body) } : asset;
   }
   const cacheControl = cache ? 'public, max-age=3600' : 'no-cache';
+  /** The `cache-control` for what `serve` answered: a URL with its content's hash in it is for good. */
+  const cacheControlOf = (served) => (cache && served.immutable && served.status === 200 ? 'public, max-age=31536000, immutable' : cacheControl);
 
   /** Fetch-style servers: a Response for our paths, or null. */
   async function fetchHandler(request) {
     const served = serve(new URL(request.url).pathname);
     if (!served) return null;
-    return new Response(served.body, { status: served.status, headers: { 'content-type': served.type, 'cache-control': cacheControl } });
+    return new Response(served.body, { status: served.status, headers: { 'content-type': served.type, 'cache-control': cacheControlOf(served) } });
   }
 
   /** One page: render components into it, then `finish()` it (or use `head()` and `scripts()`). */
@@ -467,6 +527,9 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     pathOf,
     serve,
     cacheControl,
+    cacheControlOf,
+    /** The joined modules made so far (`{ url, body }`), for a static site's files. */
+    joinedModules: () => [...memo].filter(([key, value]) => key.startsWith('joined:') && value).map(([, value]) => value),
     shadowHosts,
     injectShadowRoots,
     page,
@@ -831,4 +894,21 @@ export function joinPath(base, module) {
     else parts.push(part);
   }
   return parts.join('/');
+}
+
+/**
+ * A short hash of `text` (cyrb53, as 11 base-36 digits): a name for a build of a module, so its
+ * URL changes when it does. Not for anything a hash has to keep secret or unforgeable.
+ */
+export function hashOf(text) {
+  let a = 0xdeadbeef;
+  let b = 0x41c6ce57;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    a = Math.imul(a ^ code, 2654435761);
+    b = Math.imul(b ^ code, 1597334677);
+  }
+  a = Math.imul(a ^ (a >>> 16), 2246822507) ^ Math.imul(b ^ (b >>> 13), 3266489909);
+  b = Math.imul(b ^ (b >>> 16), 2246822507) ^ Math.imul(a ^ (a >>> 13), 3266489909);
+  return (4294967296 * (2097151 & b) + (a >>> 0)).toString(36).padStart(11, '0');
 }

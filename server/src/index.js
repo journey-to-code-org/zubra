@@ -46,7 +46,8 @@ const posix = (path) => path.split(sep).join('/');
  * `'unsafe-inline'`; `page({ nonce })` is the other way, where each response can have a nonce.
  * `bundle: true`: in production, serve the runtime as one file (`@zubra/runtime`'s `dist/bundled`):
  * a page loads `runtime/zubra.js` where it loaded `runtime/index.js` and the six modules that
- * imports. Off by default in 5.x; it has no effect in development or with the DevTools.
+ * imports, and a page's components as one module (`<prefix>/b/<names>.<hash>.js`; see `core.js`).
+ * Off by default in 5.x; it has no effect in development or with the DevTools.
  *
  * Everything that doesn't need a disk is in `core.js`, shared with `edge.js` (Workers).
  */
@@ -174,7 +175,7 @@ export function createZubra({ components = 'components', packages = [], prefix =
   function handle(req, res) {
     const served = core.serve(new URL(req.url, 'http://x').pathname);
     if (!served) return false;
-    res.writeHead(served.status, { 'content-type': served.type, 'cache-control': core.cacheControl });
+    res.writeHead(served.status, { 'content-type': served.type, 'cache-control': core.cacheControlOf(served) });
     res.end(served.body);
     return true;
   }
@@ -197,6 +198,12 @@ export function createZubra({ components = 'components', packages = [], prefix =
       const file = join(out, 'components', `${name}.js`);
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, core.module(name));
+    }
+    // `bundle`: the joined modules of the pages rendered so far, at the URLs those pages name.
+    for (const { url, body } of core.joinedModules()) {
+      const file = join(resolve(dir), ...url.split('/').filter(Boolean));
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, body);
     }
     cpSync(runtimeDir, join(out, 'runtime'), { recursive: true });
     if (syncDir) cpSync(syncDir, join(out, 'sync'), { recursive: true, filter: (from) => !from.endsWith('.d.ts') });
