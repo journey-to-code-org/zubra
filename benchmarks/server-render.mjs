@@ -22,7 +22,10 @@ const built = compiler(`${here}compiler/zubra.wasm`);
 const other = args.includes('--against') ? compiler(option('--against')) : null;
 
 const dir = `${here}docs/compared/coexist/impl/zubra/components`;
-const files = Object.fromEntries(['ds-table', 'ds-badge', 'ds-field', 'ds-quantity'].map((name) => [`${dir}/${name}.zb`, readFileSync(`${dir}/${name}.zb`, 'utf8')]));
+// A component's request carries its source and those of the components it imports, as
+// `@zubra/server` sends them (the table imports the badge).
+const IMPORTS = { 'ds-table': ['ds-badge'] };
+const filesOf = (name) => Object.fromEntries([name, ...(IMPORTS[name] ?? [])].map((one) => [`${dir}/${one}.zb`, readFileSync(`${dir}/${one}.zb`, 'utf8')]));
 const columns = [
   { key: 'id', label: 'Order' },
   { key: 'customer', label: 'Customer', sortable: true },
@@ -31,7 +34,18 @@ const columns = [
   { key: 'status', label: 'Status', type: 'status' },
 ];
 const orders = (count) => Array.from({ length: count }, (_, i) => ({ id: 1001 + i, customer: `Customer ${i}`, quantity: (i % 10) + 1, total: ((i % 10) + 1) * 12.5, status: ['pending', 'shipped', 'cancelled'][i % 3] }));
-const ask = (name, props) => ({ path: `${dir}/${name}.zb`, files, emit: 'html', props, slots: {}, slotSource: 'html', partial: true });
+const ask = (name, props) => ({ path: `${dir}/${name}.zb`, files: filesOf(name), emit: 'html', props, slots: {}, slotSource: 'html', partial: true });
+/**
+ * The request as `@zubra/server` sends it to this compiler: its sources loaded once and named
+ * by their handle where the compiler keeps them (`command: 'load'`), with every request where
+ * it doesn't (a release from before that).
+ */
+function forCompiler(zubra, body) {
+  const loaded = zubra.request({ command: 'load', files: body.files });
+  if (typeof loaded.output !== 'string') return body;
+  const { files: _sent, ...rest } = body;
+  return { ...rest, loaded: loaded.output };
+}
 const CASES = [
   ['table, 3 orders', ask('ds-table', { caption: 'Orders', columns, rows: orders(3) }), 1],
   ['table, 100 orders', ask('ds-table', { caption: 'Orders', columns, rows: orders(100) }), 10],
@@ -53,12 +67,13 @@ console.log(`| Render | ${other ? 'other | built | built / other' : 'built'} |\n
 for (const [name, body, slower] of CASES) {
   const count = Math.max(10, Math.round(RENDERS / BATCHES / slower));
   // (Said, not refused: a release may change the HTML on purpose.)
-  if (other && other.request(body).output !== built.request(body).output) console.log(`(${name}: the two builds render different HTML)`);
-  for (const zubra of other ? [other, built] : [built]) batch(zubra, body, count); // warm
+  const asked = { built: forCompiler(built, body), other: other && forCompiler(other, body) };
+  if (other && other.request(asked.other).output !== built.request(asked.built).output) console.log(`(${name}: the two builds render different HTML)`);
+  for (const which of other ? ['other', 'built'] : ['built']) batch(which === 'built' ? built : other, asked[which], count); // warm
   const times = { built: [], other: [] };
   for (let i = 0; i < BATCHES; i++) {
-    if (other) times.other.push(batch(other, body, count));
-    times.built.push(batch(built, body, count));
+    if (other) times.other.push(batch(other, asked.other, count));
+    times.built.push(batch(built, asked.built, count));
   }
   const b = median(times.built);
   console.log(other ? `| ${name} | ${Math.round(median(times.other))} µs | ${Math.round(b)} µs | ${(b / median(times.other)).toFixed(2)} |` : `| ${name} | ${Math.round(b)} µs |`);
