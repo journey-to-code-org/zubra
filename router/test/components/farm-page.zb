@@ -1,0 +1,12 @@
+<script>
+  'use route /farms/:id'
+  import { farms, SECRET } from './farms.js'
+  export async function load({ params, url }) {
+    const farm = farms[params.id]
+    return { name: farm ? farm.name : `No farm ${params.id}`, query: url.searchParams.get('q') ?? '', secret: SECRET, extra: 'dropped' }
+  }
+</script>
+<farm-page name="" query="">
+  <h1>{name}</h1>
+  <p class="query">{query}</p>
+</farm-page>
