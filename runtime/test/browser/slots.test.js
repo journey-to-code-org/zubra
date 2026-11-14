@@ -4,12 +4,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { useBrowser, open, compiler, here, site, runtimeOnly } from './harness.js';
+import { useBrowser, open, compiler, here, site, runtimeOnly, production } from './harness.js';
 
 useBrowser({
   card: join(here, 'fixtures/card.zb'),
   panel: join(here, 'fixtures/panel.zb'),
   either: join(here, 'fixtures/either-link.zb'),
+  'status-badge': join(here, 'fixtures/status-badge.zb'),
+  'alert-banner': join(here, 'fixtures/alert-banner.zb'),
 });
 
 const readCard = (page) =>
@@ -457,6 +459,307 @@ test('updateComplete waits for a first render that is waiting on the check for s
   });
   assert.equal(await page.evaluate(() => window.started), true);
   assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('remark'))), true, 'it had to load remark.js');
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+const clean = (html) => html.replace(/<!--.*?-->|<\?zb.*?>/g, '').replace(/\s+/g, ' ').trim();
+
+test("a child shaped like the component's own root is the page's content, not server markup that lost its markers", async () => {
+  // The badge's template is one <span> around its slot, so a page's <span> child has the shape of
+  // the badge's server markup with its markers stripped. It used to be adopted as the badge's own
+  // root: it got the badge's class and its text became the slot's content (#267).
+  const { page, messages } = await open('<status-badge id="one"><span id="mine">hi</span></status-badge><status-badge id="two"><span id="blank"></span></status-badge>', {
+    beforeModules: "window.mine = document.getElementById('mine'); window.blank = document.getElementById('blank');",
+    modules: ['status-badge'],
+  });
+  const read = (id) => page.evaluate((id) => document.getElementById(id).innerHTML, id);
+  assert.equal(clean(await read('one')), '<span class="badge-neutral"><span id="mine">hi</span></span>');
+  assert.equal(clean(await read('two')), '<span class="badge-neutral"><span id="blank"></span></span>', 'an empty one too');
+  assert.equal(await page.evaluate(() => document.getElementById('mine') === window.mine && document.getElementById('blank') === window.blank), true, 'the same nodes, moved');
+  assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some((entry) => entry.name.includes('remark'))), false, 'nothing to put back: remark.js was not loaded');
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test("a child shaped like the component's own root keeps text a framework writes into it later (Angular's {{ }} in @for)", async () => {
+  // The blank text node was dropped when the <span> was taken for the badge's root, so the text
+  // written a moment later went nowhere (#267).
+  const { page, messages } = await open('<main></main>', {
+    modules: ['status-badge'],
+    beforeModules: `
+      const badge = document.createElement('status-badge');
+      window.span = document.createElement('span');
+      window.text = document.createTextNode('');
+      window.span.append(window.text);
+      badge.append(window.span);
+      document.querySelector('main').append(badge);`,
+  });
+  await page.evaluate(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); window.text.data = 'later'; });
+  assert.equal(clean(await page.evaluate(() => document.querySelector('status-badge').innerHTML)), '<span class="badge-neutral"><span>later</span></span>');
+  assert.equal(await page.evaluate(() => window.text.isConnected && window.text.parentNode === window.span), true);
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test('server markup that lost its markers is told from page content by data-zb-filled on the host', { skip: runtimeOnly }, async () => {
+  // The server writes data-zb-filled on a light-DOM host that has slots, naming the ones it
+  // filled: that host's marker-less children are its own markup, and hydrate in place.
+  const strip = (html) => html.replace(/<!--[^]*?-->|<\?zb[^]*?>/g, '');
+  writeFileSync(join(site, 'badge-slots.json'), JSON.stringify({ default: '<span id="given">3</span>' }));
+  const empty = strip(compiler(join(here, 'fixtures/status-badge.zb')));
+  const given = strip(compiler(join(here, 'fixtures/status-badge.zb'), '--slots', join(site, 'badge-slots.json'), '--slots-html'));
+  assert.match(empty, /^<status-badge data-zb-filled>\s*<span class="badge-neutral"><\/span>/);
+  assert.match(given, /^<status-badge data-zb-filled="default">\s*<span class="badge-neutral"><span id="given"[^>]*>3<\/span><\/span>/);
+  const { page, messages } = await open(`<div id="empty">${empty}</div><div id="given-to">${given}</div>`, {
+    modules: ['status-badge'],
+    beforeModules: "window.roots = [...document.querySelectorAll('status-badge > span')];",
+  });
+  await page.waitForFunction(() => [...document.querySelectorAll('status-badge')].every((el) => el.matches(':state(hydrated)')));
+  assert.equal(await page.evaluate(() => window.roots.every((root, i) => root === document.querySelectorAll('status-badge')[i].firstElementChild)), true, "the server's spans are the badges' roots: nothing rendered fresh");
+  assert.equal(clean(await page.evaluate(() => document.querySelector('#given-to status-badge').innerHTML)), '<span class="badge-neutral"><span id="given">3</span></span>');
+  // And they're live: the slot takes new content, the class follows the prop.
+  await page.evaluate(async () => {
+    const badge = document.querySelector('#empty status-badge');
+    badge.variant = 'success';
+    badge.append('9');
+    await badge.updateComplete;
+  });
+  assert.equal(clean(await page.evaluate(() => document.querySelector('#empty status-badge').innerHTML)), '<span class="badge-success">9</span>');
+  assert.deepEqual(messages, []);
+  await page.close();
+  // A slot the host doesn't name holds its fallback or nothing: content there isn't the server's.
+  const odd = await open('<status-badge data-zb-filled><span id="mine">hi</span></status-badge>', { modules: ['status-badge'] });
+  await odd.page.waitForSelector('status-badge:state(hydrated)');
+  assert.equal(clean(await odd.page.evaluate(() => document.querySelector('status-badge').innerHTML)), '<span class="badge-neutral"><span id="mine">hi</span></span>');
+  await odd.page.close();
+});
+
+// ---- the page's children in order: stand-ins, and the frameworks that remove runs of siblings
+
+// The banner's two slot areas, markers and stand-ins left out; `settle` lets the observer run.
+const readBanner = (page) => page.evaluate(async () => {
+  await new Promise((resolve) => setTimeout(resolve));
+  const text = (selector) => [...document.querySelector(selector).childNodes]
+    .map((node) => (node.nodeType === 1 ? `<${node.localName}>${node.textContent}` : node.nodeType === 3 ? node.data : ''))
+    .join('');
+  return { body: text('alert-banner .body'), actions: text('alert-banner .actions') };
+});
+// What each test starts from: a message, then a block of an extra <span> and two buttons for
+// the actions slot. `make` builds the block's nodes on `window`.
+const make = `
+  window.el = (tag, text, slot) => Object.assign(document.createElement(tag), { textContent: text }, slot ? { slot } : {});
+  window.block = () => [window.extra = el('span', ' and extra'), window.act = el('button', 'Act', 'actions'), window.skip = el('button', 'Skip', 'actions')];`;
+
+test('a lone text child is written through host.firstChild (Solid)', async () => {
+  // Solid updates a lone dynamic text child in place, `parent.firstChild.data = value`. The
+  // host's first child was the component's own markup, so the write went there (#268).
+  const { page, messages } = await open('<main></main>', {
+    modules: ['status-badge'],
+    beforeModules: `
+      window.badge = document.createElement('status-badge');
+      window.badge.textContent = '0';
+      document.querySelector('main').append(window.badge);`,
+  });
+  const read = () => page.evaluate(async () => {
+    await new Promise((resolve) => setTimeout(resolve));
+    return window.badge.innerHTML.replace(/<!--.*?-->/g, '').replace(/\s+/g, ' ').trim();
+  });
+  assert.equal(await read(), '<span class="badge-neutral">0</span>');
+  await page.evaluate(() => { window.badge.firstChild.data = '1'; });
+  assert.equal(await read(), '<span class="badge-neutral">1</span>');
+  await page.evaluate(() => { window.badge.firstChild.data = '2'; });
+  assert.equal(await read(), '<span class="badge-neutral">2</span>');
+  assert.equal(await page.evaluate(() => { window.badge.textContent = ''; return window.badge.firstChild; }), null, 'no children of the page: none');
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test("host.firstChild is the page's first child, whichever slot it is in", async () => {
+  const { page, messages } = await open('<alert-banner><button slot="actions" id="a">Act</button><span id="m">msg</span></alert-banner>', { modules: ['alert-banner'] });
+  assert.equal(await page.evaluate(() => document.querySelector('alert-banner').firstChild.id), 'a');
+  // The loop that empties an element by its first child ends, and leaves the component's own markup.
+  const left = await page.evaluate(() => {
+    const banner = document.querySelector('alert-banner');
+    let turns = 0;
+    while (banner.firstChild && turns++ < 10) banner.removeChild(banner.firstChild);
+    return [turns, !!banner.querySelector('.body'), banner.querySelectorAll('#a, #m').length];
+  });
+  assert.deepEqual(left, [2, true, 0]);
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test("an element inserted before one in another slot keeps that place among the page's children", async () => {
+  // React and Vue insert before a sibling: insertBefore(node, sibling), where the sibling can be
+  // an element that lives in another slot.
+  const { page, messages } = await open('<alert-banner><span>one</span><button slot="actions">Act</button><span>three</span></alert-banner>', { modules: ['alert-banner'] });
+  await page.evaluate(() => {
+    const banner = document.querySelector('alert-banner');
+    banner.insertBefore(Object.assign(document.createElement('span'), { textContent: 'two' }), banner.querySelector('button'));
+  });
+  assert.deepEqual(await readBanner(page), { body: '<span>one<span>two<span>three', actions: '<button>Act' });
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test("a fragment removed from its start anchor to its end anchor takes the elements it has in other slots (Vue's v-if on a <template>)", async () => {
+  // Vue removes a fragment by walking nextSibling from its start anchor to its end anchor,
+  // removing each through its parentNode. The buttons were in the actions slot, where the walk
+  // never came, so they stayed (#269).
+  const { page, messages } = await open('<alert-banner><span>msg</span></alert-banner>', { modules: ['alert-banner'], beforeModules: make });
+  const add = () => page.evaluate(() => {
+    const banner = document.querySelector('alert-banner');
+    window.start = document.createTextNode('');
+    window.end = document.createTextNode('');
+    banner.insertBefore(window.start, null);
+    banner.insertBefore(window.end, null);
+    for (const node of window.block()) banner.insertBefore(node, window.end);
+  });
+  const removeRange = () => page.evaluate(() => {
+    let node = window.start;
+    while (node !== window.end) {
+      const next = node.nextSibling;
+      node.parentNode.removeChild(node);
+      node = next;
+    }
+    window.end.parentNode.removeChild(window.end);
+  });
+  await add();
+  assert.deepEqual(await readBanner(page), { body: '<span>msg<span> and extra', actions: '<button>Act<button>Skip' });
+  await removeRange();
+  assert.deepEqual(await readBanner(page), { body: '<span>msg', actions: '' });
+  await add();
+  await removeRange();
+  await add();
+  assert.deepEqual(await readBanner(page), { body: '<span>msg<span> and extra', actions: '<button>Act<button>Skip' }, 'and again, with no leftovers');
+  assert.equal(await page.evaluate(() => document.querySelector('alert-banner').innerHTML.match(/<!--zb-slot-->/g).length), 2, 'one stand-in for each');
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test("a block removed from its first node to its last, which is in another slot, goes whole and takes nothing else (Svelte's {#if})", async () => {
+  // Svelte inserts a block before its anchor and removes it from its first node to its last by
+  // nextSibling. The last was moved to the actions slot, so the walk ran on to the end of the
+  // parent: it took Svelte's anchor and the slot's closing marker, and left the buttons (#269).
+  const { page, messages } = await open('<alert-banner><span>msg</span> <!----></alert-banner>', {
+    modules: ['alert-banner'],
+    beforeModules: `${make} window.anchor = document.querySelector('alert-banner').lastChild;`,
+  });
+  const add = () => page.evaluate(() => {
+    const fragment = document.createDocumentFragment();
+    fragment.append(...window.block());
+    window.anchor.before(fragment);
+  });
+  const removeBlock = () => page.evaluate(() => {
+    for (let node = window.extra; node !== null;) {
+      const next = node === window.skip ? null : node.nextSibling;
+      node.remove();
+      node = next;
+    }
+  });
+  await add();
+  assert.deepEqual(await readBanner(page), { body: '<span>msg <span> and extra', actions: '<button>Act<button>Skip' });
+  await removeBlock();
+  assert.deepEqual(await readBanner(page), { body: '<span>msg ', actions: '' });
+  assert.equal(await page.evaluate(() => window.anchor.isConnected && window.anchor.parentNode === document.querySelector('alert-banner .body')), true, "Svelte's anchor is back where it was");
+  // (`]` from @zubra/runtime, `/slot` in --emit element output.)
+  assert.match(await page.evaluate(() => document.querySelector('alert-banner .body').lastChild.data), /^(\]|\/slot)$/, "and so is the slot's closing marker");
+  await add();
+  assert.deepEqual(await readBanner(page), { body: '<span>msg <span> and extra', actions: '<button>Act<button>Skip' }, 'the block comes back');
+  await removeBlock();
+  assert.deepEqual(await readBanner(page), { body: '<span>msg ', actions: '' });
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test("a run cleared node by node, skipping those in another slot, goes whole (Solid's <Show>)", async () => {
+  // Solid removes a run's nodes one by one, but only those in the parent of the first, and puts
+  // an empty text node where the first was. The buttons, in the actions slot, were skipped (#269).
+  const { page, messages } = await open('<alert-banner><span>msg</span></alert-banner>', { modules: ['alert-banner'], beforeModules: make });
+  await page.evaluate(() => { for (const node of window.block()) document.querySelector('alert-banner').appendChild(node); });
+  assert.deepEqual(await readBanner(page), { body: '<span>msg<span> and extra', actions: '<button>Act<button>Skip' });
+  const clear = () => page.evaluate(() => {
+    const current = [window.extra, window.act, window.skip];
+    const parent = current[0].parentNode;
+    window.placeholder = document.createTextNode('');
+    for (let i = current.length - 1; i >= 0; i--) {
+      const isParent = current[i].parentNode === parent;
+      if (!i) isParent ? parent.replaceChild(window.placeholder, current[i]) : parent.insertBefore(window.placeholder, null);
+      else if (isParent) current[i].remove();
+    }
+  });
+  await clear();
+  assert.deepEqual(await readBanner(page), { body: '<span>msg', actions: '' });
+  // Back in, where the placeholder is (as Solid's reconcile does), and out again.
+  await page.evaluate(() => {
+    const parent = window.placeholder.parentNode;
+    const after = window.placeholder.nextSibling;
+    window.placeholder.remove();
+    for (const node of window.block()) parent.insertBefore(node, after);
+  });
+  assert.deepEqual(await readBanner(page), { body: '<span>msg<span> and extra', actions: '<button>Act<button>Skip' });
+  await clear();
+  assert.deepEqual(await readBanner(page), { body: '<span>msg', actions: '' });
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test('an element in another slot stays when only its neighbours are removed', async () => {
+  // Two conditions around an element that is always there: taking one, or both, leaves it.
+  const { page, messages } = await open('<alert-banner><span id="a">A</span><button slot="actions">Always</button><span id="b">B</span></alert-banner>', { modules: ['alert-banner'] });
+  await page.evaluate(() => { for (const id of ['a', 'b']) { const node = document.getElementById(id); node.parentNode.removeChild(node); } });
+  assert.deepEqual(await readBanner(page), { body: '', actions: '<button>Always' });
+  // Replaced by text (el.replaceWith('text')): not a run being cleared.
+  await page.evaluate(() => {
+    const banner = document.querySelector('alert-banner');
+    const first = Object.assign(document.createElement('span'), { id: 'c', textContent: 'C' });
+    banner.insertBefore(first, banner.querySelector('button'));
+    first.replaceWith('text');
+  });
+  assert.deepEqual(await readBanner(page), { body: 'text', actions: '<button>Always' });
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test('an element removed from a named slot takes its stand-in, however it is removed', async () => {
+  const { page, messages } = await open('<alert-banner><span>msg</span><button slot="actions" id="one">1</button><button slot="actions" id="two">2</button><button slot="actions" id="three">3</button></alert-banner>', { modules: ['alert-banner'] });
+  const standIns = () => page.evaluate(async () => {
+    await new Promise((resolve) => setTimeout(resolve));
+    return (document.querySelector('alert-banner').innerHTML.match(/<!--zb-slot-->/g) ?? []).length;
+  });
+  assert.equal(await standIns(), 3);
+  await page.evaluate(() => document.querySelector('alert-banner').removeChild(document.getElementById('one'))); // React, Angular
+  assert.equal(await standIns(), 2);
+  await page.evaluate(() => document.getElementById('two').remove()); // through its real parent
+  assert.equal(await standIns(), 1);
+  await page.evaluate(() => document.getElementById('three').removeAttribute('slot')); // to the default slot, where it was
+  assert.equal(await standIns(), 0);
+  assert.deepEqual(await readBanner(page), { body: '<span>msg<button>3', actions: '' });
+  await page.evaluate(() => { document.getElementById('three').slot = 'actions'; });
+  assert.equal(await standIns(), 1);
+  assert.deepEqual(await readBanner(page), { body: '<span>msg', actions: '<button>3' });
+  await page.evaluate(() => { document.querySelector('alert-banner').textContent = ''; });
+  assert.equal(await standIns(), 0);
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test('a hot reload keeps one stand-in for each element in a named slot', { skip: runtimeOnly || (production && 'the production build has no hot reloading') }, async () => {
+  const { page, messages } = await open('<alert-banner><span>msg</span><button slot="actions">Act</button></alert-banner>', {
+    beforeModules: 'globalThis.__ZUBRA_HOT__ = true;',
+    modules: ['alert-banner'],
+  });
+  const reloaded = await page.evaluate(async () => (await import('/alert-banner.js?again')).default.hotReloaded);
+  assert.equal(reloaded, true);
+  assert.deepEqual(await readBanner(page), { body: '<span>msg', actions: '<button>Act' });
+  assert.equal(await page.evaluate(() => document.querySelector('alert-banner').innerHTML.match(/<!--zb-slot-->/g).length), 1);
+  // The stand-in is the default slot's alone: more content for the actions slot leaves it be.
+  await page.evaluate(() => document.querySelector('alert-banner').append(Object.assign(document.createElement('button'), { textContent: 'Skip', slot: 'actions' })));
+  assert.deepEqual(await readBanner(page), { body: '<span>msg', actions: '<button>Act<button>Skip' });
+  await page.evaluate(() => document.querySelectorAll('alert-banner button').forEach((button) => button.remove()));
+  assert.deepEqual(await readBanner(page), { body: '<span>msg', actions: '' });
+  assert.equal(await page.evaluate(() => document.querySelector('alert-banner').innerHTML.includes('zb-slot')), false);
   assert.deepEqual(messages, []);
   await page.close();
 });

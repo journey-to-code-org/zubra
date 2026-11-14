@@ -1,0 +1,6 @@
+<!-- A default slot and a named one, in different parts of the markup. -->
+<alert-banner heading="">
+  <strong>{heading}</strong>
+  <div class="body"><zb-slot></zb-slot></div>
+  <div class="actions"><zb-slot name="actions"></zb-slot></div>
+</alert-banner>

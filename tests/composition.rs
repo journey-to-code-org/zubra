@@ -65,7 +65,7 @@ const INBOX: &str = r#"<script>
 fn renders_children_inline_with_props_as_values_and_content_in_their_slots() {
     let html = html(INBOX, &files(&[("./badge.zb", BADGE)])).unwrap();
     assert!(
-        html.contains(r#"<zb-badge class="row" label="Ada" count="3" info="{&quot;color&quot;:&quot;red&quot;}">"#),
+        html.contains(r#"<zb-badge class="row" label="Ada" count="3" info="{&quot;color&quot;:&quot;red&quot;}" data-zb-filled="default icon">"#),
         "{html}"
     );
     assert!(

@@ -9,7 +9,8 @@
 // - an zb-if region holds the branch the current values choose, and an zb-each region one row
 //   per item, each with the shape of its block (checked element by element);
 // - a light-DOM slot region is the rest of its range, when nothing follows it there; its
-//   content is the fallback if it has the fallback's shape, and supplied content otherwise;
+//   content is supplied content if the host says the server filled that slot (`data-zb-filled`),
+//   and otherwise the fallback, which it must have the shape of, or nothing;
 // - an zb-await region holds its zb-then block, for a value known at build time, or its pending
 //   block, which the element renders afresh anyway (so only where the region ends matters).
 // Anything else (content projected into a child component, a region the server left to the
@@ -20,7 +21,7 @@ const TEXT = 3;
 const COMMENT = 8;
 
 /** Put back the comments of server markup under `root` (see above). Whether it could. */
-export function remark(root, template, parts, { blueprint, isOpen, isClose, read: $r, untrack, State }) {
+export function remark(root, template, parts, { blueprint, isOpen, isClose, read: $r, untrack, State, filled = [] }) {
   const edits = [];
   const fail = { failed: true };
   const mapOf = (list) => {
@@ -130,7 +131,9 @@ export function remark(root, template, parts, { blueprint, isOpen, isClose, read
         let next = t.nextSibling;
         while (next && next.nodeType === COMMENT && next.data === ']') next = next.nextSibling;
         for (let rest = next; rest; rest = rest.nextSibling) if (!(rest.nodeType === TEXT)) throw fail;
-        let fallback = !!part.fallback;
+        // The host names the slots the server filled (`data-zb-filled`).
+        const given = filled.includes(part.slot);
+        let fallback = !!part.fallback && !given;
         if (fallback) {
           // The fallback's shape exactly (its elements, in order): it's the fallback.
           const saved = edits.length;
@@ -149,6 +152,9 @@ export function remark(root, template, parts, { blueprint, isOpen, isClose, read
           }
         }
         if (!fallback) {
+          // A slot the server didn't fill holds its fallback or nothing: anything else there
+          // isn't the server's markup.
+          if (!given) for (let rest = cursor; rest; rest = rest.nextSibling) if (!isBlank(rest)) throw fail;
           insert(parent, cursor, '[!');
           insert(parent, null, ']');
         }

@@ -506,6 +506,7 @@ fn lower_component(
         supply,
         id_base.as_ref(),
         host_id,
+        filled,
     );
     PROVIDED.with(|provided| {
         let mut provided = provided.borrow_mut();
@@ -519,11 +520,6 @@ fn lower_component(
                 Value::Object(injected).to_string(),
             ));
         }
-        if !filled.is_empty() {
-            lowered
-                .host_attributes
-                .push(("data-zb-filled".to_owned(), filled.join(" ")));
-        }
         lowered
     })
 }
@@ -536,6 +532,7 @@ fn lower_rest(
     supply: &Supply<'_>,
     id_base: Option<&String>,
     host_id: Option<&str>,
+    filled: Vec<&str>,
 ) -> Result<ir::Component, Diagnostic> {
     let context = Context {
         component,
@@ -600,6 +597,25 @@ fn lower_rest(
         .collect();
     if let (Some(base), None) = (id_base, host_id) {
         host_attributes.push(("data-zb-id".to_owned(), base.clone()));
+    }
+    // The slots that were given content (`data-zb-filled`): the ones `hasSlot` asked about, for
+    // either kind of component. A light-DOM component with slots names every one, and has the
+    // attribute with none filled too: its children are then the server's markup for sure, where
+    // children shaped like its template could be the page's own content for a slot. The element
+    // goes by it when the markup's markers were stripped.
+    let mut filled = filled;
+    let mut rest: Vec<&str> = Vec::new();
+    if !component.shadow {
+        rest = declared_slots
+            .iter()
+            .map(String::as_str)
+            .filter(|slot| !filled.contains(slot) && supply.filled(slot))
+            .collect();
+        rest.sort_unstable();
+    }
+    filled.extend(rest);
+    if !filled.is_empty() || (!component.shadow && !declared_slots.is_empty()) {
+        host_attributes.push(("data-zb-filled".to_owned(), filled.join(" ")));
     }
 
     Ok(ir::Component {
