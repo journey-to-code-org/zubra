@@ -3,9 +3,9 @@ export { Signal, isNative } from './signal.js';
 export { effect, scope, flush, tick } from './effect.js';
 export { resource } from './resource.js';
 export {
-  define, $define, ABI, state, computed, watch, onMount, onUnmount, id, props, host, emit, adoptStyles,
+  define, $define, $element, ABI, state, computed, watch, onMount, onUnmount, id, props, host, emit, adoptStyles,
   createContext, provide, inject, ContextRequestEvent, ContextProviderEvent,
   formValue, validity, onFormReset, onFormRestore, onFormDisabled,
   prevent, stop, selfOnly, submit, keys, model, hasSlot, hydrated, signal, from, raw,
-  isSafeUrl, isSafeSrcset, $r, $t,
+  isSafeUrl, isSafeSrcset, $r, $t, $when, $await, $each, $slot,
 } from './element.js';
