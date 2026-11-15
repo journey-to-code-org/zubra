@@ -1,0 +1,4 @@
+<script>
+  'use route'
+</script>
+<docs-page path=""><p class="path">{path}</p></docs-page>
