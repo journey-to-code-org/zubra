@@ -1,0 +1,4 @@
+<script>
+  'use route /farmers'
+</script>
+<farmers-page><h1>Farmers</h1></farmers-page>
