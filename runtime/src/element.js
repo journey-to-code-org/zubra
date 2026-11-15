@@ -781,7 +781,12 @@ function listen(part, node) {
   return [listener, options];
 }
 
+// Interface 2 and 3 parts name no binder: $define fills one in from their keys (`legacyBinder`),
+// and is the only code that names every binder, so an app of interface 4 components drops it.
+let legacy = null;
+
 function bind(part, node, hydrating, context) {
+  if (legacy !== null && part.binder === undefined) legacy(part);
   // @dev
   // The effects created here are this part's (for the DevTools hook, devtools.js).
   const outerLabel = devEffects.label;
@@ -858,14 +863,10 @@ function bind(part, node, hydrating, context) {
     });
   } else if (part.attribute) {
     bindAttribute(part, node, hydrating);
-  } else if (part.when) {
-    bindWhen(part, node, hydrating, context);
-  } else if (part.await) {
-    bindAwait(part, node, hydrating, context);
-  } else if (part.each) {
-    bindEach(part, node, hydrating, context);
-  } else if (part.slot) {
-    bindSlot(part, node, hydrating, context);
+  } else if (part.binder) {
+    // A block (`zb-if`, `zb-await`, `zb-each`) or a slot: interface 4 output imports the binder
+    // for each kind it has, so a bundler leaves out the ones an app doesn't use.
+    part.binder(part, node, hydrating, context);
   }
   // @dev
   devEffects.label = outerLabel;
@@ -1773,8 +1774,16 @@ function serverElement(tag, options) {
  * server markup they hydrate. 3 (5.0) is 2 with processing-instruction markers; this runtime reads
  * 2's comment markers too, so modules compiled by 3.x and 4.x still run.
  */
-export const ABI = 3;
-const READS = [2, 3];
+export const ABI = 4;
+const READS = [2, 3, 4]; // what $define reads; interface 4 output calls $element
+
+/** @internal The binders of interface 4: a block or slot part names one (`binder: $each`). */
+export { bindWhen as $when, bindAwait as $await, bindEach as $each, bindSlot as $slot };
+
+/** An interface 2 or 3 part's binder, from its keys. */
+function legacyBinder(part) {
+  part.binder = part.when ? bindWhen : part.await ? bindAwait : part.each ? bindEach : part.slot ? bindSlot : null;
+}
 
 /**
  * What modules compiled for runtime 1.x call. Their compiled shape differs, so they're refused
@@ -1787,6 +1796,15 @@ export function define(tag) {
 /** @internal Register a compiled component: what the compiler's JavaScript output calls. */
 export function $define(tag, definition) {
   if (!READS.includes(definition?.abi)) {
+    throw new Error(`zubra: <${tag}> was compiled for a different @zubra/runtime (interface ${definition?.abi ?? 1}, this runtime is ${ABI}); recompile it with the matching zubra`);
+  }
+  legacy = legacyBinder;
+  return defineElement(tag, definition);
+}
+
+/** @internal Register a component compiled for interface 4: its parts name their binders. */
+export function $element(tag, definition) {
+  if (definition?.abi !== ABI) {
     throw new Error(`zubra: <${tag}> was compiled for a different @zubra/runtime (interface ${definition?.abi ?? 1}, this runtime is ${ABI}); recompile it with the matching zubra`);
   }
   return defineElement(tag, definition);

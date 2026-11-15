@@ -31,8 +31,10 @@ const BUDGETS = {
   // build's budget didn't move. Light-DOM slots that hold up in Vue, Svelte and Solid — the
   // page's children kept in order, a stand-in where each element for a named slot belongs, so a
   // run of siblings a framework removes takes those elements with it, and `host.firstChild` —
-  // about 450 B, to 17 KB.)
-  'src/index.js': { gzip: 17 * 1024 },
+  // about 450 B, to 17 KB. Interface 4's $element and binders beside $define, which fills in
+  // binders for interface 2 and 3 parts, about 100 B, to 17.25 KB: this entry has both, an app
+  // only one, since interface 4 output doesn't import $define.)
+  'src/index.js': { gzip: 17.25 * 1024 },
   // The production build (the `production` export condition): the same, without hot reloading
   // (12.5 KB until 3.2, 13 KB until 4.2, 13.5 KB until `animate`, 14 KB until the list work,
   // 14.25 KB until the faster Signals core, 14.75 KB until rows without markers, 15 KB until

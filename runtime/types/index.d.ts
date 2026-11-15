@@ -206,6 +206,10 @@ export interface Definition {
  * arguments are the compiled-code interface, version `ABI`, not a public API.
  */
 export declare function $define(tag: string, definition: Definition & { abi: number }): ZubraElementClass;
+/** @internal What interface 4 output calls: as `$define`, for a definition whose parts name their binders. */
+export declare function $element(tag: string, definition: Definition & { abi: number }): ZubraElementClass;
+/** @internal The binders interface 4 parts name (`binder: $each`): compiled code imports them. */
+export declare const $when: unknown, $await: unknown, $each: unknown, $slot: unknown;
 /** The compiled-code interface version this runtime implements. */
 export declare const ABI: number;
 
