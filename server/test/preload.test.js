@@ -202,13 +202,13 @@ test("a page loads the binders its components use, and only those, by address; b
   // zb-each's (like zb-if's) is the core's.
   assert.ok(links.includes('/_zubra/runtime/await.js'));
   for (const file of ['slots.js', 'legacy.js', 'index.js']) assert.ok(!links.includes(`/_zubra/runtime/${file}`), file);
-  // The module names them by address, so a page whose import map only has `@zubra/runtime` (a
-  // framework's own) loads them too.
+  // zb-await's by a path beside the module, so a page whose import map only has `@zubra/runtime`
+  // (a framework's own) loads it too, and a site that serves `/_zubra/` from elsewhere still finds
+  // it; zb-each's from `@zubra/runtime`, whose core has it.
   const url = await listen((request, response) => zubra.handle(request, response));
   const module = await (await fetch(`${url}/_zubra/components/review-list.js`)).text();
-  assert.match(module, /import \{ \$await \} from "\/_zubra\/runtime\/await\.js";/);
-  assert.match(module, /import \{ \$each \} from "\/_zubra\/runtime\/core\.js";/);
-  assert.match(module, /from "@zubra\/runtime";/, 'the core by its name, for the import map');
+  assert.match(module, /import \{ \$await \} from "\.\.\/runtime\/await\.js";/);
+  assert.match(module, /import \{ \$each \} from "@zubra\/runtime";/);
   // With `@zubra/runtime` somewhere else (a CDN), the binders come from beside it: one runtime.
   const elsewhere = createZubra({ components, production: true, imports: { '@zubra/runtime': 'https://cdn.example/zubra/core.js' } });
   const there = await listen((request, response) => elsewhere.handle(request, response));
