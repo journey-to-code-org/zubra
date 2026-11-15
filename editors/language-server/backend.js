@@ -53,7 +53,10 @@ function isZubraCheckout(dir) {
  * Only in a zubra checkout: any repository can hold a `target/release/zubra`, and opening one of
  * its files mustn't run it (security audit Z14).
  */
-export function checkoutCompiler(root, { exe = process.platform === 'win32' ? '.exe' : '' } = {}) {
+export function checkoutCompiler(root, { exe = process.platform === 'win32' ? '.exe' : '', env = process.env } = {}) {
+  // A Cargo.toml saying `name = "zubra"` is one line any repository can write: only someone working
+  // on zubra itself, who says so, gets the checkout's build (security audit 2).
+  if (!env.ZUBRA_DEV_CHECKOUT) return null;
   for (let dir = root && resolve(root); dir; dir = parent(dir)) {
     if (!isZubraCheckout(dir)) continue;
     const built = ['debug', 'release'].map((profile) => join(dir, 'target', profile, `zubra${exe}`)).filter((cli) => existsSync(cli));
