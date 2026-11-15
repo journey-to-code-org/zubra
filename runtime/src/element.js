@@ -1095,6 +1095,8 @@ function defineElement(tag, definition) {
   // Light-DOM slots, when the component has some: imported by its module (`$slotted`), filled in by $define.
   const slottingOf = (next) => (!shadow && next.slots?.length ? next.slotting ?? null : null);
   let slotting = slottingOf(definition);
+  // A form-associated component's API and callbacks: imported by its module (`$form`), filled in by $define.
+  const forming = form ? definition.forming ?? null : null;
   let { roots, template = '', slots = [], styles = null, setup } = definition;
   // On a server (no DOM), a stand-in with the same `zubra` description, so a module that imports a
   // component loads there: adapters render the host tag, and `@zubra/runtime/server` renders it.
@@ -1160,11 +1162,15 @@ function defineElement(tag, definition) {
   // @dev-end
 
   let internals; // (element) => its ElementInternals; set in the static block below
+  let hooksOf; // (element) => its hooks, for form.js; likewise
   class ZubraElement extends HTMLElement {
     static observedAttributes = Object.keys(byAttribute);
     static zubra = describe(tag, { props, shadow, form, slots, events, styled });
     static formAssociated = form;
-    static { internals = (element) => element.#internals; }
+    static {
+      internals = (element) => element.#internals;
+      hooksOf = (element) => element.#hooks;
+    }
     // @hot
     /** Swap in a new version of the component (see above); false if its interface changed. */
     static [HOT](next) {
@@ -1195,7 +1201,6 @@ function defineElement(tag, definition) {
     #cleanups = [];
     #internals = null; // form-associated only
     #states = null; // the custom states (CustomStateSet), for :state(hydrated)
-    #disabled = false;
 
     static {
       for (const name of Object.keys(props)) {
@@ -1302,18 +1307,6 @@ function defineElement(tag, definition) {
       return this.#starting ? this.#starting.then(tick) : tick();
     }
 
-    // Form-associated lifecycle (only called by the browser when `formAssociated` is true).
-    formResetCallback() {
-      for (const fn of this.#hooks?.formReset ?? []) fn();
-    }
-    formStateRestoreCallback(state, mode) {
-      for (const fn of this.#hooks?.formRestore ?? []) fn(state, mode);
-    }
-    formDisabledCallback(disabled) {
-      this.#disabled = disabled;
-      for (const fn of this.#hooks?.formDisabled ?? []) fn(disabled);
-    }
-
     // @hot
     /** Re-run the (new) script and template, keeping props, state and slotted content. */
     #reload() {
@@ -1347,9 +1340,7 @@ function defineElement(tag, definition) {
       let given;
       if (!reloading) try { given = JSON.parse(this.getAttribute('zb-props')); } catch {}
       for (const name in given) if (Object.hasOwn(props, name) && !this.#given.has(name)) this[name] = given[name];
-      // The server's stand-in for this control's value, for submitting before JavaScript
-      // (@zubra/server's injectShadowRoots): the element's own form value takes over now.
-      if (form) for (const child of this.querySelectorAll(':scope>input[data-zb-fallback]')) child.remove();
+      forming?.begin(this);
       // @hot (left out of the production build: scripts/build-production.js)
       if (globalThis.__ZUBRA_HOT__ && !reloading) live.add(new WeakRef(this));
       // @hot-end
@@ -1407,24 +1398,9 @@ function defineElement(tag, definition) {
             // @dev-end
           ) : [];
         } finally { current = previous; }
-        // A form control with one two-way prop: that's what it submits, and what a form reset
-        // restores, unless the script says otherwise.
-        const models = Object.keys(props).filter((name) => props[name].model);
-        if (form && models.length === 1) {
-          const [name] = models;
-          if (!this.#hooks.formValued) {
-            effect(() => {
-              const value = $p[name];
-              this.#internals.setFormValue(value == null || value === false || value === ''
-                ? null
-                : value === true ? 'on' : typeof value === 'object' ? JSON.stringify(value) : String(value));
-            });
-          }
-          if (!this.#hooks.formReset.length) {
-            const initialValue = untrack(() => $p[name]);
-            this.#hooks.formReset.push(() => { $p[name] = initialValue; });
-          }
-        }
+        forming?.model(this.#hooks, $p, props, this.#internals);
+
+
 
         const context = { slots: new Map(), slotted: styled && !shadow ? tag : null, filled: this.#hooks.filled, states: this.#states };
         this.#context = context;
@@ -1484,38 +1460,15 @@ function defineElement(tag, definition) {
           });
         }
       });
-      // Disabled (e.g. inside a disabled <fieldset>) before setup registered its hooks. Chromium
-      // always calls formDisabledCallback after connectedCallback, so this never runs there (the
-      // browser tests confirm the behaviour without it); it guards engines that order the
-      // callbacks the other way, which the test suite can't currently exercise.
       // @dev
       devRegister(this, { tag, definition, props: this.#signals, named, scope: this.#scope });
       // @dev-end
-      if (this.#disabled) for (const fn of this.#hooks.formDisabled) fn(true);
+      forming?.end(this, this.#hooks);
     }
   }
 
-  if (form) {
-    // The API native form controls have, backed by ElementInternals.
-    const api = {
-      form: { get() { return internals(this).form; } },
-      validity: { get() { return internals(this).validity; } },
-      validationMessage: { get() { return internals(this).validationMessage; } },
-      willValidate: { get() { return internals(this).willValidate; } },
-      labels: { get() { return internals(this).labels; } },
-      checkValidity: { value() { return internals(this).checkValidity(); } },
-      reportValidity: { value() { return internals(this).reportValidity(); } },
-    };
-    if (!('name' in props)) {
-      api.name = {
-        get() { return this.getAttribute('name'); },
-        set(value) { this.setAttribute('name', value); },
-      };
-    }
-    for (const [key, descriptor] of Object.entries(api)) {
-      Object.defineProperty(ZubraElement.prototype, key, { ...descriptor, configurable: true });
-    }
-  }
+  forming?.define(ZubraElement, { internals, hooksOf, props });
+
 
   // @dev
   definedAs.set(tag, compiledAs(definition));

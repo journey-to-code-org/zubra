@@ -28,7 +28,9 @@ export default {
     "resource.js",
     "element.js",
     "when.js",
-    "each.js"
+    "each.js",
+    "modifiers.js",
+    "form.js"
   ],
   "deep.js": [
     "signal.js"
@@ -47,13 +49,16 @@ export default {
     "deep.js",
     "effect.js"
   ],
+  "form.js": [
+    "effect.js",
+    "element.js"
+  ],
   "forms.js": [],
   "index.js": [
     "core.js",
     "legacy.js",
     "await.js",
     "slots.js",
-    "modifiers.js",
     "page-styles.js"
   ],
   "legacy.js": [
@@ -62,7 +67,8 @@ export default {
     "element.js",
     "slots.js",
     "when.js",
-    "modifiers.js"
+    "modifiers.js",
+    "form.js"
   ],
   "modifiers.js": [
     "effect.js",
@@ -151,20 +157,21 @@ export const bundled = {
   "element.js": [
     "zubra.js"
   ],
+  "form.js": [
+    "zubra.js"
+  ],
   "forms.js": [],
   "index.js": [
     "zubra.js",
     "legacy.js",
     "await.js",
     "slots.js",
-    "modifiers.js",
     "page-styles.js"
   ],
   "legacy.js": [
     "await.js",
     "zubra.js",
-    "slots.js",
-    "modifiers.js"
+    "slots.js"
   ],
   "modifiers.js": [
     "zubra.js"

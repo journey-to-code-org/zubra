@@ -6,6 +6,5 @@ export * from './core.js';
 export { $define } from './legacy.js';
 export { $await } from './await.js';
 export { $slot, $slotted } from './slots.js';
-export { $modified } from './modifiers.js';
 // What @zubra/unplugin's light-DOM components with styles import (`stylesFromPage`).
 export { $pageStyles } from './page-styles.js';

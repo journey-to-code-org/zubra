@@ -209,7 +209,7 @@ export declare function $define(tag: string, definition: Definition & { abi: num
 /** @internal What interface 4 output calls: as `$define`, for a definition whose parts name their binders. */
 export declare function $element(tag: string, definition: Definition & { abi: number }): ZubraElementClass;
 /** @internal The binders interface 4 parts name (`binder: $each`): compiled code imports them. */
-export declare const $when: unknown, $await: unknown, $each: unknown, $slot: unknown, $modified: unknown;
+export declare const $when: unknown, $await: unknown, $each: unknown, $slot: unknown, $modified: unknown, $form: unknown;
 /** @internal A light-DOM component's slots: interface 4 output with slots imports it (`slotting: $slotted`). */
 export declare const $slotted: unknown;
 /** @internal A light-DOM component's rules from the page, for an element inside a shadow root (`stylesFromPage`). */

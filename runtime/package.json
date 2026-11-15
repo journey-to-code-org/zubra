@@ -45,6 +45,11 @@
       "production": "./dist/production/modifiers.js",
       "default": "./src/modifiers.js"
     },
+    "./form": {
+      "types": "./types/binders.d.ts",
+      "production": "./dist/production/form.js",
+      "default": "./src/form.js"
+    },
     "./signal": {
       "types": "./types/signal.d.ts",
       "production": "./dist/production/signal.js",
