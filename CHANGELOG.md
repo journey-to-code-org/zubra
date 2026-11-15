@@ -4,6 +4,18 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Security
+
+The lows from the 2026-11-12 security audit.
+
+- **A `>` inside a quoted attribute no longer ends a host's start tag** in `injectShadowRoots()` (Z10). Svelte and Solid leave `>` unescaped in attribute values; a value like `Ann > Bob` lost the host its declarative shadow root and left junk attributes behind.
+- **The Actions result cookie is `__Host-zb_result` and `Secure` on HTTPS, and only the page the form came from reads it** (Z11). A sibling subdomain or a plain-HTTP response could plant a "result" the next page would show; now browsers refuse that, and `result()` on another path leaves the cookie alone. Also fixed: a post with no `Referer` went back to `<action path>/null`; it now goes to `/`.
+- **A backslash counts as a slash in URL checks** (Z12): `/\evil.example` and `\\evil.example` are other sites to a browser, and the compiler, the runtime and `--emit element` output now refuse them like `//evil.example`.
+- **SVG `<set>` and `<animate>` can't animate a link to an unchecked URL** (Z13). Interpolation into their `to`, `from`, `by` or `values` is a compile error, as in `srcdoc`, and a literal value animating a URL attribute is checked like that attribute.
+- **The language server only runs a `target/{debug,release}/zubra` inside a Zubra checkout** (Z14), so opening a file in another repository can't run a binary it planted. The VS Code extension declares that it waits for a trusted workspace (`untrustedWorkspaces: false`), since it runs the compiler a workspace installs.
+- **A Sync page hears nothing of writes outside its scope** (S7). It used to get an empty `changes` event with the log's cursor for every write anywhere, which told one business when another was busy; the JavaScript server and `zubra-sync` both skip it now.
+- **`zubra-sync` caps a push at 1000 changes**, as `@zubra/sync/server`'s `maxChanges` does, and **`@zubra/server` no longer caches a 404 for an hour**: only a 200 is cached, so a module added in a deploy isn't hidden by a cached 404.
+
 ## 5.16.0 — 2026-11-14
 
 ### Added

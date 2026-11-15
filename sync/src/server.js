@@ -329,7 +329,12 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
     return { since: '0', reset: true };
   }
   async function broadcastChanges(changes, cursor) {
-    for (const listener of listeners) listener.send('changes', { changes: await visible(listener, changes), cursor });
+    for (const listener of listeners) {
+      const mine = await visible(listener, changes);
+      // Nothing it may see is nothing to say: an empty event (and its cursor) would tell a page
+      // that another business on the log just wrote. Its next real event carries the cursor on.
+      if (mine.length) listener.send('changes', { changes: mine, cursor });
+    }
   }
   /** The live stream holding a peer id, if any. */
   const holder = (peer) => [...listeners].find((listener) => listener.peer === peer);
