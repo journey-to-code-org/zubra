@@ -31,7 +31,7 @@ The React and Vue hosts use each tool's components for that framework (`impl/<to
 
 ## What was measured
 
-Zubra 5.16.0, Lit 3.3.3, Stencil 4.45.3 and Enhance SSR 4.0.3, all from npm, on Node 22 and Chromium. From `node measure.mjs` on 2026-11-14.
+Zubra 5.18.0, Lit 3.3.3, Stencil 4.45.3 and Enhance SSR 4.0.3, all from npm, on Node 22 and Chromium. From `node measure.mjs` on 2026-11-15.
 
 **Lines written** (not blank, not comments):
 
@@ -48,10 +48,10 @@ Zubra 5.16.0, Lit 3.3.3, Stencil 4.45.3 and Enhance SSR 4.0.3, all from npm, on 
 
 | Host | Zubra | Lit | Stencil | Enhance |
 |---|---:|---:|---:|---:|
-| React | 16.8 KB | 9.2 KB | 12.9 KB | 5.2 KB |
-| Vue | 16.2 KB | 8.8 KB | 13.1 KB | 5.5 KB |
-| Svelte | 15.2 KB | 8.3 KB | 11.6 KB | 5.0 KB |
-| Angular | 15.3 KB | 8.3 KB | 11.7 KB | 5.1 KB |
+| React | 15.9 KB | 9.2 KB | 12.9 KB | 5.2 KB |
+| Vue | 15.2 KB | 8.8 KB | 13.1 KB | 5.5 KB |
+| Svelte | 14.2 KB | 8.3 KB | 11.6 KB | 5.0 KB |
+| Angular | 14.3 KB | 8.3 KB | 11.7 KB | 5.1 KB |
 
 Zubra also has a 1.2 KB chunk loaded on demand (it repairs hydration markers a sanitizer removed).
 
@@ -60,12 +60,12 @@ Zubra also has a 1.2 KB chunk loaded on demand (it repairs hydration markers a s
 | | Zubra | Lit | Stencil | Enhance |
 |---|---:|---:|---:|---:|
 | HTML, 3 orders (gzip) | 1.9 KB | 2.0 KB | 2.1 KB | 1.7 KB |
-| JavaScript loaded (gzip) | 17.7 KB, 2 requests | 11.1 KB, 1 request | 12.8 KB, 1 request | 5.7 KB, 1 request |
-| Elements defined, slow connection | 600 ms | 527 ms | 520 ms | 419 ms |
-| Render, 3 orders, new data each time | 258 µs | 119 µs | 2422 µs | 490 µs |
-| Render, 100 orders, new data each time | 4088 µs | 1600 µs | 22004 µs | 5728 µs |
-| Render, 3 orders, the same data again | 33 µs | 98 µs | 2286 µs | 471 µs |
-| Render, 100 orders, the same data again | 283 µs | 1545 µs | 21173 µs | 5470 µs |
+| JavaScript loaded (gzip) | 15.6 KB, 2 requests | 11.1 KB, 1 request | 12.8 KB, 1 request | 5.7 KB, 1 request |
+| Elements defined, slow connection | 570 ms | 529 ms | 522 ms | 420 ms |
+| Render, 3 orders, new data each time | 333 µs | 181 µs | 2688 µs | 490 µs |
+| Render, 100 orders, new data each time | 4529 µs | 1728 µs | 24227 µs | 6672 µs |
+| Render, 3 orders, the same data again | 39 µs | 93 µs | 2244 µs | 809 µs |
+| Render, 100 orders, the same data again | 295 µs | 1461 µs | 22735 µs | 6577 µs |
 | JavaScript off: orders readable | yes | yes | yes | yes |
 | JavaScript off: label names its input | yes | yes | yes | yes |
 | JavaScript off: the form adds the order | yes | no | no | yes |
