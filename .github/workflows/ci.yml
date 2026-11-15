@@ -756,8 +756,10 @@ jobs:
     name: Skills (an agent uses them; non-blocking)
     runs-on: ubuntu-latest
     continue-on-error: true
-    # Only whether there is a key is job-wide; the key itself reaches the one step that calls the
-    # model, not `npm ci`, cargo or anything else that runs the PR's code and its dependencies.
+    # Only whether there is a key is job-wide; the key itself reaches only the step that calls the
+    # model, not `npm ci` or cargo. That step does run the PR's own skills/test/agent.test.js (and
+    # what it imports, built by the steps before), so the key is as safe as the PR is trusted:
+    # fork PRs get no secrets, so this is a pull request from a branch of this repository.
     env:
       HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
     steps:

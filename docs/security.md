@@ -31,3 +31,5 @@ Zubra draws one trust boundary: **the `.zb` source is code you trust; the values
 ## Reporting a vulnerability
 
 Please report security issues privately, through the repository's GitHub security advisories ("Report a vulnerability"), rather than in a public issue.
+
+**Development builds.** `@zubra/runtime`'s `default` export condition is its source, with the development warnings and the DevTools hook; the `production` condition (which bundlers use for a production build) leaves both out. The hook is readable only by scripts on the same page, which can reach the components through the DOM anyway, so it gives a page's own scripts nothing new. A page loading the runtime from a CDN should still load `dist/production/` (or `dist/bundled/`).
