@@ -18,6 +18,9 @@ import { startBinary } from './backends.js';
 const viaBinary = process.env.ZUBRA_SYNC_BACKEND === 'binary';
 let binary = null;
 let presencePosts = 0;
+// A peer id the test server says someone else holds (409), and the live streams it can cut.
+let squatted = null;
+const streams = new Set();
 let dropSignals = 0; // a test can lose the next few signaling messages on purpose
 let slowPulls = 0; // and hold the next few pulls for 400 ms
 
@@ -48,6 +51,12 @@ before(async () => {
   server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     if (req.url.startsWith('/_zb/sync/presence')) presencePosts += 1;
+    if (url.pathname === '/_zb/sync/live') {
+      if (squatted && url.searchParams.get('peer') === squatted) return res.writeHead(409, { 'content-type': 'application/json' }).end('{"error":"That peer id is another viewer\'s; pick another"}');
+      const stream = { peer: url.searchParams.get('peer'), res };
+      streams.add(stream);
+      res.on('close', () => streams.delete(stream));
+    }
     if (req.url.startsWith('/_zb/sync/pull') && slowPulls > 0) {
       slowPulls -= 1;
       await new Promise((done) => setTimeout(done, 400));
@@ -643,6 +652,37 @@ test('presence: other devices too, through the server, and a closed tab leaves',
   await two.waitForSelector('.count:has-text("0")', { timeout: 5000 });
   await a.close();
   await b.close();
+});
+
+test('a tab whose peer id someone else holds now takes a new one, and is live again', { timeout: 20_000 }, async () => {
+  const a = await browser.newContext();
+  const b = await browser.newContext();
+  const one = await board(a, 'b9', true);
+  const two = await board(b, 'b9', true);
+  const idOf = (page) => page.evaluate(() => import('/sync/index.js').then((sync) => sync.peerId()));
+  const first = await idOf(one);
+  await one.waitForTimeout(300);
+  await point(one, 11, 22);
+  await two.waitForSelector('.other:has-text("11,22")', { timeout: 5000 });
+  try {
+    // Its connection drops for longer than the server keeps the id, and someone else takes it.
+    squatted = first;
+    for (const stream of streams) if (stream.peer === first) stream.res.destroy();
+    let second = first;
+    for (let i = 0; i < 50 && second === first; i++) second = await one.waitForTimeout(200).then(() => idOf(one));
+    assert.notEqual(second, first, 'a new peer id');
+    // Live again, as the new peer: it sees the other device move.
+    while (![...streams].some((stream) => stream.peer === second)) await one.waitForTimeout(100);
+    await one.waitForTimeout(200);
+    await point(two, 77, 88);
+    await one.waitForSelector('.other:has-text("77,88")', { timeout: 5000 });
+    // And the other device sees it where it was, as the new peer (the old one said goodbye).
+    await two.waitForFunction(() => document.querySelector('.count')?.textContent === '1' && document.querySelector('.other')?.textContent === '11,22', null, { timeout: 5000 });
+  } finally {
+    squatted = null;
+    await a.close();
+    await b.close();
+  }
 });
 
 test('webrtc: once two devices have a data channel, presence stops going through the server', async () => {
