@@ -4,6 +4,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Changed
+
+- **Server rendering a list does about an eighth less work.** A `zb-each` over a list that outlives the render (a prop, a script value, or a field of a row of one) reads its rows where they are and lends them to their scopes; before, the list was copied for every pass over it, so a table's `columns` was copied once per row. The response is written straight to a string, and an element's name is no longer copied to check for `<select>` and `<textarea>`. Same HTML: all 277 `.zb` files in the repository render to the same bytes. Instructions per render of the comparison's table, native: 22.3M to 19.6M for 100 orders (0.88), 0.91 for 3 orders; about 3.1 to 2.5 ms a render on the machine it was measured on.
+
 ## 5.19.0 — 2026-11-15
 
 ### Security

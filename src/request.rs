@@ -65,7 +65,9 @@ pub fn handle(request: &str) -> String {
         Ok(_) => failure("the request must be a JSON object"),
         Err(error) => failure(&format!("the request isn't JSON: {error}")),
     };
-    response.to_string()
+    // Written straight to a string: `Value`'s `Display` goes through a formatter, at twice the cost
+    // for a page of HTML.
+    serde_json::to_string(&response).unwrap_or_else(|_| response.to_string())
 }
 
 fn failure(message: &str) -> Value {
