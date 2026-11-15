@@ -14,12 +14,16 @@
 //
 // A route's `load({ params, url, request })` runs on the server before the page renders; what
 // it returns becomes the page's props. A parameter the page declares as a prop is passed too.
+//
+// Layouts wrap the page, outermost first: `app.zb`, then each 'use layout <prefix>' the path is
+// under, the page in the innermost one's default slot. A layout has its own `load`, and one
+// that declares a `route` prop is given `{ path, pattern, params }` (to mark where you are).
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { findCompiler } from '@zubra/server';
-import { buildTable, matcher, RouteError } from './table.js';
+import { APP, buildTable, matcher, RouteError } from './table.js';
 
 export { RouteError };
 
@@ -43,13 +47,18 @@ async function urlPattern() {
  * `zubra`: the app's `createZubra()`, which renders the pages. `components`: the same folder
  * (default `components`). `cacheDir`: where the routes' server halves are written (bare imports
  * resolve from there, so keep it inside the project). `onError(error, request)`: called when a
- * `load` throws; the browser gets a plain 500, never the message.
+ * `load` throws; the browser gets a plain 500, never the message. `lang`: the document's
+ * language (default `en`). `head`: HTML for every page's `<head>` (fonts, a stylesheet), or a
+ * function of `{ url, request, route }` returning it; written as given, so it is the app's own
+ * markup, never a visitor's text.
  */
 export async function createRouter({
   zubra,
   components = 'components',
   cacheDir = join(process.cwd(), 'node_modules', '.cache', 'zubra-router'),
   onError = (error) => console.error(error),
+  lang = 'en',
+  head = '',
 } = {}) {
   if (!zubra?.page) throw new RouteError('createRouter({ zubra }) needs the app\'s createZubra() to render pages');
   const root = resolve(components);
@@ -64,11 +73,11 @@ export async function createRouter({
     const described = compile({ emit: 'interface', path, files: read(path) });
     if (!described.ok) throw new Error(described.error);
     const info = JSON.parse(described.output);
-    if (!info.route) continue;
     const name = relative(root, path).split(sep).join('/').replace(SOURCE, '');
+    if (!info.route && name !== APP) continue;
     const file = relative(process.cwd(), path);
-    entries.push({ name, file, props: info.props.map((prop) => prop.name), route: info.route });
-    if (info.route.load) halves.set(name, path);
+    entries.push({ name, file, props: info.props.map((prop) => prop.name), slots: info.slots, route: info.route });
+    if (info.route?.load) halves.set(name, path);
   }
   const { pages, layouts } = buildTable(entries);
   const propsOf = new Map(entries.map((entry) => [entry.name, new Set(entry.props)]));
@@ -96,24 +105,36 @@ export async function createRouter({
     const found = match(url.pathname);
     if (!found) return null;
     const { page, params } = found;
-    const declared = propsOf.get(page.name);
-    const props = {};
-    for (const [key, value] of Object.entries(params)) if (declared.has(key)) props[key] = value;
-    const load = loads.get(page.name);
-    if (load) {
-      let loaded;
-      try {
-        loaded = await load({ params, url, request });
-      } catch (error) {
-        onError(error, request);
-        return text(500, 'Internal error');
+    const route = { path: url.pathname, pattern: page.pattern, params };
+    // The layouts, outermost first, then the page: each one's props, its `load` run in that order.
+    const parts = [];
+    for (const name of [...page.layouts, page.name]) {
+      const declared = propsOf.get(name);
+      const props = {};
+      if (declared.has('route')) props.route = route;
+      for (const [key, value] of Object.entries(params)) if (declared.has(key)) props[key] = value;
+      const load = loads.get(name);
+      if (load) {
+        let loaded;
+        try {
+          loaded = await load({ params, url, request, route });
+        } catch (error) {
+          onError(error, request);
+          return text(500, 'Internal error');
+        }
+        // Props the component declares; anything else `load` returns doesn't reach it.
+        for (const [key, value] of Object.entries(loaded ?? {})) if (declared.has(key)) props[key] = value;
       }
-      // Props the page declares; anything else `load` returns doesn't reach it.
-      for (const [key, value] of Object.entries(loaded ?? {})) if (declared.has(key)) props[key] = value;
+      parts.push({ name, props });
     }
     const rendering = zubra.page();
-    const body = rendering.render(page.name, props);
-    const html = rendering.finish(`<!doctype html>\n<html><head><meta charset="utf-8"></head><body>${body}</body></html>`);
+    // Inside out: the page, then each layout with what's inside it in its default slot.
+    let body = '';
+    for (const { name, props } of parts.reverse()) {
+      body = name === page.name ? rendering.render(name, props) : rendering.render(name, props, { default: body });
+    }
+    const extra = typeof head === 'function' ? await head({ url, request, route }) : head;
+    const html = rendering.finish(`<!doctype html>\n<html lang="${escapeAttribute(lang)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${extra ?? ''}</head><body>${body}</body></html>`);
     return new Response(request.method === 'HEAD' ? null : html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
   }
 
@@ -138,8 +159,8 @@ export async function createRouter({
     listener,
     fetch: respond,
     /** The pages, most specific first: `[{ name, pattern, params, load }]`. */
-    routes: () => pages.map(({ name, pattern, params, load }) => ({ name, pattern, params, load })),
-    /** The layouts found (served from stage A3). */
+    routes: () => pages.map(({ name, pattern, params, load, layouts }) => ({ name, pattern, params, load, layouts })),
+    /** The layouts, outermost first: `[{ name, pattern, root }]` (`app.zb` is `/`). */
     layouts: () => layouts.map(({ name, pattern, root }) => ({ name, pattern, root })),
     /** Which page a path goes to: `{ name, pattern, params }`, or null. */
     match: (pathname) => {
@@ -148,6 +169,8 @@ export async function createRouter({
     },
   };
 }
+
+const escapeAttribute = (value) => String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 const text = (status, body) => new Response(body, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } });
 

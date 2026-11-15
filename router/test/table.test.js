@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { URLPattern } from 'urlpattern-polyfill/urlpattern';
-import { buildTable, folderPattern, matcher, patternParams } from '../src/table.js';
+import { buildTable, folderPattern, layoutsFor, matcher, patternParams } from '../src/table.js';
 
 test('a place in routes/ is a path', () => {
   assert.equal(folderPattern('routes/index'), '/');
@@ -38,4 +38,26 @@ test('layouts are recorded, by prefix, apart from pages', () => {
   assert.equal(layouts[0].pattern, '/farm');
   assert.equal(layouts[0].root, true);
   assert.throws(() => buildTable([{ name: 'a', route: { kind: 'layout', pattern: '/x' } }, { name: 'b', route: { kind: 'layout', pattern: '/x' } }]), /both layouts for \/x/);
+});
+
+test("a layout's folder is its prefix", () => {
+  assert.equal(folderPattern('routes/layout', 'layout'), '/');
+  assert.equal(folderPattern('routes/farm/layout', 'layout'), '/farm');
+  assert.equal(folderPattern('routes/farms/[id]/layout', 'layout'), '/farms/:id');
+  assert.equal(folderPattern('routes/farm/shell', 'layout'), null);
+});
+
+test('the layouts around a page: whole segments, outermost first, from the innermost root', () => {
+  const layout = (name, pattern, root = false) => ({ name, pattern, root });
+  const layouts = [layout('farm', '/farm', true), layout('app', '/'), layout('stock', '/farm/stock'), layout('one', '/farms/:id')];
+  const names = (pattern) => layoutsFor(pattern, layouts).map((each) => each.name);
+  assert.deepEqual(names('/'), ['app']);
+  assert.deepEqual(names('/about'), ['app']);
+  assert.deepEqual(names('/farmers'), ['app']);
+  assert.deepEqual(names('/farm'), ['farm']);
+  assert.deepEqual(names('/farm/stock/low'), ['farm', 'stock']);
+  assert.deepEqual(names('/farms/:id/orders'), ['app', 'one']);
+  assert.deepEqual(names('/farms/:slug'), ['app'], "a parameter's name is part of the prefix");
+  // No shell at all: a page is rendered alone.
+  assert.deepEqual(layoutsFor('/about', []), []);
 });

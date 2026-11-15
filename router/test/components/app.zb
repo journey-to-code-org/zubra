@@ -1,0 +1,7 @@
+<app-shell route={{}}>
+  <header class="public">
+    <a href="/" aria-current={route.path === '/' ? 'page' : null}>Home</a>
+    <a href="/about" aria-current={route.path === '/about' ? 'page' : null}>About</a>
+  </header>
+  <main><zb-slot></zb-slot></main>
+</app-shell>

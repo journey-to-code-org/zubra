@@ -1,0 +1,4 @@
+<script>
+  'use route /farm'
+</script>
+<farm-today><h1>Today</h1></farm-today>

@@ -9,10 +9,11 @@
 //   zubra compile <file> [--emit js|html|css|dts|manifest] [--framework react|vue|svelte|solid] [--partial]
 //   zubra check <file>... [--server] [--client]  --server: what a server without JavaScript leaves out; --client: whether each needs its module in the browser
 //   zubra check --types <file | dir>... [--format json]   the project's TypeScript checks scripts, templates, props and events
+//   zubra types [file | dir]... [--dir .zubra/types] [--framework react|vue|svelte|solid|none]   the typings @zubra/unplugin's dts: { dir } writes, without a build
 //   zubra fmt <file | dir>... [--check] [--indent <n> | --tabs] [--width <n>]   (--stdin: in to out)
 //   zubra convert <Component.jsx | my-element.js> [--prefix <word>] [--as jsx|zubra] [--out <file> | --stdout]   React → zubra JSX, or .zb; a custom element → .zb
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, watch, writeFileSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compileFile, format, request } from './index.js';
 import { buildLibrary } from './library.js';
@@ -101,6 +102,69 @@ function componentsIn(path, found = []) {
     } else if (name.endsWith('.zb')) found.push(child);
   }
   return found;
+}
+
+/** The frameworks typings can be for, by the npm package an app that uses one depends on. */
+const FRAMEWORKS = { react: 'react', vue: 'vue', svelte: 'svelte', 'solid-js': 'solid' };
+
+/** The framework of the app at `root`: the one in its package.json, or `none` (the elements). */
+function frameworkOf(root) {
+  let manifest = {};
+  try { manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')); } catch { /* no package.json: the elements */ }
+  const names = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies, ...manifest.peerDependencies });
+  const found = [...new Set(names.filter((name) => name in FRAMEWORKS).map((name) => FRAMEWORKS[name]))];
+  if (found.length > 1) throw new Error(`zubra types: package.json depends on ${found.join(' and ')}: say which the typings are for with --framework ${found.join('|')}`);
+  return found[0] ?? 'none';
+}
+
+/**
+ * `zubra types`: write the typings of the components in `paths` (files or folders; default, the
+ * root) where @zubra/unplugin's `dts: { dir }` writes them during a build, so `tsc` can run on a
+ * fresh checkout before one. `dir` mirrors `root`: `src/rating.zb` is typed by
+ * `<dir>/src/rating.d.zb.ts`, and a component above the root by a `__` per folder up, with the
+ * `rootDirs` that pair them in `<dir>/tsconfig.json` (plugin/src/index.js has the same layout).
+ * Returns the framework and the files written.
+ */
+export function writeTypes(paths, { dir = '.zubra/types', framework, root = process.cwd() } = {}) {
+  const base = resolve(root);
+  const out = resolve(base, dir);
+  if (framework !== undefined && framework !== 'none' && !Object.values(FRAMEWORKS).includes(framework)) {
+    throw new Error(`zubra types: --framework is ${Object.values(FRAMEWORKS).join(', ')} or none, not "${framework}"`);
+  }
+  framework ??= frameworkOf(base);
+  const components = (paths.length ? paths : [base]).flatMap((path) => {
+    if (!existsSync(path)) throw new Error(`zubra types: ${path} doesn't exist`);
+    return componentsIn(resolve(path));
+  });
+  const config = join(out, 'tsconfig.json');
+  let levels = 1;
+  try { levels = Math.max(1, JSON.parse(readFileSync(config, 'utf8')).compilerOptions.rootDirs.length / 2); } catch { /* none yet */ }
+  const files = [];
+  const errors = [];
+  for (const component of [...new Set(components)]) {
+    const folders = relative(base, dirname(component));
+    if (isAbsolute(folders)) continue; // another drive: nothing to mirror
+    const parts = folders.split(sep).filter(Boolean);
+    const response = compileFile(component, { emit: 'dts', framework });
+    if (!response.ok) {
+      errors.push(response.error);
+      continue;
+    }
+    levels = Math.max(levels, parts.filter((part) => part === '..').length + 1);
+    const target = join(out, ...parts.map((part) => (part === '..' ? '__' : part)), `${basename(component, '.zb')}.d.zb.ts`);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, response.output);
+    files.push(target);
+  }
+  if (files.length) {
+    const posix = (folder) => folder.split(sep).join('/') || '.';
+    const rootDirs = [];
+    for (let level = 0; level < levels; level++) {
+      rootDirs.push(posix(relative(out, resolve(base, ...Array(level).fill('..')))), posix(join('.', ...Array(level).fill('__'))));
+    }
+    writeFileSync(config, `${JSON.stringify({ compilerOptions: { allowArbitraryExtensions: true, rootDirs } }, null, 2)}\n`);
+  }
+  return { framework, files, errors };
 }
 
 /** `zubra fmt`: as the Rust CLI's (src/main.rs): format in place, or --check, or --stdin. */
@@ -207,6 +271,13 @@ function main(argv) {
     }
   } else if (command === 'fmt') {
     fmt(rest, flags);
+  } else if (command === 'types') {
+    const dir = flags.dir ?? '.zubra/types';
+    const { framework, files, errors } = writeTypes(rest, { dir, framework: flags.framework });
+    for (const error of errors) process.stderr.write(error);
+    if (errors.length) process.exitCode = 1;
+    if (!files.length && !errors.length) throw new Error(`zubra types: no .zb components in ${rest.length ? rest.join(', ') : 'this folder'}`);
+    console.log(`zubra: typings of ${files.length} component${files.length === 1 ? '' : 's'} in ${relative(process.cwd(), resolve(dir)) || '.'}, for ${framework === 'none' ? 'the elements' : framework}`);
   } else if (command === 'check' && flags.types) {
     if (!rest.length) throw new Error('usage: zubra check --types <file.zb | folder>...');
     const { diagnostics, checked } = checkTypes(rest, { keep: flags.keep });

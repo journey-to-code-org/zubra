@@ -1,0 +1,4 @@
+<script>
+  'use layout'
+</script>
+<docs-shell><aside class="docs">Docs</aside><zb-slot></zb-slot></docs-shell>
