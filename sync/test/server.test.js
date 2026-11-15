@@ -298,8 +298,8 @@ test('authorize() is told what kind of request it is, at every place it is asked
   assert.deepEqual(await step(async () => { await push(sync, [change('title', 'y', '000000000000002-00000-dev1')]); await stream.next(); }), ['change:true', 'read:false']);
   // Joining a room: presence, then a read for the other page it's shown to.
   assert.deepEqual(await step(async () => { assert.equal((await say(sync, { room: 'orders/o1', peer: 'p2', state: { looking: 'driver' } })).status, 200); await stream.next(); }), ['presence:true', 'read:false']);
-  // A pull: a read per change.
-  assert.deepEqual(await step(() => pull(sync)), ['read:false', 'read:false']);
+  // A pull: a read per document (both changes are to one), asked once.
+  assert.deepEqual(await step(() => pull(sync)), ['read:false']);
   await stream.return();
 });
 

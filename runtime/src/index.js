@@ -1,11 +1,8 @@
-// @zubra/runtime — everything compiled components and their scripts import.
-export { Signal, isNative } from './signal.js';
-export { effect, scope, flush, tick } from './effect.js';
-export { resource } from './resource.js';
-export {
-  define, $define, $element, ABI, state, computed, watch, onMount, onUnmount, id, props, host, emit, adoptStyles,
-  createContext, provide, inject, ContextRequestEvent, ContextProviderEvent,
-  formValue, validity, onFormReset, onFormRestore, onFormDisabled,
-  prevent, stop, selfOnly, submit, keys, model, hasSlot, hydrated, signal, from, raw,
-  isSafeUrl, isSafeSrcset, $r, $t, $when, $await, $each, $slot, $slotted,
-} from './element.js';
+// @zubra/runtime — everything compiled components and their scripts import: the core, the
+// binders and $define. A bundler keeps only what's imported.
+export * from './core.js';
+// Modules compiled for interfaces 2 and 3, and 5.17's interface 4 output, import these from here
+// ($when and $each are the core's); @zubra/server's output imports each from its own entry.
+export { $define } from './legacy.js';
+export { $await } from './await.js';
+export { $slot, $slotted } from './slots.js';

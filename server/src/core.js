@@ -15,8 +15,6 @@ export { SOURCE_EXTENSION, TYPES };
 // of keys and HTML in all, and the largest one answer may be.
 const RENDERS = 500;
 const RENDER_BYTES = 8 * 1024 * 1024;
-/** How many joined modules built only to answer a request are kept. */
-const ASKED = 64;
 const RENDER_LARGEST = 512 * 1024;
 
 /**
@@ -33,8 +31,6 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   if (typeof inline !== 'boolean') throw new Error(`@zubra/server: inline is true or false, not ${JSON.stringify(inline)}`);
   if (typeof preload !== 'boolean') throw new Error(`@zubra/server: preload is true or false, not ${JSON.stringify(preload)}`);
   const memo = new Map();
-  // Joined modules built only because a request named their set (bounded; see serve).
-  const asked = new Map();
   const once = (key, make) => {
     if (!cache || !memo.has(key)) memo.set(key, make());
     return memo.get(key);
@@ -188,7 +184,11 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     const found = new Set();
     const queue = [];
     const add = (from, specifier) => {
-      const path = joinPath(from.includes('/') ? from.slice(0, from.lastIndexOf('/')) : '', specifier);
+      const folder = from.includes('/') ? from.slice(0, from.lastIndexOf('/')) : '';
+      // (One that leaves the folder, a binder of the runtime's beside it (`../runtime/await.js`),
+      // isn't a module of the components'.)
+      if (specifier.split('/').filter((part) => part === '..').length > (folder ? folder.split('/').length : 0)) return;
+      const path = joinPath(folder, specifier);
       if (path.endsWith('.js') && !found.has(path)) {
         found.add(path);
         queue.push(path);
@@ -214,15 +214,32 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   // address in place of its text (a light-DOM component's; see the joined module below).
   const js = (name, stylesHref) => once(`js:${name}${stylesHref ? `:${stylesHref}` : ''}`, () => {
     const path = pathOf(name);
-    const response = send({ emit: 'js', runtime: '@zubra/runtime', devtools, path, files: sourcesOf(path), ...(stylesHref ? { stylesHref } : {}) });
+    // `binderEntries`: a block's or slot's binder comes from its own runtime entry, so a page loads
+    // only the binders its components use (`@zubra/runtime` is mapped to the core, below). Those
+    // imports are written as the files' addresses, so a page with an import map of its own (a
+    // framework's, naming only `@zubra/runtime`) loads them too.
+    const response = send({ emit: 'js', runtime: '@zubra/runtime', devtools, binderEntries: true, path, files: sourcesOf(path), ...(stylesHref ? { stylesHref } : {}) });
     if (!response.ok) throw new Error(response.error);
-    return resolved(needs(name, response.output));
+    return resolved(resolveImports(String(needs(name, response.output)), bindersFor(name)));
   });
 
   /** What each bare specifier a browser module may import resolves to: the import map's entries. */
   // `bundle`: the runtime's entry and what it imports are one file (`@zubra/runtime`'s
   // `dist/bundled`), so a page asks for one module where it asked for seven.
-  const mapping = () => ({ '@zubra/runtime': `${base}/runtime/${bundle ? 'zubra.js' : 'index.js'}`, '@zubra/runtime/spread': `${base}/runtime/spread.js`, '@zubra/runtime/primitives': `${base}/runtime/primitives.js`, '@zubra/runtime/motion': `${base}/runtime/motion.js`, '@zubra/runtime/track': `${base}/runtime/track.js`, ...syncImports, ...imports });
+  // The core, without the binders and $define, which the modules this server compiles import from
+  // their own entries (`binderEntries`).
+  // Each binder's file sits beside the runtime, wherever `imports` points `@zubra/runtime` (a CDN,
+  // say), so a page never mixes two copies of it. (The modules import them by address: js().)
+  const runtimeUrl = imports['@zubra/runtime'] ?? `${base}/runtime/${bundle ? 'zubra.js' : 'core.js'}`;
+  // zb-if's and zb-each's binders are the core's own, so they come from `@zubra/runtime` like the
+  // rest of it. zb-await's and the slots' are files of their own, beside the core: by a path
+  // relative to the component's module, so they move with the folder (a static site that serves
+  // `/_zubra/` from somewhere else, rewriting only its pages), or by the address `imports` gave.
+  const bindersFor = (name) => {
+    const beside = (file) => (imports['@zubra/runtime'] ? runtimeUrl.replace(/[^/]*$/, file) : `${'../'.repeat(name.split('/').length)}runtime/${file}`);
+    return { '@zubra/runtime/when': '@zubra/runtime', '@zubra/runtime/each': '@zubra/runtime', '@zubra/runtime/await': beside('await.js'), '@zubra/runtime/slots': beside('slots.js') };
+  };
+  const mapping = () => ({ '@zubra/runtime': runtimeUrl, '@zubra/runtime/spread': `${base}/runtime/spread.js`, '@zubra/runtime/primitives': `${base}/runtime/primitives.js`, '@zubra/runtime/motion': `${base}/runtime/motion.js`, '@zubra/runtime/track': `${base}/runtime/track.js`, ...syncImports, ...imports });
   /**
    * `inline: false` (a Content-Security-Policy without `'unsafe-inline'`, on a site that can't
    * give each response a nonce): a page gets no import map, so every module is served with its
@@ -271,6 +288,8 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
    * names don't fit a URL, and a single component are served as before, module by module.
    */
   const JOINED_NAMES = 160; // the most characters of a URL the names may take
+  const ASKED = 64; // joined sets built for a URL alone, kept (see `serve`)
+  const asked = new Map();
   const joinedKey = (set) => `joined:${set.join('+')}`;
   const componentSet = (names) => {
     const found = [...names];
@@ -357,13 +376,16 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     if (bundle && rest.startsWith('b/') && rest.endsWith('.js')) {
       const set = rest.slice('b/'.length, rest.lastIndexOf('.', rest.length - 4)).split('+').map((name) => name.replaceAll('~', '/'));
       const known = set.every((name) => files.has(name)) && set.join('+') === componentSet(set).join('+');
-      // A set no page rendered is built to answer, and kept with the few others only requests
-      // asked for, whatever the hash asked: a wrong one is answered from there, not built again,
-      // and a visitor naming set after set fills that, never the memo pages keep theirs in.
       const key = joinedKey(set);
-      let one = known ? (memo.get(key) ?? asked.get(key)) : null;
-      if (known && !one) {
-        one = join(set);
+      // A set this server's pages use is in `memo`. One only a URL asked for (any instance can
+      // build any set from its URL) is built to answer and kept among the most recent `ASKED`,
+      // whatever the hash said: there are as many sets as subsets of the components, so asking
+      // for one after another neither grows memory without end nor joins the same set twice.
+      let one = null;
+      if (known && memo.has(key)) one = memo.get(key);
+      else if (known) {
+        one = asked.has(key) ? asked.get(key) : join(set);
+        asked.delete(key);
         asked.set(key, one);
         if (asked.size > ASKED) asked.delete(asked.keys().next().value);
       }

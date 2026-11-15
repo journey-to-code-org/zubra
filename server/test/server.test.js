@@ -44,7 +44,7 @@ const layout = (body) => `<!doctype html><html><head><meta charset="utf-8"><titl
 test('imports adds import map entries for other packages the components import', () => {
   const zubra = createZubra({ components, imports: { '@zubra/sync': '/sync/index.js' } });
   const html = zubra.page().finish('<html><head></head><body></body></html>');
-  assert.match(html, /"@zubra\/runtime":"\/_zubra\/runtime\/index\.js"/);
+  assert.match(html, /"@zubra\/runtime":"\/_zubra\/runtime\/core\.js"/);
   assert.match(html, /"@zubra\/sync":"\/sync\/index\.js"/);
 });
 
@@ -78,7 +78,7 @@ test('a page: render, finish (CSS, import map, modules), and the browser modules
   const html = await (await fetch(url)).text();
   assert.match(html, /<p>Hello Ada\. a, c<\/p>/, 'rendered on the server, JavaScript (filter, map, join) included');
   assert.match(html, /<style data-zb-components>[^]*color: rgb\(0, 128, 0\)/);
-  assert.match(html, /"@zubra\/runtime":"\/_zubra\/runtime\/index\.js"/);
+  assert.match(html, /"@zubra\/runtime":"\/_zubra\/runtime\/core\.js"/);
   assert.match(html, /import '\/_zubra\/components\/hello-there\.js';<\/script>\n?<\/body>/);
   assert.equal((await fetch(`${url}/_zubra/components/nope.js`)).status, 404);
   // (fetch() would normalize the dots away: send the path as written.)

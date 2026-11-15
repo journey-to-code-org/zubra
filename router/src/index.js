@@ -374,18 +374,26 @@ function checkedLocation({ location, external }, url) {
   return target.origin === url.origin ? target.pathname + target.search + target.hash : target.href;
 }
 
-/** A Host header that is only a host: a name, IPv4 or [IPv6], and a port. */
-const HOST = /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$/;
+// A Host header is a host and an optional port. Anything else (a path, a query, an empty one)
+// would move the URL's path away from the request's: `Host: site/admin` with `GET /public` would
+// read as `/admin/public`, past a proxy that allowed `/public`. That's refused (the callers answer
+// 400); a request without one (HTTP/1.0) is for localhost.
+const HOST = /^(?:[\w.-]+|\[[\da-fA-F:.]+\])(?::\d{1,5})?$/;
+const hostOf = (req) => {
+  const { host } = req.headers;
+  if (host === undefined) return 'localhost';
+  if (!HOST.test(host)) throw new TypeError(`not a host: ${JSON.stringify(host)}`);
+  return host;
+};
 
 /**
  * A Node GET or HEAD request as a fetch Request. The path routed is `req.url`'s, and nothing
- * else: a `Host` that isn't a host (`localhost/staff`) or a target that isn't a path
- * (`http://evil/staff`, `//evil/staff`) would make the URL's path differ from `req.url`, past
- * any guard the app keeps on `req.url`. Those throw, and `handle()` answers 400.
+ * else: a target that isn't a path (`http://evil/staff`, `//evil/staff`) would make the URL's
+ * path differ from `req.url`, past any guard the app keeps on it. That throws, as a bad Host
+ * does, and `handle()` answers 400.
  */
 function toRequest(req) {
-  const host = req.headers.host ?? 'localhost';
-  if (!HOST.test(host)) throw new RouteError('a Host header that is not a host');
+  const host = hostOf(req);
   if (typeof req.url !== 'string' || !req.url.startsWith('/') || req.url.startsWith('//')) throw new RouteError('a request target that is not a path');
   const protocol = req.socket?.encrypted ? 'https' : 'http';
   const headers = new Headers();

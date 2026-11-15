@@ -402,6 +402,8 @@ fn answer(request: &Map<String, Value>, path: &str, set: &crate::loaded::Set) ->
                     // `stylesHref`: the page already has this component's CSS; see `JsOptions`.
                     styles_href: text("stylesHref").filter(|_| style_imports.is_none()),
                     devtools: flag("devtools"),
+                    // `binderEntries`: each binder from its own entry (`@zubra/server`).
+                    binder_entries: flag("binderEntries"),
                 },
                 &loader,
             )

@@ -51,6 +51,11 @@ Every npm package entry and command below has a tier; `docs/test/stability.test.
 | `@zubra/runtime/signal` | Stable | Runtime | Examples that share state |
 | `@zubra/runtime/effect` | Stable | Runtime | Examples |
 | `@zubra/runtime/spread` | Stable | Runtime | Registry, converted React components |
+| `@zubra/runtime/core` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`, `bundle.test.js`) | `@zubra/server`, which maps `@zubra/runtime` to it: the runtime without `zb-await`'s binder, the slot router and `$define` |
+| `@zubra/runtime/when` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`) | The compiled-code interface: `zb-if`'s binder, for modules compiled with `--binder-entries` (what `@zubra/server` asks for) |
+| `@zubra/runtime/each` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`) | The compiled-code interface: `zb-each`'s binder, for modules compiled with `--binder-entries` (what `@zubra/server` asks for) |
+| `@zubra/runtime/await` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`) | The compiled-code interface: `zb-await`'s binder, for modules compiled with `--binder-entries` (what `@zubra/server` asks for) |
+| `@zubra/runtime/slots` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`) | The compiled-code interface: light-DOM slots and the slot router's binder, for modules compiled with `--binder-entries` (what `@zubra/server` asks for) |
 | `@zubra/runtime/zag` | Stable | Runtime; registry | Registry `combo-box` |
 | `@zubra/runtime/primitives` | Stable | Runtime; registry | Registry menus, tabs |
 | `@zubra/runtime/motion` | Supported | Runtime (both outputs) | Zubra UI motion components |

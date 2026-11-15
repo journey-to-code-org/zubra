@@ -46,10 +46,19 @@
 // as another viewer, leave a room for them, or receive the WebRTC signals meant for them.
 //
 // On Node, `handle(req, res)` answers sync requests (streaming the live ones) and returns true.
-export const MOUNT = '/_zb/sync';
 
-/** A Host header that is a host and nothing else. */
-const HOST = /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$/;
+// A Host header is a host and an optional port. Anything else (a path, a query, an empty one)
+// would move the URL's path away from the request's: `Host: site/admin` with `GET /public` would
+// read as `/admin/public`, past a proxy that allowed `/public`. That's refused (the callers answer
+// 400); a request without one (HTTP/1.0) is for localhost.
+const HOST = /^(?:[\w.-]+|\[[\da-fA-F:.]+\])(?::\d{1,5})?$/;
+const hostOf = (req) => {
+  const { host } = req.headers;
+  if (host === undefined) return 'localhost';
+  if (!HOST.test(host)) throw new TypeError(`not a host: ${JSON.stringify(host)}`);
+  return host;
+};
+export const MOUNT = '/_zb/sync';
 
 /** How long a peer whose stream ended keeps its id for a reconnect with its key (ms). */
 const RECONNECT = 60_000;
@@ -573,13 +582,7 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
     let url;
     // A Host header that isn't a host can't make a URL: a 400 before the body is read, not an
     // unhandled rejection that ends the process.
-    // Nor one carrying a path (`localhost/_zb/sync/push?`): it would choose the URL answered, past
-    // the app's own check on req.url.
-    const host = req.headers.host ?? 'localhost';
-    try {
-      if (!HOST.test(host)) throw new TypeError('a Host header that is not a host');
-      url = new URL(`http://${host}${req.url}`);
-    } catch { res.writeHead(400, { 'content-type': 'text/plain' }).end('Bad request'); return true; }
+    try { url = new URL(`http://${hostOf(req)}${req.url}`); } catch { res.writeHead(400, { 'content-type': 'text/plain' }).end('Bad request'); return true; }
     const controller = new AbortController();
     res.on('close', () => controller.abort());
     const chunks = [];

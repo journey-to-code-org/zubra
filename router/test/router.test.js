@@ -366,3 +366,27 @@ test('errors without error.zb get a heading in the shell; without a shell, or wh
 test('createRouter needs the app\'s createZubra()', async () => {
   await assert.rejects(createRouter({ components }), /needs the app's createZubra\(\)/);
 });
+
+test("a Host header that isn't a host is refused, not read as part of the path", async () => {
+  // Node's own request and response, as router.handle sees them.
+  const handle = (url, headers) => new Promise((resolve) => {
+    const res = {
+      statusCode: 200,
+      setHeader() {},
+      writeHead(status) { this.statusCode = status; return this; },
+      end(body) { resolve({ status: this.statusCode, body: String(body ?? '') }); },
+    };
+    router.handle({ method: 'GET', url, headers, socket: {} }, res);
+  });
+  // `Host: x/farms/hilltop` with `GET /about` would read as /farms/hilltop/about, and with a `?`
+  // as /farms/hilltop itself: a page the request didn't ask for, past a proxy that allowed /about.
+  for (const host of ['x/farms/hilltop?', 'x/farms/hilltop', 'x#', '', 'a b']) {
+    assert.equal((await handle('/about', { host })).status, 400, JSON.stringify(host));
+  }
+  // A host and a port, a name with an underscore (a container's), an IPv6 address, or no Host
+  // at all (HTTP/1.0): the page asked for.
+  for (const headers of [{ host: 'localhost:3000' }, { host: 'my_app:8080' }, { host: '[::1]:3000' }, {}]) {
+    const answer = await handle('/about', headers);
+    assert.equal(answer.status, 200, JSON.stringify(headers));
+  }
+});

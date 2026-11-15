@@ -52,14 +52,14 @@ test('bundle: a production page maps and preloads the runtime as one module, and
   assert.doesNotMatch(String(served.body), /(?:\bfrom|\bimport)\s*["']/, 'it imports nothing');
   // Without it, as before: the entry and its modules.
   const plain = runtime(preloaded(pageOf(createZubra({ components, production: true }))));
-  assert.ok(plain.includes('/_zubra/runtime/index.js') && plain.length > 5 && !plain.includes('/_zubra/runtime/zubra.js'));
+  assert.ok(plain.includes('/_zubra/runtime/core.js') && plain.length > 5 && !plain.includes('/_zubra/runtime/zubra.js'));
 });
 
 test('bundle: no effect in development or with the DevTools, which read the runtime file by file', () => {
   for (const options of [{}, { production: true, devtools: true }]) {
     const html = pageOf(createZubra({ components, bundle: true, ...options }));
     assert.deepEqual(runtime(preloaded(html)), runtime(preloaded(pageOf(createZubra({ components, ...options })))));
-    assert.match(html, /"@zubra\/runtime":"\/_zubra\/runtime\/index\.js"/);
+    assert.match(html, /"@zubra\/runtime":"\/_zubra\/runtime\/core\.js"/);
   }
 });
 
@@ -389,4 +389,50 @@ test("bundle: in a browser the joined light-DOM components are styled by the pag
     assert.deepEqual(errors, []);
     await page.close();
   });
+});
+
+test('a joined module only a URL asks for is built once and kept among the most recent, whatever its hash', async () => {
+  const { createCore } = await import('../src/core.js');
+  // Seven components, each importing nothing: any two or more of them are a set (120 sets).
+  const names = ['a-one', 'a-two', 'a-three', 'a-four', 'a-five', 'a-six', 'a-seven'];
+  let joins = 0;
+  const core = createCore({
+    request: (body) => {
+      if (body.command === 'load') return { ok: true, output: null };
+      if (body.command === 'join') {
+        joins++;
+        return { ok: true, output: `// ${body.modules.map((module) => module.path).join(' ')}` };
+      }
+      if (body.emit === 'interface') return { ok: true, output: JSON.stringify({ tag: body.path.slice(3, -3), shadow: false, form: false, props: [] }) };
+      if (body.emit === 'js') return { ok: true, output: `export const tag = ${JSON.stringify(body.path)};` };
+      return { ok: true, output: '' };
+    },
+    files: new Map(names.map((name) => [name, `/c/${name}.zb`])),
+    sourcesOf: (path) => ({ [path]: `<${path.slice(3, -3)}></${path.slice(3, -3)}>` }),
+    base: '/_zubra',
+    bundle: true,
+    warn: () => {},
+  });
+  const ask = (set) => core.serve(`/_zubra/b/${set}.0000000000.js`)?.status;
+  // A wrong hash, asked again and again: one join.
+  for (let i = 0; i < 5; i++) assert.equal(ask('a-one+a-two'), 404);
+  assert.equal(joins, 1, 'the same set is joined once');
+  // Every set, once: a join each. Then the first again, which the most recent 64 no longer
+  // have (so asking for set after set doesn't grow memory without end), and the last, which they do.
+  const sets = [];
+  for (let mask = 1; mask < 1 << names.length; mask++) {
+    const set = names.filter((_, i) => mask & (1 << i)).sort();
+    if (set.length > 1) sets.push(set.join('+'));
+  }
+  assert.equal(sets.length, 120);
+  joins = 0;
+  for (const set of sets) ask(set);
+  assert.equal(joins, 119, 'a join each (a-one+a-two, the first, was still kept from above)');
+  ask(sets[0]);
+  assert.equal(joins, 120, 'the oldest was let go, and is built again');
+  ask(sets.at(-1));
+  assert.equal(joins, 120, 'the newest is kept');
+  // A set whose names aren't all components is refused before anything is joined.
+  assert.equal(ask('a-one+nope'), 404);
+  assert.equal(joins, 120);
 });

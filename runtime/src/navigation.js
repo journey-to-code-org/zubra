@@ -12,7 +12,7 @@
 // Without JavaScript, or for a link it leaves alone, the link is a link. It leaves alone: a click
 // something already handled (`preventDefault()`), a modified or non-primary click (new tab,
 // window, download), a `target` other than `_self`, `download`, `rel="external"`, another
-// origin, and a link to a place on the current page (`#…`). Only links inside a Zubra component
+// origin, a path that starts with `//`, and a link to a place on the current page (`#…`). Only links inside a Zubra component
 // are routed by default (the app's own links are its router's business); `within` changes that.
 //
 // If the app's router already intercepts the Navigation API's `navigate` event (Baseline since
@@ -43,6 +43,10 @@ export function routeLinks(navigate, { within = isComponent, root = globalThis.d
     const url = new URL(anchor.href, anchor.baseURI);
     const here = new URL(globalThis.location.href);
     if (url.origin !== here.origin) return;
+    // A path that starts with `//` (`https://site//evil.example/`) stays on this site as a link,
+    // but a router given it as `to` may read it as another site's address (protocol-relative):
+    // such a link is left to the browser.
+    if (url.pathname.startsWith('//')) return;
     if (url.hash && url.pathname === here.pathname && url.search === here.search) return;
     event.preventDefault();
     navigate(url.pathname + url.search + url.hash, { event, anchor, url });

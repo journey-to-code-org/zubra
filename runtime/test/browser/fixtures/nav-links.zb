@@ -8,6 +8,7 @@
     <a class="download" href="/file.txt" download>File</a>
     <a class="external" href="/b" rel="external">Reload</a>
     <a class="away" href="https://example.com/">Away</a>
+    <a class="double" href="/.//example.com/">This site, a path that starts with //</a>
     <a class="handled" href="/b" onclick={(event) => event.preventDefault()}>Handled</a>
   </nav>
   <zb-slot></zb-slot>

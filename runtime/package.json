@@ -1,6 +1,6 @@
 {
   "name": "@zubra/runtime",
-  "version": "5.17.0",
+  "version": "5.18.0",
   "description": "Browser runtime for Zubra compiled components, built on the TC39 Signals API",
   "license": "ISC",
   "repository": {
@@ -14,6 +14,31 @@
       "types": "./types/index.d.ts",
       "production": "./dist/production/index.js",
       "default": "./src/index.js"
+    },
+    "./core": {
+      "types": "./types/core.d.ts",
+      "production": "./dist/production/core.js",
+      "default": "./src/core.js"
+    },
+    "./when": {
+      "types": "./types/binders.d.ts",
+      "production": "./dist/production/when.js",
+      "default": "./src/when.js"
+    },
+    "./each": {
+      "types": "./types/binders.d.ts",
+      "production": "./dist/production/each.js",
+      "default": "./src/each.js"
+    },
+    "./await": {
+      "types": "./types/binders.d.ts",
+      "production": "./dist/production/await.js",
+      "default": "./src/await.js"
+    },
+    "./slots": {
+      "types": "./types/binders.d.ts",
+      "production": "./dist/production/slots.js",
+      "default": "./src/slots.js"
     },
     "./signal": {
       "types": "./types/signal.d.ts",
