@@ -188,6 +188,8 @@ export function createZubra({ components = 'components', packages = [], prefix =
 
   /** Node's http (and Express, Koa, Fastify's raw request): true when it answered. */
   function handle(req, res) {
+    // `//host/_zubra/…` would read as a path of the URL's host: not ours, as the router's isn't.
+    if (typeof req.url !== 'string' || !req.url.startsWith('/') || req.url.startsWith('//')) return false;
     const served = core.serve(new URL(req.url, 'http://x').pathname);
     if (!served) return false;
     res.writeHead(served.status, { 'content-type': served.type, 'cache-control': core.cacheControlOf(served) });

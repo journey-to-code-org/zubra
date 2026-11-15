@@ -48,6 +48,9 @@
 // On Node, `handle(req, res)` answers sync requests (streaming the live ones) and returns true.
 export const MOUNT = '/_zb/sync';
 
+/** A Host header that is a host and nothing else. */
+const HOST = /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$/;
+
 /** How long a peer whose stream ended keeps its id for a reconnect with its key (ms). */
 const RECONNECT = 60_000;
 
@@ -570,7 +573,13 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
     let url;
     // A Host header that isn't a host can't make a URL: a 400 before the body is read, not an
     // unhandled rejection that ends the process.
-    try { url = new URL(`http://${req.headers.host ?? 'localhost'}${req.url}`); } catch { res.writeHead(400, { 'content-type': 'text/plain' }).end('Bad request'); return true; }
+    // Nor one carrying a path (`localhost/_zb/sync/push?`): it would choose the URL answered, past
+    // the app's own check on req.url.
+    const host = req.headers.host ?? 'localhost';
+    try {
+      if (!HOST.test(host)) throw new TypeError('a Host header that is not a host');
+      url = new URL(`http://${host}${req.url}`);
+    } catch { res.writeHead(400, { 'content-type': 'text/plain' }).end('Bad request'); return true; }
     const controller = new AbortController();
     res.on('close', () => controller.abort());
     const chunks = [];

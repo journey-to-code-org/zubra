@@ -136,6 +136,9 @@ test('page.provide(): every component the page renders gets the value, on the se
   // (Dots are resolved before the request reaches us; an encoded slash isn't, and is decoded after.)
   const status = await new Promise((resolve) => request(`${url}/`, { path: '/_zubra/components/..%2F..%2Fsrc%2Findex.js' }, (response) => resolve(response.statusCode)).end());
   assert.equal(status, 404, 'no way out of the components folder');
+  // `//host/_zubra/…` is not a path of ours (the router agrees), so it falls through to the app.
+  const type = await new Promise((resolve) => request(`${url}/`, { path: '//evil.example/_zubra/components/theme.js' }, (response) => resolve(response.headers['content-type'])).end());
+  assert.notEqual(type, 'text/javascript; charset=utf-8');
   assert.match(html, /<ctx-themed>\s*<p><\/p>/, 'the one before: its default is left to the browser');
   const page = await open(url);
   await page.waitForFunction(() => customElements.get('ctx-themed'));

@@ -453,6 +453,15 @@ test("handle(): a Host header that isn't a host is a 400, and the server keeps a
     });
     assert.match(answer, /^HTTP\/1\.1 400/);
     assert.equal(await (await fetch(`http://127.0.0.1:${port}/`)).text(), 'page');
+    // A Host carrying a path would choose what is answered past the app's check on req.url.
+    const pathed = await new Promise((done) => {
+      let out = '';
+      const socket = connect(port, '127.0.0.1', () => socket.write('GET /_zb/sync/x HTTP/1.1\r\nHost: localhost/_zb/sync/pull?\r\nConnection: close\r\n\r\n'));
+      socket.setTimeout(3000, () => socket.destroy());
+      socket.on('data', (chunk) => (out += chunk));
+      socket.on('close', () => done(out));
+    });
+    assert.match(pathed, /^HTTP\/1\.1 400/);
   } finally {
     server.close();
   }
