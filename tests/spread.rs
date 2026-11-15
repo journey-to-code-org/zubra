@@ -441,3 +441,22 @@ fn every_html_attribute_name_a_spread_writes_still_passes() {
         "{html}"
     );
 }
+
+#[test]
+fn a_spread_never_sets_an_animations_values_or_a_metas_http_equiv() {
+    // As props (a visitor's data): left out, not an error.
+    let source = r#"<x-anim anim={{}} meta={{}}><svg><a href="/ok"><set {...anim}/><text>t</text></a></svg><meta {...meta}></x-anim>"#;
+    let props = r#"{"anim": {"attributeName": "href", "to": "javascript:alert(1)", "values": "javascript:alert(1)", "begin": "0s"}, "meta": {"http-equiv": "refresh", "content": "0;url=https://evil.example/"}}"#;
+    let html = compile(source, props).unwrap();
+    assert!(html.contains(r#"<set begin="0s">"#), "{html}");
+    // (The host tag carries the props themselves; what matters is what the children say.)
+    let children = &html[html.find("<svg>").unwrap()..];
+    assert!(!children.contains("javascript:"), "{html}");
+    assert!(!children.contains("http-equiv"), "{html}");
+    // `animate`, `animateMotion`, `animateTransform` too; other elements keep `to` and `values`.
+    let source = r#"<x-anim anim={{}}><svg><animate {...anim}/><animateTransform {...anim}/><g {...anim}/></svg></x-anim>"#;
+    let html = compile(source, r#"{"anim": {"to": "x", "values": "y"}}"#).unwrap();
+    let children = &html[html.find("<svg>").unwrap()..];
+    assert_eq!(children.matches("to=").count(), 1, "{html}");
+    assert_eq!(children.matches("values=").count(), 1, "{html}");
+}

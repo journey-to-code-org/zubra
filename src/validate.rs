@@ -135,6 +135,21 @@ fn omit_unsafe(attribute: &str, value: &str) {
 
 /// Note a spread key left out of the HTML because it can't be an attribute (or CSS property)
 /// name: it's a value's key, maybe a user's, and written raw it would be markup.
+/// What a spread leaves out of an element, as data, though the template could write it:
+/// an animation's values and target (`<set attributeName="href" to="javascript:…">` is a link to
+/// a URL nothing checks), and a `<meta>`'s `http-equiv` (a refresh is a redirect to anywhere).
+pub(crate) fn spread_never_sets(tag: &str, name: &str) -> bool {
+    let tag = tag.to_ascii_lowercase();
+    let name = name.to_ascii_lowercase();
+    (matches!(
+        tag.as_str(),
+        "set" | "animate" | "animatemotion" | "animatetransform"
+    ) && matches!(
+        name.as_str(),
+        "to" | "from" | "by" | "values" | "attributename"
+    )) || (tag == "meta" && name == "http-equiv")
+}
+
 fn omit_name(what: &str, key: &str) {
     let start: String = key.chars().take(24).collect();
     let more = if key.chars().count() > 24 { "…" } else { "" };
@@ -1472,6 +1487,7 @@ impl Context<'_> {
                         }
                         check_attribute_statically(attribute)?;
                         check_animation_value(element, attribute)?;
+                        check_meta_value(element, attribute)?;
                     }
                     self.resolve_nodes(&element.children, scopes)?;
                 }
@@ -2554,6 +2570,10 @@ impl Context<'_> {
                 omit_name("an attribute name", &key);
                 continue;
             }
+            if spread_never_sets(&element.name, &name) {
+                omit_name("one a spread may set here", &key);
+                continue;
+            }
             if name == "style" {
                 let Value::Object(properties) = value else {
                     if value.is_null() || value == Value::Bool(false) {
@@ -3026,6 +3046,35 @@ fn check_animation_value(
         }
         AttributeValue::None => Ok(()),
     }
+}
+
+/// `<meta http-equiv="refresh" content="0;url={next}">` is a redirect to wherever the value
+/// says, and other `http-equiv`s set the page's policies: their `content`, and `http-equiv`
+/// itself, are the author's text only.
+fn check_meta_value(element: &ast::Element, attribute: &ast::Attribute) -> Result<(), Diagnostic> {
+    if !element.name.eq_ignore_ascii_case("meta") {
+        return Ok(());
+    }
+    let dynamic = match &attribute.value {
+        AttributeValue::Expression(..) => true,
+        AttributeValue::Text(parts) => parts
+            .iter()
+            .any(|part| matches!(part, AstPart::Expression { .. })),
+        AttributeValue::None => false,
+    };
+    let lower = attribute.name.to_ascii_lowercase();
+    let equiv = element
+        .attributes
+        .iter()
+        .any(|other| other.name.eq_ignore_ascii_case("http-equiv"));
+    if dynamic && (lower == "http-equiv" || (lower == "content" && equiv)) {
+        return Err(Diagnostic::new(
+            attribute.span,
+            format!("interpolation in <meta http-equiv> `{lower}` is not supported: a refresh there is a redirect to wherever the value says"),
+        )
+        .with_help("redirect on the server (a `load` can return redirect(…)), or write the value in the template"));
+    }
+    Ok(())
 }
 
 /// The text of an attribute with no expressions in it.

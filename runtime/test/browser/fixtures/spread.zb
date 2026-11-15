@@ -3,9 +3,11 @@
   let clicks = 0
   let lit = false
 </script>
-<spread-demo attrs={{}} field={{}}>
+<spread-demo attrs={{}} field={{}} anim={{}} meta={{}}>
   <a class="base" class:lit={lit} title="own" {...attrs}>link</a>
   <input {...field}>
   <button type="button" onclick={() => (lit = !lit)}>toggle</button>
   <output>{clicks}</output>
+  <svg><a href="/ok"><set {...anim}/><text y="10">t</text></a></svg>
+  <meta {...meta}>
 </spread-demo>

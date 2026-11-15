@@ -77,6 +77,19 @@ test('what an attribute could not do, a spread cannot: unsafe URLs, text handler
   assert.equal(messages.filter((message) => message.startsWith('error: zubra:')).length, 6, messages.join('\n'));
 });
 
+test("an animation's values and target, and a meta's http-equiv, are the template's only", async () => {
+  const { page, messages } = await open('<spread-demo></spread-demo>', { modules: ['spread'] });
+  await set(page, {
+    anim: { attributeName: 'href', to: 'javascript:alert(1)', values: 'javascript:alert(1)', begin: '0s', fill: 'freeze' },
+    meta: { 'http-equiv': 'refresh', content: '0;url=https://evil.example/' },
+  });
+  const set_ = await page.$eval('spread-demo set', (el) => Object.fromEntries([...el.attributes].map((a) => [a.name, a.value])));
+  assert.deepEqual(set_, { begin: '0s', fill: 'freeze' });
+  assert.equal(await page.$eval('spread-demo a[href="/ok"]', (a) => a.getAttribute('href')), '/ok');
+  assert.equal(await page.$eval('spread-demo meta', (el) => el.getAttribute('http-equiv')), null);
+  assert.equal(messages.filter((message) => message.startsWith('error: zubra:')).length, 4, messages.join('\n'));
+});
+
 test("a key that can't be an attribute or CSS property name is left out, and the rest still applies (audit Z3)", async () => {
   const { page, messages } = await open('<spread-demo></spread-demo>', { modules: ['spread'] });
   await set(page, { attrs: { title: 'x', 'x onmouseover=alert(1) y': '1', 'a"><b>': '1', 'data-ok': 'yes', style: { color: 'blue', 'color:red;background:url(//evil)': '1', '--brand': 'green' } } });

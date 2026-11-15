@@ -17,6 +17,12 @@ const see = (section) => ` (see https://github.com/journey-to-code-org/zubra#${s
 const SPREAD_URLS = new Set(['action', 'background', 'cite', 'codebase', 'data', 'formaction', 'href', 'longdesc', 'manifest', 'poster', 'profile', 'src', 'xlink:href', 'usemap']);
 // Keys that would write markup or script: never from a spread.
 const SPREAD_REFUSED = new Set(['innerhtml', 'outerhtml', 'innertext', 'textcontent', 'srcdoc', 'dangerouslysetinnerhtml', 'children']);
+// An animation's values and target (`<set attributeName="href" to="javascript:…">` is a link to a
+// URL nothing checks) and a <meta>'s http-equiv (a refresh redirects anywhere): the template's
+// text only, never a spread's, as on the server.
+const ANIMATIONS = new Set(['set', 'animate', 'animatemotion', 'animatetransform']);
+const ANIMATED = new Set(['to', 'from', 'by', 'values', 'attributename']);
+const neverSpread = (tag, name) => (ANIMATIONS.has(tag.toLowerCase()) && ANIMATED.has(name)) || (tag.toLowerCase() === 'meta' && name === 'http-equiv');
 const SPREAD_PROPERTIES = new Set(['value', 'checked', 'selected', 'indeterminate']);
 const SPREAD_NAMES = { classname: 'class', htmlfor: 'for' };
 const kebab = (key) => (key.startsWith('--') ? key : key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`));
@@ -80,7 +86,7 @@ export function spread(part, node) {
         continue;
       }
       const name = SPREAD_NAMES[lower] ?? (lower.startsWith('aria-') || lower.startsWith('data-') || node.namespaceURI !== 'http://www.w3.org/1999/xhtml' ? key : lower);
-      if (SPREAD_REFUSED.has(lower)) {
+      if (SPREAD_REFUSED.has(lower) || neverSpread(node.localName, lower)) {
         console.error(`zubra: a spread can't set "${key}"${see('safety')}`);
         continue;
       }

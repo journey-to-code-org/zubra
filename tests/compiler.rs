@@ -447,6 +447,37 @@ fn rejects_unsafe_literal_urls_and_leaves_out_unsafe_values() {
 }
 
 #[test]
+fn a_meta_refresh_is_the_templates_text_only() {
+    for source in [
+        r#"<x-go next=""><meta http-equiv="refresh" content="0;url={next}"></x-go>"#,
+        r#"<x-go next=""><meta http-equiv="refresh" content={next}></x-go>"#,
+        r#"<x-go kind=""><meta http-equiv={kind} content="0"></x-go>"#,
+    ] {
+        let error = compile(source, "{}").unwrap_err();
+        assert!(
+            error.message.contains("<meta http-equiv>"),
+            "{source}: {}",
+            error.message
+        );
+        assert!(
+            zubra::compile_js(source, "@zubra/runtime", "x-go.zb").is_err(),
+            "{source}"
+        );
+    }
+    // A meta without http-equiv may say what it likes.
+    compile(
+        r#"<x-go d=""><meta name="description" content={d}></x-go>"#,
+        "{}",
+    )
+    .unwrap();
+    compile(
+        r#"<x-go><meta http-equiv="refresh" content="30"></x-go>"#,
+        "{}",
+    )
+    .unwrap();
+}
+
+#[test]
 fn validates_srcset_and_srcdoc() {
     assert!(compile(
         "<zb-pic><img srcset=\"/small.webp 1x, https://mnix.dev/large.webp 2x\"></zb-pic>",
