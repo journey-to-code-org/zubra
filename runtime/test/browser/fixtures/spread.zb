@@ -8,6 +8,6 @@
   <input {...field}>
   <button type="button" onclick={() => (lit = !lit)}>toggle</button>
   <output>{clicks}</output>
-  <svg><a href="/ok"><set {...anim}/><text y="10">t</text></a></svg>
+  <svg><a href="/ok"><set {...anim} /><text y="10">t</text></a></svg>
   <meta {...meta}>
 </spread-demo>
