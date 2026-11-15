@@ -27,6 +27,8 @@ export default {
     "effect.js",
     "resource.js",
     "element.js",
+    "parts.js",
+    "shadow.js",
     "when.js",
     "each.js",
     "modifiers.js",
@@ -70,6 +72,8 @@ export default {
     "await.js",
     "each.js",
     "element.js",
+    "parts.js",
+    "shadow.js",
     "slots.js",
     "when.js",
     "modifiers.js",
@@ -84,6 +88,10 @@ export default {
   "navigation.js": [],
   "outlet.js": [],
   "page-styles.js": [],
+  "parts.js": [
+    "element.js",
+    "effect.js"
+  ],
   "primitives.js": [],
   "react.js": [
     "outlet.js",
@@ -97,6 +105,9 @@ export default {
     "effect.js"
   ],
   "server.js": [],
+  "shadow.js": [
+    "element.js"
+  ],
   "signal-impl.js": [],
   "signal.js": [
     "signal-impl.js"
@@ -189,6 +200,9 @@ export const bundled = {
   "navigation.js": [],
   "outlet.js": [],
   "page-styles.js": [],
+  "parts.js": [
+    "zubra.js"
+  ],
   "primitives.js": [],
   "react.js": [
     "outlet.js",
@@ -201,6 +215,9 @@ export const bundled = {
     "zubra.js"
   ],
   "server.js": [],
+  "shadow.js": [
+    "zubra.js"
+  ],
   "signal.js": [
     "zubra.js"
   ],

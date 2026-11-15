@@ -294,7 +294,7 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     let list =
         |names: &mut dyn Iterator<Item = &str>| names.map(json).collect::<Vec<_>>().join(", ");
     out.push_str(&format!(
-        "  }},\n  abi: 5,\n  shadow: {},\n  form: {},\n{}{}  slots: [{}],\n{}  events: [{}],\n{}{}{}  template: {},\n  setup($p, $emit{}) {{\n",
+        "  }},\n  abi: 5,\n  shadow: {},\n  form: {},\n{}{}{}  slots: [{}],\n{}  events: [{}],\n{}{}{}  template: {},\n  setup($p, $emit{}) {{\n",
         component.shadow,
         component.form_associated,
         // A form-associated component imports the form controls' API and callbacks; every
@@ -308,6 +308,12 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
             ""
         } else {
             "  hydrating: $hydrate,\n"
+        },
+        // A shadow component's root, sheets and slot following.
+        if component.shadow {
+            "  shadowing: $shadow,\n"
+        } else {
+            ""
         },
         list(&mut slots.iter().map(String::as_str)),
         // A light-DOM component with slots imports what places content in them; one without
@@ -448,10 +454,26 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     // it, so a bundler leaves out the binders an app's components don't use. (The module still
     // calls `$define`, the runtime's `$component` by another name: tools that rewrite
     // `export default $define(` in compiled output, older ones included, keep working.)
-    let mut binders: Vec<&str> = ["$when", "$await", "$each", "$slot", "$modified"]
-        .into_iter()
-        .filter(|binder| out.contains(&format!("binder: {binder},")))
-        .collect();
+    let mut binders: Vec<&str> = [
+        "$when",
+        "$await",
+        "$each",
+        "$slot",
+        "$modified",
+        "$global",
+        "$classes",
+        "$toggle",
+        "$style",
+    ]
+    .into_iter()
+    .filter(|binder| out.contains(&format!("binder: {binder},")))
+    .collect();
+    // A URL attribute's check.
+    for check in ["$url", "$srcset"] {
+        if out.contains(&format!(": {check} }}")) || out.contains(&format!(": {check},")) {
+            binders.push(check);
+        }
+    }
     if out.contains("\n  slotting: $slotted,\n") {
         binders.push("$slotted");
     }
@@ -460,6 +482,9 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     }
     if out.contains("\n  hydrating: $hydrate,\n") {
         binders.push("$hydrate");
+    }
+    if out.contains("\n  shadowing: $shadow,\n") {
+        binders.push("$shadow");
     }
     if options.binder_entries {
         // One import per entry, in a fixed order: `$slot` and `$slotted` are both slots.js's.
@@ -473,6 +498,13 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
             ("modifiers", &["$modified"]),
             ("form", &["$form"]),
             ("hydrate", &["$hydrate"]),
+            (
+                "parts",
+                &[
+                    "$global", "$classes", "$toggle", "$style", "$url", "$srcset",
+                ],
+            ),
+            ("shadow", &["$shadow"]),
         ] {
             let used: Vec<&str> = names
                 .iter()
@@ -1108,11 +1140,17 @@ impl<'a> Emitter<'a> {
                         if let AttributeValue::Expression(expression, _) = &attribute.value {
                             self.span = Some(attribute.span);
                             let lower = attribute.name.to_ascii_lowercase();
-                            let body = format!(
-                                "global: {}, {}",
-                                json(target),
-                                self.listener(&lower, expression)
-                            );
+                            // Its binder: `$modified`'s (which listens on the window or document
+                            // too) if it has modifiers, `$global` if not.
+                            let listener = self.listener(&lower, expression);
+                            let body = match listener.strip_prefix("binder: $modified, ") {
+                                Some(rest) => {
+                                    format!("binder: $modified, global: {}, {rest}", json(target))
+                                }
+                                None => {
+                                    format!("binder: $global, global: {}, {listener}", json(target))
+                                }
+                            };
                             self.part(JsPart::at(&at, body));
                         }
                     }
@@ -1379,7 +1417,7 @@ impl<'a> Emitter<'a> {
                 }
                 AttributeValue::Expression(expression, _) if lower.starts_with("class:") => {
                     let body = format!(
-                        "toggle: {}, value: () => {}",
+                        "binder: $toggle, toggle: {}, value: () => {}",
                         json(&attribute.name[6..]),
                         self.js(expression)
                     );
@@ -1387,7 +1425,7 @@ impl<'a> Emitter<'a> {
                 }
                 AttributeValue::Expression(expression, _) if lower.starts_with("style:") => {
                     let body = format!(
-                        "style: {}, value: () => {}",
+                        "binder: $style, style: {}, value: () => {}",
                         json(&attribute.name[6..]),
                         self.js(expression)
                     );
@@ -1411,7 +1449,10 @@ impl<'a> Emitter<'a> {
                         AttributeValue::Expression(expression, _) => self.js(expression),
                         AttributeValue::None => unreachable!("handled above"),
                     };
-                    self.part(JsPart::at(path, format!("classes: () => {compute}")));
+                    self.part(JsPart::at(
+                        path,
+                        format!("binder: $classes, classes: () => {compute}"),
+                    ));
                 }
                 value => {
                     let compute = match value {
@@ -1422,9 +1463,10 @@ impl<'a> Emitter<'a> {
                     let kind = if BOOLEAN_ATTRIBUTES.contains(&lower.as_str()) {
                         ", boolean: true".to_owned()
                     } else if URL_ATTRIBUTES.contains(&lower.as_str()) {
-                        ", url: true".to_owned()
+                        // The check itself, imported where a component has one.
+                        ", url: $url".to_owned()
                     } else if lower == "srcset" {
-                        ", srcset: true".to_owned()
+                        ", srcset: $srcset".to_owned()
                     } else if custom
                         && child.is_none()
                         && matches!(value, AttributeValue::Expression(..))

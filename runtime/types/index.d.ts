@@ -212,6 +212,8 @@ export declare function $component(tag: string, definition: Definition & { abi: 
 export declare function $element(tag: string, definition: Definition & { abi: number }): ZubraElementClass;
 /** @internal The binders interface 4 parts name (`binder: $each`): compiled code imports them. */
 export declare const $when: unknown, $await: unknown, $each: unknown, $slot: unknown, $modified: unknown, $form: unknown, $hydrate: unknown;
+/** @internal What interface 5 output names for window listeners, class lists and toggles, style properties, the shadow path and URL checks. */
+export declare const $global: unknown, $classes: unknown, $toggle: unknown, $style: unknown, $shadow: unknown, $url: unknown, $srcset: unknown;
 /** @internal A light-DOM component's slots: interface 4 output with slots imports it (`slotting: $slotted`). */
 export declare const $slotted: unknown;
 /** @internal A light-DOM component's rules from the page, for an element inside a shadow root (`stylesFromPage`). */

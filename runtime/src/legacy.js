@@ -5,7 +5,9 @@
 
 import { bindAwait } from './await.js';
 import { bindEach } from './each.js';
-import { READS, defineElement, refuse, useLegacy } from './element.js';
+import { READS, defineElement, isSafeSrcset, isSafeUrl, refuse, useLegacy } from './element.js';
+import { $classes, $global, $style, $toggle } from './parts.js';
+import { $shadow } from './shadow.js';
 import { $slotted, bindSlot } from './slots.js';
 import { bindWhen } from './when.js';
 import { $modified } from './modifiers.js';
@@ -13,16 +15,23 @@ import { $form } from './form.js';
 import { $hydrate } from './hydrate.js';
 
 
-/** An interface 2 or 3 part's binder, from its keys. */
+/**
+ * An older part's binder, from its keys, and its URL check (interface 4 and earlier wrote
+ * `url: true`, `srcset: true`).
+ */
 function legacyBinder(part) {
-  part.binder = part.when ? bindWhen : part.await ? bindAwait : part.each ? bindEach : part.slot ? bindSlot : part.modifiers ? $modified : null;
+  part.binder = part.when ? bindWhen : part.await ? bindAwait : part.each ? bindEach : part.slot ? bindSlot
+    : part.modifiers ? $modified : part.global ? $global : part.classes ? $classes : part.toggle ? $toggle
+    : part.style ? $style : null;
+  if (part.url === true) part.url = isSafeUrl;
+  if (part.srcset === true) part.srcset = isSafeSrcset;
 }
 
 /** @internal Register a compiled component: what the compiler's JavaScript output calls. */
 export function $define(tag, definition) {
   if (!READS.includes(definition?.abi)) refuse(tag, definition);
   useLegacy(legacyBinder);
-  return defineElement(tag, { ...definition, slotting: definition.slotting ?? $slotted, forming: definition.forming ?? $form, hydrating: definition.hydrating ?? $hydrate });
+  return defineElement(tag, { ...definition, slotting: definition.slotting ?? $slotted, forming: definition.forming ?? $form, hydrating: definition.hydrating ?? $hydrate, shadowing: definition.shadowing ?? $shadow });
 }
 
 /**
