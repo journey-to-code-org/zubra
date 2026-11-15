@@ -396,11 +396,12 @@ fn rejects_unsafe_literal_urls_and_leaves_out_unsafe_values() {
             );
         }
     }
-    // Spaces around the name too, which a browser might trim.
+    // A literal value is the author's, checked as a URL when the name is one, spaces and all
+    // (Chromium doesn't trim them, but the check doesn't count on that).
     assert_error(
-        "<zb-svg u=\"\"><svg><a><set attributeName=\" href \" to={u}></set><text>x</text></a></svg></zb-svg>",
+        "<zb-svg><svg><a><set attributeName=\" href \" to=\"javascript:alert(7)\"></set><text>x</text></a></svg></zb-svg>",
         "{}",
-        "is not supported",
+        "unsafe URL",
     );
     assert_error(
         "<zb-svg><svg><a><set attributeName=\"href\" to=\"javascript:alert(7)\"></set></a></svg></zb-svg>",
