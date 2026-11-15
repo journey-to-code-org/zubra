@@ -3034,7 +3034,7 @@ fn check_animation_value(
         AttributeValue::Text(parts) => {
             let animates_url = element.attributes.iter().any(|other| {
                 other.name.eq_ignore_ascii_case("attributename")
-                    && matches!(&other.value, AttributeValue::Text(name) if URL_ATTRIBUTES.iter().any(|url| literal_text(name).eq_ignore_ascii_case(url)))
+                    && matches!(&other.value, AttributeValue::Text(name) if URL_ATTRIBUTES.iter().any(|url| literal_text(name).trim().eq_ignore_ascii_case(url)))
             });
             let text = literal_text(parts);
             if animates_url && text.split(';').any(|value| !is_safe_url(value)) {
