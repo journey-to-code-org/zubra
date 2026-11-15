@@ -4,6 +4,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Changed
+
+- **The runtime's warnings are in development only.** The production build (`dist/production`, the `production` export condition a bundler picks for a production build, and what `@zubra/server` sends in production) no longer has the runtime's console messages: an object rendered as text, an attribute that isn't one of its values or isn't JSON, a boolean attribute given something else, an object written to an attribute, a blocked unsafe URL, a duplicate or non-array `zb-each`, content for a slot the component doesn't have, an attribute HTML lowercased, and server markup that doesn't match. What the runtime does in each case is the same (the URL is still blocked, the row still unkeyed, the markup rendered fresh); only the message is gone, as with Lit's and Vue's production builds. Errors the runtime throws keep their messages. The production runtime is 0.7 KB smaller for it (14.97 KB compressed, from 15.68), and the comparison's six components with it 16.27 to 15.56 KB.
+
 ## 5.16.0 — 2026-11-14
 
 ### Added
