@@ -632,38 +632,14 @@ let apple;
 const APPLE = () => (apple ??= /mac|iphone|ipad|ipod/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? ''));
 
 /**
- * An event part's listener and its options: the handler, read when the event fires, behind the
- * modifiers' checks (`.self`, key filters) and effects (`.prevent`, `.stop`).
+ * An event part's listener: the handler, read when the event fires, so swapping it never
+ * re-subscribes. A listener with modifiers (`.prevent`, `.self`, a key) names a binder of its
+ * own (`binder: $modified`, modifiers.js), so a component without them doesn't load that code.
  */
-function listen(part, node) {
-  const m = part.modifiers;
-  // `.mod` is ⌘ on Apple platforms and Ctrl elsewhere.
-  const ctrl = m && (m.ctrl || (m.mod && !APPLE()));
-  const meta = m && (m.meta || (m.mod && APPLE()));
-  const listener = (event) => {
-    if (m) {
-      if (m.self && event.target !== node) return;
-      if (m.keys) {
-        const key = event.key ?? '';
-        if (!m.keys.some((wanted) => (wanted.length === 1 ? key.toLowerCase() === wanted : key === wanted))) return;
-        // With a key, the named modifier keys must be held and the others not.
-        if (!!m.shift !== event.shiftKey || !!ctrl !== event.ctrlKey || !!m.alt !== event.altKey || !!meta !== event.metaKey) return;
-      } else if ((m.shift && !event.shiftKey) || (ctrl && !event.ctrlKey) || (m.alt && !event.altKey) || (meta && !event.metaKey)) {
-        return;
-      }
-      if (m.prevent) event.preventDefault();
-      if (m.stop) event.stopPropagation();
-    }
-    const handler = $r(part.handler());
-    if (typeof handler === 'function') handler.call(node, event);
-    // `.submit`: the form the element belongs to (or, in a shadow root, the host's form).
-    if (m?.submit) formOf(node)?.requestSubmit();
-  };
-  const options = m && (m.once || m.capture || m.passive)
-    ? { once: !!m.once, capture: !!m.capture, passive: !!m.passive }
-    : undefined;
-  return [listener, options];
-}
+const listen = (part, node) => (event) => {
+  const handler = $r(part.handler());
+  if (typeof handler === 'function') handler.call(node, event);
+};
 
 // Interface 2 and 3 parts name no binder: $define fills one in from their keys (`legacyBinder`),
 // and is the only code that names every binder, so an app of interface 4 components drops it.
@@ -679,7 +655,12 @@ function bind(part, node, hydrating, context) {
   devEffects.label = { part, node };
   if (part.on && !part.global) devListened(part, node);
   // @dev-end
-  if (part.text) {
+  if (part.binder) {
+    // A block (`zb-if`, `zb-await`, `zb-each`), a slot or a listener with modifiers: interface 4
+    // output imports the binder for each kind it has, so a bundler leaves out the ones an app
+    // doesn't use.
+    part.binder(part, node, hydrating, context);
+  } else if (part.text) {
     effect(() => {
       const text = part.text();
       // A lone Text child is compared and written in place (`.data`): reading `textContent`
@@ -703,14 +684,12 @@ function bind(part, node, hydrating, context) {
     // <zb-window>/<zb-document>: listening while this part of the template is rendered.
     const target = part.global === 'window' ? window : document;
     effect(() => {
-      const [listener, options] = listen(part, target);
-      target.addEventListener(part.on, listener, options);
-      return () => target.removeEventListener(part.on, listener, options);
+      const listener = listen(part, target);
+      target.addEventListener(part.on, listener);
+      return () => target.removeEventListener(part.on, listener);
     });
   } else if (part.on) {
-    // The handler is read when the event fires, so swapping it never re-subscribes.
-    const [listener, options] = listen(part, node);
-    node.addEventListener(part.on, listener, options);
+    node.addEventListener(part.on, listen(part, node));
   } else if (part.bind) {
     // A part whose code lives in its own entry (`{...spread}`: @zubra/runtime/spread), so
     // components that don't use it don't load it.
@@ -749,10 +728,6 @@ function bind(part, node, hydrating, context) {
     });
   } else if (part.attribute) {
     bindAttribute(part, node, hydrating);
-  } else if (part.binder) {
-    // A block (`zb-if`, `zb-await`, `zb-each`) or a slot: interface 4 output imports the binder
-    // for each kind it has, so a bundler leaves out the ones an app doesn't use.
-    part.binder(part, node, hydrating, context);
   }
   // @dev
   devEffects.label = outerLabel;
@@ -1550,4 +1525,4 @@ function defineElement(tag, definition) {
 }
 
 /** @internal What the runtime's feature modules (blocks, when, each, await, slots) take from here. */
-export { COMMENT, PI, READS, TEXT, bind, blueprint, childRange, current, defineElement, isContent, isOpen, locate, mark, marker, matchingClose, positions, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, unmark, untrack };
+export { APPLE, COMMENT, PI, READS, TEXT, bind, formOf, blueprint, childRange, current, defineElement, isContent, isOpen, locate, mark, marker, matchingClose, positions, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, unmark, untrack };

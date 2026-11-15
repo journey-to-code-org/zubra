@@ -53,6 +53,7 @@ export default {
     "legacy.js",
     "await.js",
     "slots.js",
+    "modifiers.js",
     "page-styles.js"
   ],
   "legacy.js": [
@@ -60,7 +61,12 @@ export default {
     "each.js",
     "element.js",
     "slots.js",
-    "when.js"
+    "when.js",
+    "modifiers.js"
+  ],
+  "modifiers.js": [
+    "effect.js",
+    "element.js"
   ],
   "motion.js": [],
   "navigation.js": [],
@@ -151,12 +157,17 @@ export const bundled = {
     "legacy.js",
     "await.js",
     "slots.js",
+    "modifiers.js",
     "page-styles.js"
   ],
   "legacy.js": [
     "await.js",
     "zubra.js",
-    "slots.js"
+    "slots.js",
+    "modifiers.js"
+  ],
+  "modifiers.js": [
+    "zubra.js"
   ],
   "motion.js": [],
   "navigation.js": [],

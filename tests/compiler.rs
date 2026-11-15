@@ -1311,3 +1311,30 @@ fn binder_entries_import_each_binder_from_its_own_runtime_entry() {
     let parts = |module: &str| module[module.find("setup(").unwrap()..].to_owned();
     assert_eq!(parts(&split), parts(&together));
 }
+
+#[test]
+fn a_listener_with_modifiers_names_its_binder_and_a_plain_one_does_not() {
+    let module = js(
+        r#"<zb-x><input onkeydown.enter.prevent={() => 1}><button onclick={() => 2}>b</button><zb-window onkeydown.esc={() => 3}></zb-window></zb-x>"#,
+    );
+    assert!(
+        module.contains("{ path: [0], binder: $modified, on: \"keydown\","),
+        "{module}"
+    );
+    assert!(
+        module.contains("{ path: [1], on: \"click\", handler: () => (() => 2) }"),
+        "{module}"
+    );
+    assert!(
+        module.contains("global: \"window\", binder: $modified, on: \"keydown\""),
+        "{module}"
+    );
+    assert!(
+        module
+            .contains("import { $element as $define, $r, $t, $modified } from \"@zubra/runtime\";"),
+        "{module}"
+    );
+    // Without a modifier anywhere, no binder and no import.
+    let plain = js(r#"<zb-x><button onclick={() => 2}>b</button></zb-x>"#);
+    assert!(!plain.contains("$modified"), "{plain}");
+}

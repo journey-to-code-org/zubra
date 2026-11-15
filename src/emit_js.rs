@@ -431,7 +431,7 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     // it, so a bundler leaves out the binders an app's components don't use. (The module still
     // calls `$define`, the runtime's `$element` by another name: tools that rewrite
     // `export default $define(` in compiled output, older ones included, keep working.)
-    let mut binders: Vec<&str> = ["$when", "$await", "$each", "$slot"]
+    let mut binders: Vec<&str> = ["$when", "$await", "$each", "$slot", "$modified"]
         .into_iter()
         .filter(|binder| out.contains(&format!("binder: {binder},")))
         .collect();
@@ -447,6 +447,7 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
             ("await", &["$await"]),
             ("each", &["$each"]),
             ("slots", &["$slot", "$slotted"]),
+            ("modifiers", &["$modified"]),
         ] {
             let used: Vec<&str> = names
                 .iter()
@@ -970,6 +971,9 @@ impl<'a> Emitter<'a> {
                 ));
             }
             fields.push_str(&format!(", modifiers: {{ {} }}", flags.join(", ")));
+            // What a modifier does is in the runtime's `$modified` binder, imported only by a
+            // component that has one.
+            fields = format!("binder: $modified, {fields}");
         }
         fields
     }

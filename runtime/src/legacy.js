@@ -7,11 +7,12 @@ import { bindEach } from './each.js';
 import { ABI, READS, defineElement, useLegacy } from './element.js';
 import { $slotted, bindSlot } from './slots.js';
 import { bindWhen } from './when.js';
+import { $modified } from './modifiers.js';
 
 
 /** An interface 2 or 3 part's binder, from its keys. */
 function legacyBinder(part) {
-  part.binder = part.when ? bindWhen : part.await ? bindAwait : part.each ? bindEach : part.slot ? bindSlot : null;
+  part.binder = part.when ? bindWhen : part.await ? bindAwait : part.each ? bindEach : part.slot ? bindSlot : part.modifiers ? $modified : null;
 }
 
 /** @internal Register a compiled component: what the compiler's JavaScript output calls. */
