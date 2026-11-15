@@ -36,7 +36,9 @@ export function $t(value) {
   value = $r(value);
   if (value == null) return '';
   if (typeof value === 'object') {
+    // @dev
     console.error('zubra: cannot render an object as text; access a field or iterate it instead', value);
+    // @dev-end
     return '';
   }
   return String(value);
@@ -70,7 +72,9 @@ function parseAttribute(spec, raw) {
     const found = Object.values(spec.enum).find((value) => String(value) === raw);
     if (found !== undefined) return found;
     if (Object.hasOwn(spec.enum, raw)) return spec.enum[raw];
+    // @dev
     console.warn(`zubra: attribute "${spec.attribute}" is "${raw}", not one of ${Object.keys(spec.enum).join(', ')}`);
+    // @dev-end
     return clone(fallback);
   }
   if (typeof fallback === 'boolean') return fallback ? raw !== 'false' : raw !== null;
@@ -86,7 +90,9 @@ function parseAttribute(spec, raw) {
   try {
     return JSON.parse(raw);
   } catch {
+    // @dev
     console.warn(`zubra: attribute "${spec.attribute}" is not valid JSON:`, raw);
+    // @dev-end
     return clone(fallback);
   }
 }
@@ -637,7 +643,9 @@ function mountBlock(block, args, open, close, hydrating, context) {
     parts.forEach((part, index) => bind(part, nodes[index], true, context));
     return;
   }
+  // @dev
   if (hydrating) console.warn(`zubra: server markup for a region does not match its template; rendering it fresh${see('server-rendering-and-hydration')}`);
+  // @dev-end
   clearBetween(open, close);
   // Find and bind the parts in the fragment, then insert it: child components inside see
   // their props from the start, and can't move slotted nodes before they're found.
@@ -1089,7 +1097,9 @@ function routeChildren(host, context, slots, tag) {
   };
   const named = (node) => {
     const name = slotName(node);
+    // @dev
     if (!slots.includes(name) && isContent(node)) console.warn(`zubra: <${tag}> has no slot named "${name}"; that content is not shown${see('slots')}`);
+    // @dev-end
     return slotRecord(context, name);
   };
   // A slot's text node counts as content only while it has words: hear when that changes.
@@ -1290,7 +1300,9 @@ function bindAttribute(part, node, hydrating = false) {
     }
     if (part.boolean) {
       if (typeof value !== 'boolean') {
+        // @dev
         console.error(`zubra: "${name}" is a boolean attribute; got`, value);
+        // @dev-end
         return;
       }
       // A control's live state is its property (the attribute is only the default once the
@@ -1320,7 +1332,9 @@ function bindAttribute(part, node, hydrating = false) {
     }
     if (value == null) return node.removeAttribute(name);
     if (typeof value === 'object' && !part.prop) {
+      // @dev
       console.error(`zubra: cannot write an object to the "${name}" attribute`, value);
+      // @dev-end
       return node.removeAttribute(name);
     }
     const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
@@ -1328,11 +1342,15 @@ function bindAttribute(part, node, hydrating = false) {
     if (part.url && text.trim() === '') return node.removeAttribute(name);
     if (part.srcset && text.trim() === '') return node.removeAttribute(name);
     if (part.srcset && !isSafeSrcset(text)) {
+      // @dev
       console.error(`zubra: blocked an unsafe URL in "${name}"${see('safety')}:`, text);
+      // @dev-end
       return node.removeAttribute(name);
     }
     if (part.url && !isSafeUrl(text)) {
+      // @dev
       console.error(`zubra: blocked an unsafe URL in "${name}"${see('safety')}:`, text);
+      // @dev-end
       return node.removeAttribute(name);
     }
     if (node.getAttribute(name) !== text) node.setAttribute(name, text);
@@ -1513,7 +1531,9 @@ function bindEach(part, open, hydrating, context) {
     return list.map((value, index) => {
       let key = part.key(value, index);
       if (seen.has(key)) {
+        // @dev
         console.error('zubra: duplicate zb-each key', key, `(row ${index + 1}); that row is not keyed${see('directives')}`);
+        // @dev-end
         key = Symbol('duplicate');
       }
       seen.add(key);
@@ -1525,7 +1545,9 @@ function bindEach(part, open, hydrating, context) {
   effect(() => {
     let list = $r(part.each());
     if (!Array.isArray(list)) {
+      // @dev
       if (list != null) console.error('zubra: zb-each items must be an array; got', list);
+      // @dev-end
       list = [];
     }
     // Reactive state (deep.js) tracks by property: reading the length and each index here means
@@ -1542,7 +1564,9 @@ function bindEach(part, open, hydrating, context) {
             createRow(list[index], index, keys?.[index], rowOpen, matchingClose(rowOpen), true));
           return;
         }
+        // @dev
         console.warn(`zubra: server markup for a list does not match its items; rendering it fresh${see('server-rendering-and-hydration')}`);
+        // @dev-end
         clearBetween(open, close);
       }
 
@@ -1835,6 +1859,7 @@ function defineElement(tag, definition) {
   const byAttribute = Object.fromEntries(Object.entries(props).map(([name, spec]) => [spec.attribute, name]));
   // HTML lowercases attribute names, so `maxValue` in a page arrives as `maxvalue`, which isn't
   // the prop's attribute (`max-value`): the element would ignore it without a word.
+  // @dev
   const lowercased = Object.entries(props)
     .filter(([name, spec]) => name !== name.toLowerCase() && spec.attribute !== name.toLowerCase())
     .map(([name, spec]) => [name.toLowerCase(), name, spec.attribute]);
@@ -1845,6 +1870,7 @@ function defineElement(tag, definition) {
       }
     }
   };
+  // @dev-end
 
   let internals; // (element) => its ElementInternals; set in the static block below
   class ZubraElement extends HTMLElement {
@@ -1944,7 +1970,9 @@ function defineElement(tag, definition) {
         });
         return;
       } else {
+        // @dev
         if (lowercased.length) checkAttributeCase(this);
+        // @dev-end
         this.#boot();
       }
       this.#cleanups = this.#hooks.mount.map((fn) => fn()).filter((cleanup) => typeof cleanup === 'function');
@@ -2135,14 +2163,18 @@ function defineElement(tag, definition) {
               if (name !== 'default' && isContent(children[i])) slotRecord(context, 'default').nodes.push(standIn(children[i]));
             });
             for (const [name, slot] of context.slots) {
+              // @dev
               if (!slots.includes(name) && slot.nodes.some(isContent)) console.warn(`zubra: <${tag}> has no slot named "${name}"; that content is not shown${see('slots')}`);
+              // @dev-end
             }
           } else if (server) {
             // No comments at all where the template has markers: something stripped them, and
             // they couldn't be put back for sure.
+            // @dev
             console.warn(stripped && !restored
               ? `zubra: <${tag}>'s hydration markers (<?zb [?>, <?zb ]?>, …) are missing, so it's rendered fresh. A sanitizer or a fragment parser removed them; keep processing instructions (and comments, for markup from a 4.x server)${see('hydration-markers')}`
               : `zubra: <${tag}>'s markup doesn't match its template; rendering it fresh${see('server-rendering-and-hydration')}`);
+            // @dev-end
           }
           // Find and bind the parts before inserting (see mountBlock).
           const fragment = document.importNode(componentTemplate.content, true);
