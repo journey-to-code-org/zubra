@@ -115,7 +115,7 @@ test('plain HTML: routeLinks hands the router the path; the links it must leave 
   assert.equal(await path(page), '/b?x=1#top');
   assert.ok(await kept(page), 'no reload');
 
-  for (const name of ['hash', 'blank', 'download', 'external', 'away']) {
+  for (const name of ['hash', 'blank', 'download', 'external', 'away', 'double']) {
     assert.equal(await leftAlone(page, `zb-nav-links .${name}`), false, `.${name} is left to the browser`);
   }
   assert.equal(await leftAlone(page, 'a.app'), false, 'a link outside any component is the app\'s business');

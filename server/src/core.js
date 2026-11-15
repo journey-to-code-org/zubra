@@ -267,6 +267,8 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
    * names don't fit a URL, and a single component are served as before, module by module.
    */
   const JOINED_NAMES = 160; // the most characters of a URL the names may take
+  const ASKED = 64; // joined sets built for a URL alone, kept (see `serve`)
+  const asked = new Map();
   const joinedKey = (set) => `joined:${set.join('+')}`;
   const componentSet = (names) => {
     const found = [...names];
@@ -353,10 +355,20 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     if (bundle && rest.startsWith('b/') && rest.endsWith('.js')) {
       const set = rest.slice('b/'.length, rest.lastIndexOf('.', rest.length - 4)).split('+').map((name) => name.replaceAll('~', '/'));
       const known = set.every((name) => files.has(name)) && set.join('+') === componentSet(set).join('+');
-      // (A set nobody rendered yet is built to answer, and kept only if this is its URL.)
-      const one = known ? (memo.get(joinedKey(set)) ?? join(set)) : null;
+      const key = joinedKey(set);
+      // A set this server's pages use is in `memo`. One only a URL asked for (any instance can
+      // build any set from its URL) is built to answer and kept among the most recent `ASKED`,
+      // whatever the hash said: there are as many sets as subsets of the components, so asking
+      // for one after another neither grows memory without end nor joins the same set twice.
+      let one = null;
+      if (known && memo.has(key)) one = memo.get(key);
+      else if (known) {
+        one = asked.has(key) ? asked.get(key) : join(set);
+        asked.delete(key);
+        asked.set(key, one);
+        if (asked.size > ASKED) asked.delete(asked.keys().next().value);
+      }
       if (!one || one.url !== `${base}/${rest}`) return { status: 404, type: 'text/plain', body: 'Not found' };
-      memo.set(joinedKey(set), one);
       return { status: 200, type: TYPES['.js'], body: one.body, immutable: true };
     }
     if (rest.startsWith('components/') && rest.endsWith('.js')) {
