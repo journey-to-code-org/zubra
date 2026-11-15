@@ -17,6 +17,9 @@ What the second 2026-11-15 security audit found, most of it in `@zubra/router` (
 - **A spread never sets an animation's values or a `<meta>`'s `http-equiv`.** `<set {...anim}>` could animate a link to `javascript:` from a visitor's data, which a click ran, on the server and in the browser. Interpolating a `<meta http-equiv>`'s `content`, or `http-equiv` itself, is a compile error: a refresh there redirects anywhere.
 - **`injectShadowRoots` fills only host tags the browser would see.** A host's name in another tag's attribute value (Solid and Svelte leave `<` unescaped there), a comment, a script or a textarea was filled too, and the template's own quotes then closed the value: a visitor's text became markup. It now reads tags as the browser does, streamed pages included.
 - **Over HTTPS, `result()` reads only `__Host-zb_result`**: the plain cookie can be planted by a sibling subdomain.
+- **A spread leaves out what it can't set, instead of failing the render.** A visitor's stored `onclick`, `innerHTML` or `srcdoc` in a spread object was a compile error at render on the server, so it failed every page spreading it; it is left out with a warning now, as the runtime does. `ping` is refused in spreads, and interpolating it is a compile error: a click posts to every URL it lists, with the visitor's cookies when they are the site's own.
+- **A Sync tab whose peer id was taken while it was away takes a new one** and says its presence again, instead of retrying the taken id forever.
+- **`createActions({ secure: true })`** for an app behind a proxy that ends TLS: the result cookie is `__Host-` and `Secure`, and a planted plain one is not read, though requests arrive as http.
 - Lower: hydration markers at the top of slot HTML are left out (a visitor's `<!--]-->` made what followed vanish on hydrating); the language server uses a zubra checkout's own build only with `ZUBRA_DEV_CHECKOUT` set (any repository can say it is zubra).
 
 ## 5.18.0 — 2026-11-15
