@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { useBrowser, open, compiler, here, repo, site, runtimeOnly, production } from './harness.js';
+import { useBrowser, open, compiler, here, repo, site, runtimeOnly, reported, production } from './harness.js';
 
 useBrowser({
   filters: join(here, 'fixtures/live-filters.zb'),
@@ -77,11 +77,8 @@ test('an enum prop\'s attribute takes a member\'s value or its name', async () =
   assert.deepEqual(messages, []);
   await set('size', 'Huge');
   assert.equal(await read(), '4 Medium warm', 'anything else is the default');
-  if (production) assert.deepEqual(messages, []);
-  else {
-    assert.equal(messages.length, 1);
-    assert.match(messages[0], /attribute "size" is "Huge", not one of Small, Medium, Large/);
-  }
+  assert.equal(messages.length, production ? 0 : 1);
+  if (!production) assert.match(messages[0], /attribute "size" is "Huge", not one of Small, Medium, Large/);
   await page.close();
 });
 
@@ -183,7 +180,7 @@ test('markup that does not match the template is re-rendered, with a warning', {
   const { page, messages } = await open('<zb-header><p>stale markup</p></zb-header>', { modules: ['header'] });
   assert.equal(await page.$eval('zb-header h1', (h1) => h1.textContent), 'Mikey Nichols');
   assert.equal(await page.$('zb-header > p'), null);
-  if (!production) assert.ok(messages.some((message) => message.startsWith('warning:') && message.includes("doesn't match its template")));
+  assert.ok(reported(messages, (message) => message.startsWith('warning:') && message.includes("doesn't match its template")));
   await page.close();
 });
 
@@ -192,7 +189,7 @@ test('markup whose parts would line up but whose shape differs is re-rendered to
   const { page, messages } = await open('<zb-counter><button type="button">x</button><p>extra</p></zb-counter>', { modules: ['counter'] });
   assert.equal(await page.$('zb-counter > p'), null);
   assert.equal(await page.$eval('zb-counter button', (button) => button.textContent), 'Clicks: 0');
-  if (!production) assert.ok(messages.some((message) => message.includes("doesn't match its template")));
+  assert.ok(reported(messages, (message) => message.includes("doesn't match its template")));
   await page.close();
 });
 
@@ -303,7 +300,7 @@ test('a dynamic srcset is set when every candidate is safe, and refused when one
   assert.deepEqual(await read(), Array(2).fill('/a-480.webp 480w, https://mnix.dev/a-960.webp 960w,'));
   await set('/a.webp 1x, javascript:alert(1) 2x');
   assert.deepEqual(await read(), [null, null], 'one unsafe candidate refuses the whole srcset');
-  if (!production) assert.equal(messages.filter((message) => message.startsWith('error:') && message.includes('blocked an unsafe URL')).length, 2, messages.join('\n'));
+  assert.equal(messages.filter((message) => message.startsWith('error:') && message.includes('blocked an unsafe URL')).length, production ? 0 : 2, messages.join('\n'));
   await set('data:image/png;base64,AAAA 1x');
   assert.deepEqual(await read(), [null, null]);
   await set('/b.webp 2x');
@@ -324,7 +321,7 @@ test('blocks unsafe URLs at runtime and handles boolean and interpolated attribu
     await el.updateComplete;
   });
   assert.deepEqual(await read(), { href: null, hidden: true, className: 'link Away' });
-  if (!production) assert.ok(messages.some((message) => message.startsWith('error:') && message.includes('blocked an unsafe URL')));
+  assert.ok(reported(messages, (message) => message.startsWith('error:') && message.includes('blocked an unsafe URL')));
 
   await page.evaluate(async () => {
     const el = document.querySelector('zb-link');
@@ -557,7 +554,7 @@ test('an empty URL leaves the attribute off, quietly; "[object Object]" from a f
   await page.evaluate(() => { document.querySelector('zb-link').href = 'javascript:alert(1)'; });
   await page.evaluate(() => document.querySelector('zb-link').updateComplete);
   assert.equal(await page.$eval('zb-link a', (a) => a.hasAttribute('href')), false, 'an unsafe one is still refused');
-  if (!production) assert.equal(messages.filter((message) => message.includes('blocked an unsafe URL')).length, 1, 'and reported');
+  assert.equal(messages.filter((message) => message.includes('blocked an unsafe URL')).length, production ? 0 : 1, 'and reported');
   // Svelte's server HTML writes an object prop as "[object Object]", then sets the object: the
   // element keeps its default meanwhile, without a warning.
   assert.deepEqual(await page.$$eval('zb-header li', (items) => items.map((item) => item.textContent)), ['sample data', 'additional data']);
@@ -697,9 +694,9 @@ test('stripped markup that cannot be placed for sure renders fresh, with a warni
   const { page, messages } = await open(html, { modules: ['stripped-await'] });
   await page.waitForFunction(() => document.querySelector('zb-stripped-await span')?.textContent === 'done');
   assert.equal(await page.locator('zb-stripped-await em').count(), 0, 'rendered afresh');
-  if (!runtimeOnly && !production) {
-    assert.equal(messages.length, 1, messages.join('\n'));
-    assert.match(messages[0], /hydration markers .* are missing.*removed them/);
+  if (!runtimeOnly) {
+    assert.equal(messages.length, production ? 0 : 1, messages.join('\n'));
+    if (!production) assert.match(messages[0], /hydration markers .* are missing.*removed them/);
   }
   await page.close();
 });

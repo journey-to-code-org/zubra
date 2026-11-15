@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { useBrowser, open, compiler, here, site, runtimeOnly, production } from './harness.js';
+import { useBrowser, open, compiler, here, site, runtimeOnly, reported, production } from './harness.js';
 
 useBrowser({ todos: join(here, 'fixtures/todos.zb'), table: join(here, 'fixtures/table-rows.zb') });
 
@@ -167,7 +167,7 @@ test('duplicate keys at runtime are reported and still render', async () => {
   const { page, messages } = await open('<zb-todos></zb-todos>', { modules: ['todos'] });
   await setTodos(page, [{ id: 1, text: 'a' }, { id: 1, text: 'b' }]);
   assert.deepEqual(await rows(page), ['1@0:a', '1@1:b']);
-  if (!production) assert.ok(messages.some((message) => message.startsWith('error:') && message.includes('duplicate zb-each key')));
+  assert.ok(reported(messages, (message) => message.startsWith('error:') && message.includes('duplicate zb-each key')));
   await page.close();
 });
 
