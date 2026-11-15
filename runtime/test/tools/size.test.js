@@ -36,8 +36,9 @@ const BUDGETS = {
   // The production build (the `production` export condition): the same, without hot reloading
   // (12.5 KB until 3.2, 13 KB until 4.2, 13.5 KB until `animate`, 14 KB until the list work,
   // 14.25 KB until the faster Signals core, 14.75 KB until rows without markers, 15 KB until
-  // form input kept through hydration, 15.25 KB until slots' stand-ins).
-  'dist/production/index.js': { gzip: 15.75 * 1024 },
+  // form input kept through hydration, 15.25 KB until slots' stand-ins, 15.75 KB until 5.17, whose
+  // messages are only in development, about 0.7 KB).
+  'dist/production/index.js': { gzip: 15.25 * 1024 },
   // An app that only uses Signals and effects.
   'src/effect.js': { gzip: 4 * 1024 },
   // `animate`'s leave() and glide(), loaded only by components that animate.
