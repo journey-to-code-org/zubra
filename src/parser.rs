@@ -322,11 +322,38 @@ pub(crate) fn parse_slot(source: &str, html: bool) -> Result<Vec<Node>, Diagnost
     let normalized = normalize(source);
     let mut parser = TemplateParser::new(Cursor::new(&normalized));
     parser.html = html;
-    let nodes = parser.parse_nodes(None)?;
+    let mut nodes = parser.parse_nodes(None)?;
     if !parser.cursor.is_at_end() {
         return Err(parser.error("unexpected content after slot template"));
     }
+    if html {
+        // A component's own hydration markers sit inside its host element. One at the top of
+        // slot content is the visitor's text (sanitizers keep comments), and would end the slot's
+        // region early, so its content vanished on hydrating.
+        nodes.retain(|node| !matches!(node, Node::Text(parts) if matches!(parts.as_slice(), [Part::Literal(text)] if is_marker(text))));
+    }
     Ok(nodes)
+}
+
+/// `<!--[-->`, `<!--]-->`, `<!---->`, `<?zb [?>` and the rest: what the runtime reads as a marker.
+fn is_marker(text: &str) -> bool {
+    let data = if let Some(comment) = text
+        .strip_prefix("<!--")
+        .and_then(|rest| rest.strip_suffix("-->"))
+    {
+        comment
+    } else if let Some(instruction) = text
+        .strip_prefix("<?zb")
+        .and_then(|rest| rest.strip_suffix('>'))
+    {
+        return instruction.is_empty() || instruction.starts_with([' ', '?']);
+    } else {
+        return false;
+    };
+    let data = data
+        .strip_prefix("?zb ")
+        .map_or(data, |rest| rest.strip_suffix('?').unwrap_or(rest));
+    matches!(data, "[" | "[!" | "[?" | "]" | "")
 }
 
 /// Where the `{…}` at byte `open` of a template ends (just past its `}`), read the way the
