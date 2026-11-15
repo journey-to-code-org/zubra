@@ -4,6 +4,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Changed
+
+- **A component built by `@zubra/unplugin` carries its CSS once.** A light-DOM component's stylesheet went into the page through Vite's CSS pipeline and into its module again as text (`?inline`), for an element inside someone else's shadow root, where page CSS doesn't reach. Now the page's copy is the only one: the module names `stylesFromPage: $pageStyles`, and for an element in a shadow root the runtime copies that component's rules (its `@scope (tag)` blocks, in the `@layer`, `@media` and `@supports` they're in) from the page's stylesheets into one sheet, once. A stylesheet the page can't read (another origin's, without CORS) is skipped. The comparison's hosts are each about 0.55 KB smaller: React 15.9 to 15.3 KB, Vue 15.2 to 14.6, Svelte 14.2 to 13.6, Angular 14.3 to 13.8. Shadow-DOM components, and the server's modules, are as before.
+
 ## 5.18.0 — 2026-11-15
 
 ### Security

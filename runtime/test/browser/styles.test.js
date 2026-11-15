@@ -206,6 +206,51 @@ test('a component whose CSS a bundler put in the page adopts it only into shadow
   await page.close();
 });
 
+test("a component whose CSS a bundler put in the page, and whose module has none, copies its rules from the page into a shadow root", async () => {
+  const { page, messages } = await open('<div id="host"></div>', {
+    beforeModules: `
+      import { $element, $pageStyles } from '@zubra/runtime';
+      // What @zubra/unplugin emits for a light-DOM component (stylesFromPage): the stylesheet is
+      // in the page, as the bundler wrote it, and the module has no copy of its text. Another
+      // component's rules, a layer and a media query round it out.
+      document.head.insertAdjacentHTML('beforeend', \`<style>
+        @layer theme, base, components, utilities;
+        @layer components {
+          @scope (other-card) { p { color: rgb(0, 0, 255) } }
+          @scope (paged-card) to ([data-zb-slotted="paged-card"]) { p { color: rgb(255, 0, 0) } }
+        }
+        @media (min-width: 1px) { @layer components { @scope (paged-card) { p { font-weight: 700 } } } }
+      </style>\`);
+      $element('paged-card', { abi: 4, props: {}, styled: true, stylesFromPage: $pageStyles, inPage: true, template: '<p>hi</p>', setup: () => [] });
+    `,
+  });
+  const result = await page.evaluate(async () => {
+    const inDocument = document.createElement('paged-card');
+    document.body.append(inDocument);
+    const host = document.getElementById('host');
+    const root = host.attachShadow({ mode: 'open' });
+    const inShadow = document.createElement('paged-card');
+    const second = document.createElement('paged-card');
+    root.append(inShadow, second);
+    await Promise.all([inDocument.updateComplete, inShadow.updateComplete, second.updateComplete]);
+    const style = (element) => { const p = getComputedStyle(element.querySelector('p')); return [p.color, p.fontWeight]; };
+    return {
+      documentSheets: document.adoptedStyleSheets.length,
+      shadowSheets: root.adoptedStyleSheets.length,
+      copied: [...root.adoptedStyleSheets[0].cssRules].map((rule) => rule.cssText.split('{')[0].trim()),
+      styles: [style(inDocument), style(inShadow), style(second)],
+    };
+  });
+  // The document has the page's own stylesheet and gets nothing; the shadow root gets one sheet
+  // with this component's rules (not other-card's), in their layer and media query.
+  assert.deepEqual(result.documentSheets, 0);
+  assert.deepEqual(result.shadowSheets, 1);
+  assert.deepEqual(result.copied, ['@layer components', '@media (min-width: 1px)']);
+  assert.deepEqual(result.styles, [[RED, '700'], [RED, '700'], [RED, '700']]);
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
 test("a component whose page has its CSS and whose module has only the address fetches it for a shadow root, and only then", async () => {
   const { page, messages } = await open('<div id="host"></div><div id="other"></div>', {
     beforeModules: `

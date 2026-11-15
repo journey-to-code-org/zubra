@@ -52,7 +52,8 @@ export default {
     "core.js",
     "legacy.js",
     "await.js",
-    "slots.js"
+    "slots.js",
+    "page-styles.js"
   ],
   "legacy.js": [
     "await.js",
@@ -64,6 +65,7 @@ export default {
   "motion.js": [],
   "navigation.js": [],
   "outlet.js": [],
+  "page-styles.js": [],
   "primitives.js": [],
   "react.js": [
     "outlet.js",
@@ -148,7 +150,8 @@ export const bundled = {
     "zubra.js",
     "legacy.js",
     "await.js",
-    "slots.js"
+    "slots.js",
+    "page-styles.js"
   ],
   "legacy.js": [
     "await.js",
@@ -158,6 +161,7 @@ export const bundled = {
   "motion.js": [],
   "navigation.js": [],
   "outlet.js": [],
+  "page-styles.js": [],
   "primitives.js": [],
   "react.js": [
     "outlet.js",
