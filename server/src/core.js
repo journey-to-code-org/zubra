@@ -536,25 +536,26 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
       const info = describe(name);
       if (info.shadow || lightDom) shadowTags.set(info.tag, { name, info });
     }
-    // A quoted attribute value may hold `>` (Svelte and Solid leave it unescaped): the start tag
-    // ends at the first `>` outside quotes.
-    const pattern = shadowTags.size ? new RegExp(`<(${[...shadowTags.keys()].map((tag) => tag.replace(/[-]/g, '\\-')).join('|')})(\\s(?:[^>"']|"[^"]*"|'[^']*')*)?>`, 'g') : null;
+    // Where hosts are found: `hostTags`, which reads tags as the browser does, not a pattern.
+    const pattern = shadowTags.size ? { hosts: (html, state) => hostTags(html, shadowTags, state) } : null;
     return { shadowTags, pattern };
   }
 
   // `hosts` counts the hosts given content so far, for their id prefixes; a stream shares one
   // across its chunks.
-  function injectShadowRoots(html, { forms = true, lightDom = false, hosts = { count: 0 } } = {}) {
+  // `state` carries what one piece of a streamed page ended inside (a comment, a script) to the
+  // next piece; a stream shares one, as it does `hosts`.
+  function injectShadowRoots(html, { forms = true, lightDom = false, hosts = { count: 0 }, state = {} } = {}) {
     const { shadowTags, pattern } = shadowHosts(lightDom);
     if (!pattern) return html;
     let out = '';
     let last = 0;
-    for (const match of html.matchAll(pattern)) {
-      const end = match.index + match[0].length;
-      const { name, info } = shadowTags.get(match[1]);
+    for (const found of pattern.hosts(html, state)) {
+      const { end, tag, attributes } = found;
+      const { name, info } = shadowTags.get(tag);
       // Already has one (rendered by zubra, or a second pass); a light-DOM host must be empty.
-      if (info.shadow ? /^\s*<template\s[^>]*shadowroot/i.test(html.slice(end, end + 200)) : !new RegExp(`^\\s*</${match[1]}>`).test(html.slice(end, end + 200))) continue;
-      const props = propsFrom(match[2] ?? '', info);
+      if (info.shadow ? /^\s*<template\s[^>]*shadowroot/i.test(html.slice(end, end + 200)) : !new RegExp(`^\\s*</${tag}>`, 'i').test(html.slice(end, end + 200))) continue;
+      const props = propsFrom(attributes, info);
       let rendered;
       try {
         // Each host is its own render: its own prefix keeps their ids apart.
@@ -562,9 +563,9 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
       } catch {
         continue; // leave it to the browser rather than break the page
       }
-      const template = info.shadow ? shadowTemplate(rendered) : lightContent(rendered, match[1]);
+      const template = info.shadow ? shadowTemplate(rendered) : lightContent(rendered, tag);
       if (!template) continue;
-      out += html.slice(last, end) + template + (forms ? fallbackInput(match[2] ?? '', info, props) : '');
+      out += html.slice(last, end) + template + (forms ? fallbackInput(attributes, info, props) : '');
       last = end;
     }
     return out + html.slice(last);
@@ -637,6 +638,99 @@ export function parseAttributes(text) {
 }
 
 /** The props a host tag carries: `zb-props` JSON first, then each prop's attribute by its type. */
+// Elements whose content is text to the browser, not tags: a host's name in them is not a host.
+const RAW_TEXT = new Set(['script', 'style', 'textarea', 'title', 'xmp', 'iframe', 'noembed', 'noframes', 'noscript', 'plaintext']);
+
+/** Where a tag whose attributes start at `at` ends (after its `>`), or -1 and the open quote. */
+function endOfTag(html, at, quote = null) {
+  for (let i = at; i < html.length; i++) {
+    const c = html[i];
+    if (quote) {
+      if (c === quote) quote = null;
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === '>') return { end: i + 1, quote: null };
+  }
+  return { end: -1, quote };
+}
+
+/**
+ * Each start tag of a host (`tags`' keys) in `html` where the browser would see one: not in a
+ * comment, in a script's or a textarea's text, or inside another tag's quoted attribute value
+ * (`<div title="<x-host>">`, which Solid and Svelte write unescaped). Injecting into any of those
+ * would close the value or the script around it with the template's own quotes and tags. `state`
+ * is what the last piece ended inside, for a streamed page, and is left saying what this one did.
+ */
+export function* hostTags(html, tags, state = {}) {
+  const name = /<(\/?)([A-Za-z][^\s/>]*)/y;
+  let i = 0;
+  while (i < html.length) {
+    const inside = state.inside;
+    if (inside === 'comment') {
+      // The `-->` may have started in the last piece: `--` or `-` it ended with count here.
+      const dashes = state.dashes ?? 0;
+      state.dashes = 0;
+      let end;
+      if (dashes >= 2 && html[i] === '>') end = i - 2;
+      else if (dashes >= 1 && html.startsWith('->', i)) end = i - 1;
+      else {
+        end = html.indexOf('-->', i);
+        if (end < 0) {
+          const rest = html.slice(i);
+          const trailing = rest.length - rest.replace(/-+$/, '').length;
+          state.dashes = Math.min(trailing === rest.length ? dashes + trailing : trailing, 2);
+          return;
+        }
+      }
+      i = end + 3;
+      state.inside = null;
+      continue;
+    }
+    if (inside?.raw) {
+      const close = new RegExp(`</${inside.raw}[\\s/>]`, 'ig');
+      close.lastIndex = i;
+      const found = close.exec(html);
+      if (!found) return;
+      i = found.index;
+      state.inside = null;
+      continue;
+    }
+    if (inside?.tag) {
+      const { end, quote } = endOfTag(html, i, inside.quote);
+      if (end < 0) return void (state.inside = { ...inside, quote });
+      i = end;
+      state.inside = inside.raw_after ? { raw: inside.raw_after } : null;
+      continue;
+    }
+    const lt = html.indexOf('<', i);
+    if (lt < 0) return;
+    if (html.startsWith('<!--', lt)) {
+      state.inside = 'comment';
+      i = lt + 4;
+      continue;
+    }
+    name.lastIndex = lt;
+    const tag = name.exec(html);
+    if (!tag) {
+      // `<!doctype …>`, `<?…>`, or a `<` that starts nothing.
+      if (html[lt + 1] === '!' || html[lt + 1] === '?') {
+        const end = html.indexOf('>', lt);
+        if (end < 0) return;
+        i = end + 1;
+      } else i = lt + 1;
+      continue;
+    }
+    const closing = tag[1] === '/';
+    const lower = tag[2].toLowerCase();
+    const from = lt + tag[0].length;
+    const raw = !closing && RAW_TEXT.has(lower) ? lower : null;
+    const { end, quote } = endOfTag(html, from);
+    if (end < 0) return void (state.inside = { tag: true, quote, raw_after: raw });
+    if (!closing && tags.has(lower)) yield { index: lt, end, tag: lower, attributes: html.slice(from, end - 1) };
+    if (raw) state.inside = { raw };
+    i = end;
+  }
+}
+
 export function propsFrom(attributeText, info) {
   const attributes = parseAttributes(attributeText);
   let props = {};

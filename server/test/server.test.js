@@ -332,6 +332,36 @@ test('injectShadowRoots: shadow components complete before JavaScript, form valu
   await page.done();
 });
 
+test("injectShadowRoots fills only host tags the browser would see: not one in an attribute, a comment or a script", async () => {
+  const zubra = createZubra({ components });
+  // A visitor's text as Solid and Svelte write it into an attribute: only " and & escaped.
+  const quoted = '<count-stepper name=x> <img src=x onerror=alert(1)>';
+  const html = layout(`
+    <div title="${quoted}">a</div><p title="1 > 0 <count-stepper name=q>">q</p><p data-x='<count-stepper name="b"></count-stepper>'>b</p>
+    <!-- <count-stepper name="c"></count-stepper> -->
+    <script>const tag = "<count-stepper name=d></count-stepper>";</script>
+    <textarea><count-stepper name="e"></count-stepper></textarea>
+    <count-stepper name="real"></count-stepper>`);
+  const injected = zubra.injectShadowRoots(html);
+  assert.equal(injected.match(/<template shadowrootmode/g)?.length, 1, injected);
+  assert.match(injected, /<count-stepper name="real"><template shadowrootmode/);
+  // Everything before the real host is exactly as it was.
+  assert.equal(injected.slice(0, injected.indexOf('<count-stepper name="real">')), html.slice(0, html.indexOf('<count-stepper name="real">')));
+  // And streamed, however the chunks fall: a piece ending inside the comment, the script or an
+  // attribute's value still knows where it is.
+  for (const size of [1, 2, 5, 11, 4096]) {
+    const stream = zubra.injectShadowRootsStream();
+    const out = [];
+    stream.on('data', (chunk) => out.push(chunk));
+    const done = new Promise((resolve) => stream.on('end', resolve));
+    const bytes = Buffer.from(html);
+    for (let at = 0; at < bytes.length; at += size) stream.write(bytes.subarray(at, at + size));
+    stream.end();
+    await done;
+    assert.equal(Buffer.concat(out.map((chunk) => Buffer.from(chunk))).toString(), injected, `chunks of ${size} bytes`);
+  }
+});
+
 test('injectShadowRootsStream: the same result as the whole page, however the chunks fall', async () => {
   const zubra = createZubra({ components });
   const html = FRAMEWORK_HTML.replace('<button>Send</button>', '<button>Send → café</button>');
