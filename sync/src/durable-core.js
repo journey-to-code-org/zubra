@@ -14,15 +14,22 @@ export { MOUNT };
  * after the cut. So a crashed page's presence lingers about three keep-alives (6 s). A page that
  * closes normally says it's leaving and is gone at once.
  */
-export function syncObject(ctx, owner, { mount = MOUNT, heartbeat = 2_000, device = 'server', table = 'changes', origins = [] } = {}) {
+const OPTIONS = new Set(['mount', 'heartbeat', 'device', 'table', 'origins', 'scope', 'maxSkew', 'maxBytes', 'maxChanges', 'authorize']);
+
+export function syncObject(ctx, owner, options = {}) {
+  // Every option reaches the server: one dropped here would be a `scope` silently not kept, so
+  // each tenant reading every other's documents. A name it doesn't know is a mistake, said now.
+  for (const name of Object.keys(options)) {
+    if (!OPTIONS.has(name)) throw new Error(`SyncObject: \`${name}\` is not an option (${[...OPTIONS].join(', ')})`);
+  }
+  const { heartbeat = 2_000, table = 'changes', authorize, ...rest } = options;
   const sync = createSyncServer({
+    ...rest,
     log: durableObjectLog(ctx.storage, { table }),
-    mount,
     heartbeat,
-    device,
-    origins,
-    // Without an authorize of its own, the object takes reads only, as createSyncServer does.
-    authorize: typeof owner.authorize === 'function' ? (asked) => owner.authorize(asked) : undefined,
+    // The object's own authorize, then the options'; without either, reads only, as
+    // createSyncServer does.
+    authorize: typeof owner.authorize === 'function' ? (asked) => owner.authorize(asked) : authorize,
   });
   return {
     async fetch(request) {

@@ -107,3 +107,17 @@ test('the zubra-sync binary takes no writes from pages unless started with --ope
     }
   }
 });
+
+test("a live page's read is asked once per document in a batch, not once per change", { timeout: 5000 }, async () => {
+  let reads = 0;
+  const sync = createSyncServer({ authorize: ({ kind }) => (kind === 'read' && reads++, true) });
+  const response = await sync.fetch(new Request('http://shop/_zb/sync/live?since=0&peer=p1'));
+  const reader = response.body.getReader();
+  let text = '';
+  while (!text.includes('event: changes')) text += new TextDecoder().decode((await reader.read()).value);
+  reads = 0;
+  await sync.write('tasks', 't1', Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`f${i}`, i])));
+  while (!text.includes('"f49"')) text += new TextDecoder().decode((await reader.read()).value);
+  assert.equal(reads, 1);
+  await reader.cancel();
+});

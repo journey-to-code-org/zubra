@@ -48,6 +48,9 @@
 // On Node, `handle(req, res)` answers sync requests (streaming the live ones) and returns true.
 export const MOUNT = '/_zb/sync';
 
+/** How long a peer whose stream ended keeps its id for a reconnect with its key (ms). */
+const RECONNECT = 60_000;
+
 /**
  * A log in memory: `append(changes)` and `after(cursor)`. `keep: 'latest'` keeps each field's
  * latest value only (a newer clock replaces it and takes the next cursor, an older one is dropped),
@@ -146,10 +149,16 @@ const clock = {
  * field by that name would pass one document off as another.
  */
 const RESERVED = new Set(['$clocks', 'key']);
+/**
+ * And the names every object already has (`__proto__`, `constructor`, `toString`…): documents are
+ * plain objects, here and on every device, so `__proto__` would set a document's prototype (fields
+ * it seems to have and never had) and the rest are never applied at all.
+ */
+const INHERITED = Object.getOwnPropertyNames(Object.prototype);
 
 const valid = (change) =>
   change && typeof change.collection === 'string' && typeof change.key === 'string' && typeof change.field === 'string' &&
-  clock.parse(change.clock) !== null && !RESERVED.has(change.field);
+  clock.parse(change.clock) !== null && !RESERVED.has(change.field) && !INHERITED.includes(change.field);
 
 /** The largest counter a clock can carry; past it, the clock moves on a millisecond. */
 const MAX_COUNTER = 99_999;
@@ -305,8 +314,15 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
   const sees = async ({ request, scopes }, collection, key) =>
     scopes.every((scope) => inScope(scope, collection, key)) && (await authorize({ request, collection, key, write: false, kind: 'read' }));
   async function visible(where, changes) {
+    // A read is asked once per document in a batch, not once per change: a push of many changes
+    // to one document would otherwise cost every live page that many calls to authorize.
+    const asked = new Map();
     const shown = [];
-    for (const change of changes) if (await sees(where, change.collection, change.key)) shown.push(change);
+    for (const change of changes) {
+      const doc = `${change.collection}\u0000${change.key}`;
+      if (!asked.has(doc)) asked.set(doc, await sees(where, change.collection, change.key));
+      if (asked.get(doc)) shown.push(change);
+    }
     return shown;
   }
   /** The server's scope for a request and the page's (`?scope=`), or a Response refusing it. */
@@ -338,10 +354,22 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
   }
   /** The live stream holding a peer id, if any. */
   const holder = (peer) => [...listeners].find((listener) => listener.peer === peer);
-  /** Whether `key` is the key of the stream holding `peer`; a peer no stream holds is anyone's. */
-  const speaksAs = (peer, key) => {
+  // A peer whose stream ended keeps its id for a while, for its page to reconnect with the key:
+  // otherwise whoever asked first in the gap would take the id, and be sent its signals.
+  const released = new Map();
+  /** The key `peer` speaks with: its stream's, or its stream's that ended within the grace. */
+  const keyOf = (peer) => {
     const held = holder(peer);
-    return !held || (typeof key === 'string' && key === held.key);
+    if (held) return held.key;
+    const kept = released.get(peer);
+    if (kept && kept.until > Date.now()) return kept.key;
+    released.delete(peer);
+    return null;
+  };
+  /** Whether `key` is the key `peer` speaks with; a peer nobody holds is anyone's. */
+  const speaksAs = (peer, key) => {
+    const held = keyOf(peer);
+    return held === null || (typeof key === 'string' && key === held);
   };
   const newKey = () => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('');
   async function broadcastPresence(message) {
@@ -402,7 +430,7 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
       const body = read.value;
       const changes = Array.isArray(body?.changes) ? body.changes : null;
       if (changes && changes.length > maxChanges) return json(413, { error: `A push carries at most ${maxChanges} changes; send them in smaller batches` });
-      if (!changes || !changes.every(valid)) return json(400, { error: 'Expected { changes: [{ collection, key, field, value, clock }] }; a field can\'t be named key or $clocks' });
+      if (!changes || !changes.every(valid)) return json(400, { error: 'Expected { changes: [{ collection, key, field, value, clock }] }; a field can\'t be named key, $clocks, or a name every object has (__proto__, constructor, toString…)' });
       if (changes.some((change) => ahead(change.clock))) return json(400, { error: "A change's clock is ahead of the server's by more than maxSkew; check the device's time" });
       for (const change of changes) {
         if (!(await mayWrite(request, change.collection, change.key))) return json(403, { error: 'Not yours to change' });
@@ -466,8 +494,9 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
       // A held peer id goes to a new stream only with the old stream's key (a reconnect, which
       // then replaces it); the key carries over, so what the page sends keeps working.
       const previous = peer ? holder(peer) : null;
-      if (previous && url.searchParams.get('key') !== previous.key) return json(409, { error: "That peer id is another viewer's; pick another" });
-      const key = previous?.key ?? newKey();
+      const held = peer ? keyOf(peer) : null;
+      if (held !== null && url.searchParams.get('key') !== held) return json(409, { error: "That peer id is another viewer's; pick another" });
+      const key = held ?? newKey();
       const scopes = await scopesOf(request, url);
       if (scopes instanceof Response) return scopes;
       const { since, reset } = await startFrom(url.searchParams.get('since') ?? '0');
@@ -485,6 +514,11 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
           const close = () => {
             if (!listeners.delete(listener)) return;
             clearInterval(timer);
+            if (peer) {
+              const now = Date.now();
+              for (const [id, kept] of released) if (kept.until <= now) released.delete(id);
+              released.set(peer, { key, until: now + RECONNECT });
+            }
             // A viewer who disconnects leaves every room they were in.
             for (const room of listener.rooms) broadcastPresence({ room, peer, state: null });
             try { controller.close(); } catch {}
@@ -492,6 +526,7 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
           listener = { peer, key, request, scopes, rooms: previous ? new Set(previous.rooms) : new Set(), send: (event, data) => write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`), close, closeQuietly: () => { clearInterval(timer); try { controller.close(); } catch {} } };
           // A reconnect takes over quietly: no goodbye from the stream it replaces.
           if (previous && listeners.delete(previous)) previous.closeQuietly();
+          released.delete(peer);
           listeners.add(listener);
           request.signal?.addEventListener('abort', close);
           write('retry: 1000\n\n');
@@ -588,7 +623,7 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
     if (typeof collection !== 'string' || typeof key !== 'string' || !fields || typeof fields !== 'object' || Array.isArray(fields)) {
       throw new TypeError('sync.write(collection, key, { field: value, … })');
     }
-    for (const name of RESERVED) if (name in fields) throw new TypeError(`sync.write: \`${name}\` can't be a field name`);
+    for (const name of Object.keys(fields)) if (RESERVED.has(name) || INHERITED.includes(name)) throw new TypeError(`sync.write: \`${name}\` can't be a field name`);
     // A server that hasn't read its log yet (it just started, or a Durable Object was evicted)
     // hasn't seen the clocks in it: read it first, so this write comes after all of them. Once
     // the documents exist this doesn't wait, so a check and a write with no await between stay

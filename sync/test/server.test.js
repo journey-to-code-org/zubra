@@ -170,6 +170,42 @@ test(`${backend.name}: a peer id belongs to its live stream: nobody else speaks,
   }
 });
 
+test(`${backend.name}: when a stream drops, its peer id waits for its own page: nobody else takes it in the gap`, { timeout: 8000 }, async () => {
+  const sync = await backend.start();
+  const open = [];
+  const track = (stream) => (open.push(stream), stream);
+  try {
+    const send = (path, message) => sync.fetch(new Request(`http://localhost/_zb/sync/${path}`, { method: 'POST', body: JSON.stringify(message), headers: { 'content-type': 'application/json' } }));
+    const keys = [];
+    const cut = new AbortController();
+    const alice = events(await live(sync, 'alice', 0, cut.signal), keys);
+    await alice.next();
+    const bob = track(events(await live(sync, 'bob')));
+    await bob.next();
+    const here = { room: 'boards/b1', peer: 'alice', state: { typing: 'hi' }, key: keys[0] };
+    assert.equal((await send('presence', here)).status, 200);
+    await soon(bob);
+    cut.abort(); // her connection drops, as a phone's does going into a tunnel
+    await alice.return().catch(() => {});
+    let gone;
+    do gone = (await soon(bob)).value; while (gone.data.state !== null);
+    assert.equal(gone.data.peer, 'alice', 'her stream is gone: she left the room');
+    // Someone asking for her id now gets neither the id nor, with it, the signals sent to her.
+    assert.equal((await live(sync, 'alice')).status, 409);
+    assert.equal((await send('presence', { ...here, key: undefined })).status, 403, 'nor speaks as her');
+    const offer = { room: 'boards/b1', from: 'alice', to: 'bob', data: { sdp: 'v=0' } };
+    assert.equal((await send('signal', offer)).status, 403);
+    // Her page, coming back with its key, gets it, and the key carries over.
+    const back = [];
+    track(events(await live(sync, 'alice', 0, undefined, keys[0]), back));
+    await open.at(-1).next();
+    assert.equal(back[0], keys[0]);
+  } finally {
+    for (const stream of open) await stream.return().catch(() => {});
+    sync.close();
+  }
+});
+
 test(`${backend.name}: a signal reaches its peer only if that peer's scope has the room`, { timeout: 5000 }, async () => {
   const sync = await backend.start();
   const open = [];
