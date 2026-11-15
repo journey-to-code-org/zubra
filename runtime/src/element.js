@@ -10,8 +10,7 @@
 // text is reached through its element (an only child) or through an empty-comment anchor.
 import { Signal } from './signal.js';
 import { wrap, raw } from './deep.js';
-import { effect, scope, root as rootScope, tick, batch } from './effect.js';
-import { RESOURCE } from './resource.js';
+import { effect, root as rootScope, tick } from './effect.js';
 // @dev (left out of the production build: scripts/build-production.js)
 import { dev as devEffects } from './effect.js';
 import { register as devRegister, listened as devListened } from './devhook.js';
@@ -446,19 +445,7 @@ function marker(node) {
   return data.startsWith('?zb ') ? data.slice(4, data.endsWith('?') ? -1 : undefined) : data;
 }
 const isOpen = (node) => { const m = marker(node); return m === '[' || m === '[!' || m === '[?'; };
-/**
- * Whether to bind a region's server markup: not when the server left it to the element. A region
- * the server is still streaming sits in a named range (`<?start name>`…`<?end>`): the element
- * renders it from now on, so it removes the name, and the browser's `<template for>` finds nothing.
- */
-function hydratable(open, hydrating) {
-  if (!hydrating || marker(open) !== '[?') return hydrating;
-  const named = (node, kind) => node && (node.nodeType === PI ? node.target === kind : marker(node)?.startsWith(`?${kind}`));
-  const start = open.previousSibling;
-  const end = matchingClose(open)?.nextSibling;
-  if (named(start, 'start') && named(end, 'end')) { start.remove(); end.remove(); }
-  return false;
-}
+
 const isClose = (node) => marker(node) === ']';
 /** Change a region's opening marker: a PI keeps its target, a comment takes the plain form. */
 const setMarker = (node, text) => { if (marker(node) !== text) node.data = text; };
@@ -515,7 +502,6 @@ function walk(range, path) {
 let nativeFirst; // looked up on first use, so the module loads without a DOM
 
 const childRange = (parent) => ({ first: parent.firstChild, stop: null });
-const regionRange = (open, close) => ({ first: open.nextSibling, stop: close });
 
 /** The node for every part, or null if the markup doesn't have the template's shape. */
 function locate(range, parts, hydrating = false) {
@@ -539,19 +525,6 @@ const blueprints = new WeakMap();
 const SVG = 'http://www.w3.org/2000/svg';
 const MATHML = 'http://www.w3.org/1998/Math/MathML';
 
-/**
- * A block's template, parsed once per context. Inside `<svg>` (or `<math>`), the markup is
- * parsed inside that element, so `<circle>` and friends get their namespace: parsed alone, they
- * would be unknown HTML elements.
- */
-// The element a fragment's nodes will go into, for fragments assembled before they're placed.
-const fragmentParents = new WeakMap();
-/** The element `node` is in, or will be in once its fragment is placed. */
-function parentOf(node) {
-  const parent = node.parentNode;
-  return parent?.nodeType === 11 ? fragmentParents.get(parent) ?? null : parent;
-}
-
 function blueprint(source, parent = null) {
   const ns = parent?.namespaceURI;
   const context = ns === SVG && parent.localName !== 'foreignObject' ? 'svg' : ns === MATHML ? 'math' : '';
@@ -566,95 +539,6 @@ function blueprint(source, parent = null) {
     byContext[context] = content;
   }
   return content;
-}
-
-// For a blueprint with no custom elements: a copy owned by this document, made once, which rows
-// clone. Its clones need no adopting when they're inserted, and nothing in it has to upgrade.
-const imported = new WeakMap();
-const upgrades = (content) =>
-  [...content.querySelectorAll('*')].some((element) => element.localName.includes('-') || element.hasAttribute('is'));
-
-/** A fresh copy of `block`'s template for `parent`, ready for its parts to be found and bound. */
-function freshCopy(block, parent) {
-  const content = blueprint(block, parent);
-  let copy = imported.get(content);
-  if (copy === undefined) {
-    // importNode: custom elements inside upgrade now, so their properties exist before parts
-    // bind (a plain clone stays in the template's inert document).
-    copy = upgrades(content) ? null : document.importNode(content, true);
-    imported.set(content, copy);
-  }
-  return copy === null ? document.importNode(content, true) : copy.cloneNode(true);
-}
-
-function clearBetween(open, close) {
-  while (open.nextSibling && open.nextSibling !== close) open.nextSibling.remove();
-}
-
-/**
- * `animate`: the region's nodes leave (`motion`, @zubra/runtime/motion, which the compiled module
- * imports only when a component animates) instead of going at once. They stay where they are,
- * and the region starts after them, so what replaces them is rendered beside them.
- */
-function departBetween(open, close, motion) {
-  const nodes = [];
-  for (let node = open.nextSibling; node && node !== close; node = node.nextSibling) nodes.push(node);
-  if (!nodes.length) return;
-  nodes[nodes.length - 1].after(open);
-  motion.leave(nodes);
-}
-
-/** Remove everything between `open` and `close` in one operation. */
-const nativeTextContent = typeof Node !== 'undefined' ? Object.getOwnPropertyDescriptor(Node.prototype, 'textContent').set : undefined;
-function deleteBetween(open, close) {
-  if (open.nextSibling === close) return;
-  // The region is everything its parent holds but blank text (a list's own <tbody> or <ul>):
-  // emptying the parent and putting the markers and that text back is several times cheaper than
-  // deleting a range's contents.
-  const parent = open.parentNode;
-  const before = [];
-  const after = [];
-  const blank = (node) => node.nodeType === TEXT && node.data.trim() === '';
-  let edge = open.previousSibling;
-  while (edge && blank(edge) && before.length < 4) { before.unshift(edge); edge = edge.previousSibling; }
-  if (parent && !edge) {
-    edge = close.nextSibling;
-    while (edge && blank(edge) && after.length < 4) { after.push(edge); edge = edge.nextSibling; }
-    if (!edge) {
-      nativeTextContent.call(parent, '');
-      for (const node of [...before, open, close, ...after]) Node.prototype.insertBefore.call(parent, node, null);
-      return;
-    }
-  }
-  const range = document.createRange();
-  range.setStartAfter(open);
-  range.setEndBefore(close);
-  range.deleteContents();
-}
-
-/**
- * Render `block` between `open` and `close`. When `hydrating`, first try to bind to nodes the
- * server already put there; otherwise (or if they don't fit) clone the block's template.
- */
-function mountBlock(block, args, open, close, hydrating, context) {
-  const parts = block.parts(...args);
-  const nodes = hydrating ? locate(regionRange(open, close), parts, true) : null;
-  if (nodes) {
-    parts.forEach((part, index) => bind(part, nodes[index], true, context));
-    return;
-  }
-  // @dev
-  if (hydrating) console.warn(`zubra: server markup for a region does not match its template; rendering it fresh${see('server-rendering-and-hydration')}`);
-  // @dev-end
-  clearBetween(open, close);
-  // Find and bind the parts in the fragment, then insert it: child components inside see
-  // their props from the start, and can't move slotted nodes before they're found.
-  const parent = parentOf(close);
-  const fragment = freshCopy(block, parent);
-  fragmentParents.set(fragment, parent);
-  const fresh = locate(childRange(fragment), parts);
-  parts.forEach((part, index) => bind(part, fresh[index], false, context));
-  close.before(fragment);
 }
 
 // Markup whose comments were stripped is put back by `remark.js`, loaded only when an element
@@ -784,6 +668,8 @@ function listen(part, node) {
 // Interface 2 and 3 parts name no binder: $define fills one in from their keys (`legacyBinder`),
 // and is the only code that names every binder, so an app of interface 4 components drops it.
 let legacy = null;
+/** @internal Turned on by $define (legacy.js) the first time an interface 2 or 3 module loads. */
+export const useLegacy = (fill) => { legacy = fill; };
 
 function bind(part, node, hydrating, context) {
   if (legacy !== null && part.binder === undefined) legacy(part);
@@ -896,63 +782,6 @@ export function hasSlot(name = 'default') {
   return filled;
 }
 
-/**
- * zb-slot in light DOM: the host's own children for this slot, moved in once at startup, or the
- * fallback block. The provided nodes are kept, so a slot inside an zb-if branch gets them back
- * when the branch comes back.
- */
-function bindSlot(part, open, hydrating, context) {
-  const close = matchingClose(open);
-  const slot = slotRecord(context, part.slot);
-  if (hydrating && marker(open) === '[!' && !slot.nodes.length) {
-    // The server already put supplied content here.
-    for (let node = open.nextSibling; node !== close; node = node.nextSibling) slot.nodes.push(node);
-  }
-  const holder = scope(); // owns the fallback while it shows
-  let fallback = null;
-  let first = hydrating;
-  const region = {
-    open,
-    close,
-    provided: false,
-    update() {
-      const hydrate = first;
-      first = false;
-      region.provided = slot.nodes.some(isContent);
-      if (region.provided) {
-        if (fallback) { fallback.dispose(); fallback = null; clearBetween(open, close); }
-        setMarker(open, '[!');
-        place(slot.nodes, open, context.slotted);
-        return;
-      }
-      // Only markers and whitespace (a framework's bookkeeping): they wait in the park, where
-      // the framework can still add content next to them, while the fallback shows.
-      if (slot.nodes.length) slot.park.append(...slot.nodes);
-      if (part.fallback) {
-        if (fallback) return;
-        if (!hydrate || marker(open) !== '[') clearBetween(open, close);
-        setMarker(open, '[');
-        fallback = holder.run(() => scope(() => mountBlock(part.fallback, [], open, close, hydrate, context)));
-      } else {
-        clearBetween(open, close);
-        setMarker(open, '[');
-      }
-    },
-  };
-  // The region exists while this effect does (an zb-if branch switching away disposes it):
-  // then the slotted nodes are parked, to come back when the branch does.
-  effect(() => {
-    slot.region = region;
-    return () => {
-      if (slot.region !== region) return;
-      slot.region = null;
-      slot.park.append(...slot.nodes);
-      holder.dispose();
-    };
-  });
-  region.update();
-}
-
 // ---- slotted content (light DOM) -------------------------------------------------------------
 //
 // In light DOM the host's children are the template, so content given to the element lives in
@@ -972,20 +801,7 @@ function bindSlot(part, open, hydrating, context) {
 // same list (Solid writes a lone text child through it).
 
 const standIns = new WeakMap(); // an element in a named slot → its stand-in
-const standsFor = new WeakMap(); // a stand-in → its element
-function standIn(node) {
-  let comment = standIns.get(node);
-  if (!comment) {
-    comment = document.createComment('zb-slot');
-    standIns.set(node, comment);
-    standsFor.set(comment, node);
-  }
-  return comment;
-}
-function forget(node) {
-  standsFor.delete(standIns.get(node));
-  standIns.delete(node);
-}
+const standsFor = new WeakMap();
 
 function slotRecord(context, name) {
   let slot = context.slots.get(name);
@@ -997,58 +813,10 @@ function slotRecord(context, name) {
   return slot;
 }
 
-/**
- * Put `nodes` right after `open`, in order, moving only what's out of place. (Anything that left
- * the slot was removed from the region as it left, so nothing else is there.)
- */
-function place(nodes, open, tag) {
-  const parent = open.parentNode;
-  let cursor = open.nextSibling;
-  for (const node of nodes) {
-    mark(node, tag);
-    if (node === cursor) cursor = cursor.nextSibling;
-    else move(parent, node, cursor);
-  }
-}
-
-// The native methods: a light-DOM host routes its own insertBefore to its slots (for content a
-// framework adds), and a row of its own list isn't such content.
-const nativeMoveBefore = typeof Element !== 'undefined' ? Element.prototype.moveBefore : undefined;
-function move(parent, node, before) {
-  try {
-    if (nativeMoveBefore && node.isConnected && parent.isConnected) return nativeMoveBefore.call(parent, node, before);
-  } catch { /* not movable atomically (different document, …): insert instead */ }
-  Node.prototype.insertBefore.call(parent, node, before);
-}
-
 const slotName = (node) => (node.nodeType === 1 && node.getAttribute('slot')) || 'default';
 /** An element or non-blank text: what fills a slot (comments and whitespace don't). */
 const isContent = (node) => node.nodeType === 1 || (node.nodeType === TEXT && node.data.trim() !== '');
 
-/**
- * The slot for each of `nodes` (an element's children, in order). Comments and whitespace are
- * frameworks' markers (Lit's parts, Svelte's anchors): a comment goes with the content after it
- * and whitespace with the content before it, so a framework's range stays together in one slot.
- * Empty text nodes come in pairs (Vue brackets each fragment, a v-for, with two): both go with
- * the content between them, since Vue moves that content through the start anchor's parent.
- */
-function assignSlots(nodes) {
-  const named = nodes.map((node) => (isContent(node) ? slotName(node) : null));
-  // The slot of the nearest content after (step 1) or before (step -1) node i.
-  const near = (i, step) => { for (let j = i + step; nodes[j]; j += step) if (named[j]) return named[j]; return null; };
-  // An empty text node right before content opens a range; otherwise it closes the last one,
-  // and both take the slot of the first content between them.
-  const open = [];
-  nodes.forEach((node, i) => {
-    if (node.nodeType !== TEXT || node.data) return;
-    if (!open.length || named[i + 1] && nodes[i + 1].data == null) return open.push(i);
-    const start = open.pop();
-    named[start] = named[i] = named.slice(start + 1, i).find(Boolean);
-  });
-  return nodes.map((node, i) => named[i]
-    ?? (node.nodeType === COMMENT ? near(i, 1) ?? near(i, -1) : near(i, -1) ?? near(i, 1))
-    ?? 'default');
-}
 let nativeText, nativeHTML; // looked up on first use, so the module loads without a DOM
 
 const ROUTED = ['insertBefore', 'appendChild', 'append', 'removeChild', 'replaceChild', 'replaceChildren', 'textContent', 'innerHTML', 'firstChild'];
@@ -1124,208 +892,6 @@ function routeTo(host, { insert, remove, holds, clear, first }) {
     },
   });
 }
-
-function routeChildren(host, context, slots, tag) {
-  const home = slotRecord(context, 'default');
-  const holding = (node) => {
-    for (const slot of context.slots.values()) if (slot.nodes.includes(node)) return slot;
-    return null;
-  };
-  // `node` left its slot. A stand-in takes its element with it, and an element its stand-in.
-  const lose = (node) => {
-    unmark(node, context.slotted);
-    const other = standsFor.get(node) ?? standIns.get(node);
-    if (!other) return;
-    forget(standsFor.has(node) ? other : node);
-    const slot = take(other);
-    unmark(other, context.slotted);
-    other.remove();
-    if (slot) show(slot);
-  };
-  // Drop content that left through its real parent (or was moved elsewhere), except `keep`,
-  // which is arriving now.
-  const prune = (slot, keep) => {
-    const parent = slot.region?.provided ? slot.region.open.parentNode : slot.park;
-    const left = slot.nodes.filter((node) => node !== keep && node.parentNode !== parent);
-    if (!left.length) return;
-    slot.nodes = slot.nodes.filter((node) => !left.includes(node));
-    left.forEach(lose);
-  };
-  const show = (slot, keep) => {
-    prune(slot, keep);
-    slot.filled.set(slot.nodes.some(isContent));
-    if (slot.region) slot.region.update();
-    else slot.park.append(...slot.nodes);
-  };
-  const take = (node) => {
-    const slot = holding(node);
-    if (slot) slot.nodes.splice(slot.nodes.indexOf(node), 1);
-    return slot;
-  };
-  const put = (slot, node, before) => {
-    const at = before ? slot.nodes.indexOf(before) : -1;
-    if (at >= 0) slot.nodes.splice(at, 0, node);
-    else slot.nodes.push(node);
-  };
-  const named = (node) => {
-    const name = slotName(node);
-    // @dev
-    if (!slots.includes(name) && isContent(node)) console.warn(`zubra: <${tag}> has no slot named "${name}"; that content is not shown${see('slots')}`);
-    // @dev-end
-    return slotRecord(context, name);
-  };
-  // A slot's text node counts as content only while it has words: hear when that changes.
-  const watch = (node) => { if (node.nodeType === TEXT) context.observer.observe(node, { characterData: true }); };
-  const insert = (node, before) => {
-    if (node.nodeType === 11) {
-      for (const child of [...node.childNodes]) insert(child, before);
-      return;
-    }
-    watch(node);
-    const content = isContent(node);
-    // A marker or whitespace goes in the slot of what it's inserted before.
-    const slot = content ? named(node) : slotRecord(context, (before && holding(before)?.name) || 'default');
-    const from = take(node);
-    // Among the page's children it goes before `before`, or last: so does its stand-in.
-    let comment = standIns.get(node);
-    if (comment) take(comment);
-    const seat = before && (standIns.get(before) ?? before);
-    if (slot === home) {
-      if (comment) { forget(node); comment.remove(); }
-      put(home, node, seat);
-    } else {
-      put(slot, node, before);
-      if (content) put(home, (comment = standIn(node)), seat);
-    }
-    // (The stand-in is placed before anything else looks at the default slot: one that isn't
-    // where it belongs reads as removed.)
-    show(slot, node);
-    const seated = slot !== home && content;
-    if (seated) show(home, comment);
-    if (from && from !== slot && !(seated && from === home)) show(from);
-  };
-  // Content that is in the wrong slot (its `slot` attribute changed, or a framework put it next
-  // to its own marker in another slot's region, or its text was a marker while it was empty)
-  // goes to its own, and keeps its place among the page's children.
-  const reslot = (node) => {
-    const at = home.nodes.indexOf(standIns.get(node) ?? node);
-    insert(node, (at >= 0 && home.nodes[at + 1]) || null);
-  };
-  const remove = (node) => {
-    const slot = take(node);
-    if (!slot) return false;
-    node.remove();
-    lose(node);
-    show(slot);
-    return true;
-  };
-  const clear = () => {
-    for (const slot of context.slots.values()) {
-      for (const node of slot.nodes.splice(0)) {
-        unmark(node, context.slotted);
-        node.remove();
-      }
-      show(slot);
-    }
-  };
-  routeTo(host, { insert, remove, holds: holding, clear, first: () => { const [first] = home.nodes; return first ? standsFor.get(first) ?? first : null; } });
-
-  // Content removed or moved away through its real parent (Vue removes via child.parentNode),
-  // and content whose `slot` attribute changed (it moves to that slot, as with native slots).
-  context.observer = new MutationObserver((records) => {
-    const written = []; // text nodes that were written
-    for (const record of records) {
-      if (record.type === 'characterData') written.push(record.target);
-      const slot = record.type === 'attributes' && holding(record.target);
-      if (slot && slotName(record.target) !== slot.name) reslot(record.target);
-      // Solid clears a run of nodes one by one, skipping those that aren't where the first is
-      // (an element moved to its slot), and puts an empty text node in the first one's place:
-      // the stand-ins right after that node are the rest of the run.
-      const [added] = record.addedNodes;
-      if (record.removedNodes.length === 1 && record.addedNodes.length === 1 && added.nodeType === TEXT && !added.data) {
-        while (standsFor.has(added.nextSibling)) added.nextSibling.remove();
-      }
-    }
-    // Svelte removes a block from its first node to its last, sibling by sibling. When the last
-    // is an element that was moved to another slot, the walk never meets it and carries on to
-    // the end of the parent, taking the block's own anchor, this slot's closing marker and the
-    // template's nodes after it. Those go back: everything from the first comment after a
-    // stand-in (the anchor), or else from the closing marker.
-    for (const { region } of context.slots.values()) {
-      const parent = region?.open.parentNode;
-      if (!parent || region.close.parentNode === parent) continue;
-      const gone = records.filter((record) => record.target === parent).flatMap((record) => [...record.removedNodes]);
-      let cut = gone.indexOf(region.close);
-      for (let i = 0, seen = false; i < cut; i++) {
-        if (standsFor.has(gone[i])) seen = true;
-        else if (seen && gone[i].nodeType === COMMENT) cut = i;
-      }
-      if (cut >= 0) for (const node of gone.slice(cut)) if (!node.parentNode) Node.prototype.insertBefore.call(parent, node, null);
-    }
-    // Each slot's nodes are what's actually in it: frameworks also insert and remove content
-    // next to their own markers there, without going through the host.
-    for (const slot of context.slots.values()) {
-      let actual;
-      if (slot.region?.provided) {
-        actual = [];
-        for (let node = slot.region.open.nextSibling; node && node !== slot.region.close; node = node.nextSibling) actual.push(node);
-      } else {
-        actual = [...slot.park.childNodes];
-      }
-      if (actual.length === slot.nodes.length && actual.every((node, i) => node === slot.nodes[i])) {
-        // The same nodes, but one's text was written: it may have become content, or stopped being.
-        if (!written.some((node) => slot.nodes.includes(node))) continue;
-      } else {
-        const left = slot.nodes.filter((node) => !actual.includes(node));
-        slot.nodes = actual;
-        left.forEach(lose);
-        actual.forEach(watch);
-      }
-      // Content that belongs to another slot goes there: an element added next to a marker here,
-      // or text that was a marker while it was empty. (A copy: moving one takes it out of the list.)
-      for (const node of [...slot.nodes]) if (isContent(node) && slotName(node) !== slot.name) reslot(node);
-      show(slot);
-    }
-    // Content a parent adds inside a slot itself (its zb-if or zb-each there) is slotted too;
-    // a fallback showing there is the component's own, so it stays unmarked.
-    if (context.slotted) {
-      for (const slot of context.slots.values()) {
-        if (!slot.region?.provided) continue;
-        for (let node = slot.region.open.nextSibling; node && node !== slot.region.close; node = node.nextSibling) {
-          mark(node, context.slotted);
-        }
-      }
-    }
-  });
-  context.observer.observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['slot'] });
-  for (const slot of context.slots.values()) {
-    context.observer.observe(slot.park, { childList: true });
-    slot.nodes.forEach(watch);
-  }
-}
-
-// Form controls' live state: bound as properties, so `value={draft}` keeps up with typing and
-// `checked={done}` with clicks.
-/**
- * @internal A light-DOM component's slots (interface 4: `slotting: $slotted`, imported by
- * components that have slots): the page's children go to theirs, and the host's child methods
- * route what a framework adds later (routeChildren).
- */
-export const $slotted = {
-  assign(context, children, slots, tag) {
-    assignSlots(children).forEach((name, i) => {
-      slotRecord(context, name).nodes.push(children[i]);
-      // An element for a named slot keeps its place among the page's children (see routeChildren).
-      if (name !== 'default' && isContent(children[i])) slotRecord(context, 'default').nodes.push(standIn(children[i]));
-    });
-    for (const [name, slot] of context.slots) {
-      // @dev
-      if (!slots.includes(name) && slot.nodes.some(isContent)) console.warn(`zubra: <${tag}> has no slot named "${name}"; that content is not shown${see('slots')}`);
-      // @dev-end
-    }
-  },
-  route: routeChildren,
-};
 
 const LIVE = new Set(['input.value', 'textarea.value', 'select.value', 'input.checked', 'option.selected']);
 
@@ -1409,318 +975,6 @@ function bindAttribute(part, node, hydrating = false) {
     }
     if (node.getAttribute(name) !== text) node.setAttribute(name, text);
   });
-}
-
-/** zb-if: re-render only when the chosen branch changes, not whenever the test re-runs. */
-function bindWhen(part, open, hydrating, context) {
-  hydrating = hydratable(open, hydrating);
-  const close = matchingClose(open);
-  const branch = new Signal.Computed(() => ($r(part.when()) ? 0 : 1));
-  let first = hydrating;
-  effect(() => {
-    const block = part.blocks[branch.get()];
-    const hydrate = first;
-    first = false;
-    // Effects created while mounting belong to this effect, so switching branches disposes them.
-    untrack(() => {
-      if (part.animate && !hydrate) departBetween(open, close, part.animate);
-      if (block) mountBlock(block, [], open, close, hydrate, context);
-      else clearBetween(open, close);
-    });
-  });
-}
-
-/**
- * zb-await: the pending block while the value is a promise (anything with `then`), then the
- * `zb-then` block with the resolved value, or the `zb-catch` block with the error. A value
- * that isn't a promise shows `zb-then` at once. Only the latest value's outcome is shown. A
- * `resource()` is followed through its states, so reloading it shows the pending content again.
- *
- * - An array value waits for every promise and resource in it, as `Promise.all` does, and
- *   resolves to the array of their values (4.2).
- * - `zb-catch` gets `retry()`: it refreshes the resources and evaluates the value again, so a
- *   `load()` call is made again (4.2).
- * - `delay`: the pending block shows only once the value has been pending that long; until
- *   then the previous content stays (4.2).
- * - `keep`: once settled, a reload keeps the settled content, and the host has
- *   `:state(loading)` while it runs (4.2).
- */
-const loadingCounts = new WeakMap();
-function markLoading(states, step) {
-  if (!states) return;
-  const count = (loadingCounts.get(states) ?? 0) + step;
-  loadingCounts.set(states, count);
-  states[count > 0 ? 'add' : 'delete']('loading');
-}
-function bindAwait(part, open, hydrating, context) {
-  hydrating = hydratable(open, hydrating);
-  const close = matchingClose(open);
-  let first = hydrating;
-  let latest = null;
-  let settled = false; // a zb-then or zb-catch block is showing
-  const attempt = new Signal.State(0);
-  // The value, evaluated again only when what it reads changes or retry() asks: a resource
-  // settling re-runs the effect below, and mustn't call `load()` again.
-  const current = new Signal.Computed(() => (attempt.get(), $r(part.await())));
-  const retry = () => {
-    for (const value of [].concat(untrack(() => current.get()))) $r(value)?.[RESOURCE] && $r(value).refresh();
-    attempt.set(untrack(() => attempt.get()) + 1);
-  };
-  effect(() => {
-    const value = current.get();
-    const many = Array.isArray(value);
-    const token = (latest = {});
-    // Blocks mounted later (when the promise settles) still belong to this run.
-    const owner = scope();
-    let timer;
-    let loading = 0;
-    const show = (index, payload) => untrack(() => owner.run(() => {
-      clearTimeout(timer);
-      const block = part.blocks[index];
-      const hydrate = first; // the server rendered this branch, unless it left the region to us
-      first = false;
-      settled = index > 0;
-      if (block) mountBlock(block, index ? [new Signal.State(payload), new Signal.State(retry)] : [], open, close, hydrate, context);
-      else clearBetween(open, close);
-    }));
-    const done = (index, payload) => {
-      if (latest !== token || owner.disposed) return;
-      if (loading) markLoading(context?.states, (loading = 0) - 1);
-      show(index, payload);
-    };
-    // Each value: a resource's state, a promise, or a plain value.
-    let pending = false;
-    let failed;
-    const promises = (many ? value : [value]).map((item) => {
-      item = $r(item);
-      if (item?.[RESOURCE]) {
-        const status = item.status;
-        if (status === 'error') failed ??= [item.error];
-        pending ||= status === 'pending';
-        return item.value;
-      }
-      if (item !== null && (typeof item === 'object' || typeof item === 'function') && typeof item.then === 'function') {
-        pending = true;
-        return item;
-      }
-      return item;
-    });
-    if (failed) done(2, failed[0]);
-    else if (pending) {
-      const delay = part.delay ? Number(untrack(part.delay)) : 0;
-      if (part.keep && settled) markLoading(context?.states, (loading = 1));
-      else if (delay > 0 && !first) timer = setTimeout(() => latest === token && !owner.disposed && show(0), delay);
-      else show(0);
-      // A pending resource re-runs this effect when it settles; promises are waited for here.
-      if (!(many ? value : [value]).some((item) => $r(item)?.[RESOURCE] && $r(item).status === 'pending')) {
-        Promise.all(promises).then((resolved) => done(1, many ? resolved : resolved[0]), (error) => done(2, error));
-      }
-    } else done(1, many ? promises : promises[0]);
-    return () => {
-      clearTimeout(timer);
-      if (loading) markLoading(context?.states, -1);
-    };
-  });
-}
-
-/**
- * zb-each: one row per item. Each row holds its item and index as signals, so changing one
- * item updates only that row's parts.
- *
- * - Without a key, rows are matched by position: a new array updates rows in place, and rows are
- *   only created or removed at the end.
- * - With `key={…}`, rows follow their key: reordering moves the existing rows (with whatever DOM
- *   state they have, like a half-typed input), using `moveBefore()` where the browser has it so
- *   focus and iframes survive the move.
- */
-function bindEach(part, open, hydrating, context) {
-  hydrating = hydratable(open, hydrating);
-  const close = matchingClose(open);
-  // Rows belong to this scope, not to the effect below, so re-running the effect (the list
-  // changed) doesn't dispose them.
-  const rowsOwner = scope();
-  let rows = [];
-
-  // A row is the nodes from `open` to `close`. Rows the server rendered keep the markers it put
-  // around them. A row made here is its block's own nodes, from first to last, with no markers:
-  // what a block's nodes are at the top never changes after it's bound (a region inside one keeps
-  // its own markers), so the first and last stay the row's ends. Only an empty block needs one.
-  const createRow = (value, index, key, rowOpen, rowClose, hydrateRow) => {
-    const item = new Signal.State(value);
-    const position = new Signal.State(index);
-    if (rowOpen) {
-      const owner = rowsOwner.run(() => scope(() => mountBlock(part.block, [item, position], rowOpen, rowClose, hydrateRow, context)));
-      return { key, item, position, open: rowOpen, close: rowClose, owner };
-    }
-    const parent = parentOf(open);
-    const fragment = freshCopy(part.block, parent);
-    fragmentParents.set(fragment, parent);
-    const owner = rowsOwner.run(() => scope(() => {
-      const parts = part.block.parts(item, position);
-      const nodes = locate(childRange(fragment), parts);
-      parts.forEach((each, at) => bind(each, nodes[at], false, context));
-    }));
-    if (!fragment.firstChild) fragment.append(document.createComment(''));
-    return { key, item, position, open: fragment.firstChild, close: fragment.lastChild, owner };
-  };
-  const nodesOf = (row) => {
-    const nodes = [];
-    for (let node = row.open; ; node = node.nextSibling) {
-      nodes.push(node);
-      if (node === row.close) return nodes;
-    }
-  };
-  const removeRow = (row) => {
-    row.owner.dispose();
-    if (part.animate) part.animate.leave(nodesOf(row), { float: true });
-    else for (const node of nodesOf(row)) node.remove();
-  };
-  const elementsOf = (row) => nodesOf(row).filter((node) => node.nodeType === 1);
-  const placeRow = (row, before) => {
-    const parent = close.parentNode;
-    for (const node of nodesOf(row)) move(parent, node, before);
-  };
-  const keysOf = (list) => {
-    const seen = new Set();
-    return list.map((value, index) => {
-      let key = part.key(value, index);
-      if (seen.has(key)) {
-        // @dev
-        console.error('zubra: duplicate zb-each key', key, `(row ${index + 1}); that row is not keyed${see('directives')}`);
-        // @dev-end
-        key = Symbol('duplicate');
-      }
-      seen.add(key);
-      return key;
-    });
-  };
-
-  let first = hydrating;
-  effect(() => {
-    let list = $r(part.each());
-    if (!Array.isArray(list)) {
-      // @dev
-      if (list != null) console.error('zubra: zb-each items must be an array; got', list);
-      // @dev-end
-      list = [];
-    }
-    // Reactive state (deep.js) tracks by property: reading the length and each index here means
-    // `items.push(x)`, `items.splice(…)` and `items[i] = x` re-run this effect.
-    for (let index = 0, { length } = list; index < length; index++) list[index];
-    const hydrate = first;
-    first = false;
-    untrack(() => {
-      const keys = part.key ? keysOf(list) : null;
-      if (hydrate) {
-        const existing = [...positions(open.nextSibling, close)];
-        if (existing.length === list.length && existing.every(isOpen)) {
-          rows = existing.map((rowOpen, index) =>
-            createRow(list[index], index, keys?.[index], rowOpen, matchingClose(rowOpen), true));
-          return;
-        }
-        // @dev
-        console.warn(`zubra: server markup for a list does not match its items; rendering it fresh${see('server-rendering-and-hydration')}`);
-        // @dev-end
-        clearBetween(open, close);
-      }
-
-      if (!keys) {
-        const shared = Math.min(rows.length, list.length);
-        for (let index = 0; index < shared; index++) {
-          rows[index].item.set(list[index]);
-          rows[index].position.set(index);
-        }
-        if (rows.length < list.length) {
-          const fragment = new DocumentFragment();
-          for (let index = rows.length; index < list.length; index++) {
-            const row = createRow(list[index], index);
-            fragment.append(...nodesOf(row));
-            rows.push(row);
-          }
-          close.before(fragment);
-        }
-        if (!list.length && rows.length) {
-          batch(() => { for (const row of rows) row.owner.dispose(); });
-          deleteBetween(open, close);
-          rows = [];
-        }
-        batch(() => { for (const row of rows.splice(list.length)) removeRow(row); });
-        return;
-      }
-
-      // Keyed: reuse the row for each key, create the missing ones, drop the rest, then walk the
-      // new order and move only rows that aren't already where they belong.
-      const byKey = new Map(rows.map((row) => [row.key, row]));
-      // Nothing reused (cleared, or replaced wholesale): drop every row at once, then build the
-      // new ones in one fragment and insert it once.
-      if (!part.animate && rows.length && !keys.some((key) => byKey.has(key))) {
-        batch(() => { for (const row of rows) row.owner.dispose(); });
-        deleteBetween(open, close);
-        rows = [];
-        byKey.clear();
-      }
-      if (!rows.length) {
-        const fragment = new DocumentFragment();
-        rows = list.map((value, index) => {
-          const row = createRow(value, index, keys[index]);
-          fragment.append(...nodesOf(row));
-          return row;
-        });
-        close.before(fragment);
-        return;
-      }
-      // `animate`: the rows that stay glide from where they were (@zubra/runtime/motion).
-      const reorder = () => {
-        const was = new Map(rows.map((row, index) => [row, index]));
-        const next = list.map((value, index) => {
-          const row = byKey.get(keys[index]);
-          if (!row) return createRow(value, index, keys[index]);
-          byKey.delete(keys[index]);
-          row.item.set(value);
-          row.position.set(index);
-          return row;
-        });
-        batch(() => { for (const row of byKey.values()) removeRow(row); });
-        // The longest run of rows still in their old order stays put; every other row (and every
-        // new one) goes before the row after it, from the end. A swap moves two rows, not the
-        // rows between them.
-        const stay = inOrder(next.map((row) => was.get(row) ?? -1));
-        let before = close;
-        for (let index = next.length - 1; index >= 0; index--) {
-          if (!stay.has(index)) placeRow(next[index], before);
-          before = next[index].open;
-        }
-        rows = next;
-      };
-      if (part.animate) part.animate.glide(rows.flatMap(elementsOf), reorder);
-      else reorder();
-    });
-  });
-}
-
-/**
- * The indexes of a longest strictly increasing run in `sequence` (negative entries never count):
- * for a keyed list, which rows are already in order and needn't move. O(n log n).
- */
-function inOrder(sequence) {
-  const tails = []; // tails[length - 1]: the index ending the best run of that length so far
-  const previous = new Array(sequence.length);
-  for (let index = 0; index < sequence.length; index++) {
-    const value = sequence[index];
-    if (value < 0) continue;
-    let low = 0;
-    let high = tails.length;
-    while (low < high) {
-      const middle = (low + high) >> 1;
-      if (sequence[tails[middle]] < value) low = middle + 1;
-      else high = middle;
-    }
-    previous[index] = low > 0 ? tails[low - 1] : -1;
-    tails[low] = index;
-  }
-  const kept = new Set();
-  for (let index = tails.length ? tails[tails.length - 1] : -1; index >= 0; index = previous[index]) kept.add(index);
-  return kept;
 }
 
 const hasContent = (root) =>
@@ -1828,15 +1082,7 @@ function serverElement(tag, options) {
  * 2's comment markers too, so modules compiled by 3.x and 4.x still run.
  */
 export const ABI = 4;
-const READS = [2, 3, 4]; // what $define reads; interface 4 output calls $element
-
-/** @internal The binders of interface 4: a block or slot part names one (`binder: $each`). */
-export { bindWhen as $when, bindAwait as $await, bindEach as $each, bindSlot as $slot };
-
-/** An interface 2 or 3 part's binder, from its keys. */
-function legacyBinder(part) {
-  part.binder = part.when ? bindWhen : part.await ? bindAwait : part.each ? bindEach : part.slot ? bindSlot : null;
-}
+const READS = [2, 3, 4]; // what $define (legacy.js) reads; interface 4 output calls $element
 
 /**
  * What modules compiled for runtime 1.x call. Their compiled shape differs, so they're refused
@@ -1844,15 +1090,6 @@ function legacyBinder(part) {
  */
 export function define(tag) {
   throw new Error(`zubra: <${tag}> was compiled for @zubra/runtime 1.x; recompile it with zubra 2 (the CLI, @zubra/compiler or @zubra/unplugin)`);
-}
-
-/** @internal Register a compiled component: what the compiler's JavaScript output calls. */
-export function $define(tag, definition) {
-  if (!READS.includes(definition?.abi)) {
-    throw new Error(`zubra: <${tag}> was compiled for a different @zubra/runtime (interface ${definition?.abi ?? 1}, this runtime is ${ABI}); recompile it with the matching zubra`);
-  }
-  legacy = legacyBinder;
-  return defineElement(tag, definition.slotting ? definition : { ...definition, slotting: $slotted });
 }
 
 /** @internal Register a component compiled for interface 4: its parts name their binders. */
@@ -2310,3 +1547,6 @@ function defineElement(tag, definition) {
   customElements.define(tag, ZubraElement);
   return ZubraElement;
 }
+
+/** @internal What the runtime's feature modules (blocks, when, each, await, slots) take from here. */
+export { COMMENT, PI, READS, TEXT, bind, blueprint, childRange, current, defineElement, isContent, isOpen, locate, mark, marker, matchingClose, positions, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, unmark, untrack };

@@ -184,7 +184,11 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     const found = new Set();
     const queue = [];
     const add = (from, specifier) => {
-      const path = joinPath(from.includes('/') ? from.slice(0, from.lastIndexOf('/')) : '', specifier);
+      const folder = from.includes('/') ? from.slice(0, from.lastIndexOf('/')) : '';
+      // (One that leaves the folder, a binder of the runtime's beside it (`../runtime/await.js`),
+      // isn't a module of the components'.)
+      if (specifier.split('/').filter((part) => part === '..').length > (folder ? folder.split('/').length : 0)) return;
+      const path = joinPath(folder, specifier);
       if (path.endsWith('.js') && !found.has(path)) {
         found.add(path);
         queue.push(path);
@@ -210,15 +214,32 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   // address in place of its text (a light-DOM component's; see the joined module below).
   const js = (name, stylesHref) => once(`js:${name}${stylesHref ? `:${stylesHref}` : ''}`, () => {
     const path = pathOf(name);
-    const response = send({ emit: 'js', runtime: '@zubra/runtime', devtools, path, files: sourcesOf(path), ...(stylesHref ? { stylesHref } : {}) });
+    // `binderEntries`: a block's or slot's binder comes from its own runtime entry, so a page loads
+    // only the binders its components use (`@zubra/runtime` is mapped to the core, below). Those
+    // imports are written as the files' addresses, so a page with an import map of its own (a
+    // framework's, naming only `@zubra/runtime`) loads them too.
+    const response = send({ emit: 'js', runtime: '@zubra/runtime', devtools, binderEntries: true, path, files: sourcesOf(path), ...(stylesHref ? { stylesHref } : {}) });
     if (!response.ok) throw new Error(response.error);
-    return resolved(needs(name, response.output));
+    return resolved(resolveImports(String(needs(name, response.output)), bindersFor(name)));
   });
 
   /** What each bare specifier a browser module may import resolves to: the import map's entries. */
   // `bundle`: the runtime's entry and what it imports are one file (`@zubra/runtime`'s
   // `dist/bundled`), so a page asks for one module where it asked for seven.
-  const mapping = () => ({ '@zubra/runtime': `${base}/runtime/${bundle ? 'zubra.js' : 'index.js'}`, '@zubra/runtime/spread': `${base}/runtime/spread.js`, '@zubra/runtime/primitives': `${base}/runtime/primitives.js`, '@zubra/runtime/motion': `${base}/runtime/motion.js`, '@zubra/runtime/track': `${base}/runtime/track.js`, ...syncImports, ...imports });
+  // The core, without the binders and $define, which the modules this server compiles import from
+  // their own entries (`binderEntries`).
+  // Each binder's file sits beside the runtime, wherever `imports` points `@zubra/runtime` (a CDN,
+  // say), so a page never mixes two copies of it. (The modules import them by address: js().)
+  const runtimeUrl = imports['@zubra/runtime'] ?? `${base}/runtime/${bundle ? 'zubra.js' : 'core.js'}`;
+  // zb-if's and zb-each's binders are the core's own, so they come from `@zubra/runtime` like the
+  // rest of it. zb-await's and the slots' are files of their own, beside the core: by a path
+  // relative to the component's module, so they move with the folder (a static site that serves
+  // `/_zubra/` from somewhere else, rewriting only its pages), or by the address `imports` gave.
+  const bindersFor = (name) => {
+    const beside = (file) => (imports['@zubra/runtime'] ? runtimeUrl.replace(/[^/]*$/, file) : `${'../'.repeat(name.split('/').length)}runtime/${file}`);
+    return { '@zubra/runtime/when': '@zubra/runtime', '@zubra/runtime/each': '@zubra/runtime', '@zubra/runtime/await': beside('await.js'), '@zubra/runtime/slots': beside('slots.js') };
+  };
+  const mapping = () => ({ '@zubra/runtime': runtimeUrl, '@zubra/runtime/spread': `${base}/runtime/spread.js`, '@zubra/runtime/primitives': `${base}/runtime/primitives.js`, '@zubra/runtime/motion': `${base}/runtime/motion.js`, '@zubra/runtime/track': `${base}/runtime/track.js`, ...syncImports, ...imports });
   /**
    * `inline: false` (a Content-Security-Policy without `'unsafe-inline'`, on a site that can't
    * give each response a nonce): a page gets no import map, so every module is served with its

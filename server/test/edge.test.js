@@ -110,7 +110,7 @@ test('a page, and the modules fetch() serves; the runtime is the host\'s to serv
   assert.equal(await edge.fetch(new Request('https://x.test/somewhere/else')), null);
   // A prefix of its own.
   const moved = createEdge({ wasm: wasm(), components: sources, prefix: '/assets/zb/' });
-  assert.match(moved.importMap(), /"@zubra\/runtime":"\/assets\/zb\/runtime\/index\.js"/);
+  assert.match(moved.importMap(), /"@zubra\/runtime":"\/assets\/zb\/runtime\/core\.js"/);
   assert.equal((await moved.fetch(new Request('https://x.test/assets/zb/components/hello-there.js'))).status, 200);
 });
 
@@ -184,7 +184,9 @@ test('the import map has every runtime entry a compiled module imports, on both 
     const map = JSON.parse(zubra.head().match(/<script type="importmap">(.*?)<\/script>/s)[1]).imports;
     for (const entry of ['', '/spread', '/primitives', '/motion', '/track']) {
       const specifier = `@zubra/runtime${entry}`;
-      assert.equal(map[specifier], `/_zubra/runtime/${entry ? entry.slice(1) : 'index'}.js`, `${name}: ${specifier}`);
+      // `@zubra/runtime` is the core; the binders a module imports from their own entries are
+      // written as addresses in it, so they needn't be here.
+      assert.equal(map[specifier], `/_zubra/runtime/${entry ? entry.slice(1) : 'core'}.js`, `${name}: ${specifier}`);
       assert.ok(runtime.exports[entry ? `.${entry}` : '.'], `${specifier} is an entry of @zubra/runtime`);
     }
   }

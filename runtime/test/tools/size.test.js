@@ -110,14 +110,16 @@ for (const [entry, budget] of Object.entries(ADAPTERS)) {
 }
 
 // What a server without a bundler sends (`@zubra/server` in production): `dist/production` as it
-// is, each module its own file, compressed one by one. 38.4 KB before the production build was
-// minified (5.14); 17.9 KB after.
-const SERVED = 18.5 * 1024;
+// is, each module its own file, compressed one by one, from the core it maps `@zubra/runtime` to;
+// a page adds the binders its components import. 38.4 KB before the production build was
+// minified (5.14); 17.9 KB after; 17.2 KB once zb-await's binder, the slot router and $define
+// were files of their own, which a page loads only if its components use them (5.18).
+const SERVED = 17.5 * 1024;
 
 test('dist/production as served fits its budget', (t) => {
   const dir = join(here, '../../dist/production');
   const sizes = new Map();
-  const queue = ['index.js'];
+  const queue = ['core.js'];
   while (queue.length) {
     const file = queue.pop();
     if (sizes.has(file)) continue;
@@ -126,13 +128,15 @@ test('dist/production as served fits its budget', (t) => {
     for (const match of code.matchAll(/(?:from|import)\s*["']\.\/([^"']+)["']/g)) queue.push(match[1]);
   }
   const total = [...sizes.values()].reduce((sum, size) => sum + size, 0);
-  t.diagnostic(`dist/production/index.js and its ${sizes.size - 1} imports: ${total} B gzip, file by file`);
+  t.diagnostic(`dist/production/core.js and its ${sizes.size - 1} imports: ${total} B gzip, file by file`);
   assert.ok(total <= SERVED, `${total} B gzip > ${SERVED} B`);
 });
 
 // The same as one file (`dist/bundled/zubra.js`, what `@zubra/server` sends with `bundle`): the
-// modules compress together. 18.6 KB file by file, 16.0 KB as one (5.15).
-const BUNDLED = 16.25 * 1024;
+// modules compress together. 18.6 KB file by file, 16.0 KB as one (5.15); 13.6 KB once zb-await's
+// binder, the slot router and $define were files of their own (5.18), which a page loads only if
+// its components use them.
+const BUNDLED = 14 * 1024;
 
 test('dist/bundled/zubra.js fits its budget, under the file-by-file build', (t) => {
   const size = gzipSync(readFileSync(join(here, '../../dist/bundled/zubra.js'), 'utf8')).length;

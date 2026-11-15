@@ -565,6 +565,7 @@ pub fn compile_js(source: &str, runtime: &str, source_name: &str) -> Result<Stri
                 style_imports: None,
                 styles_href: None,
                 devtools: None,
+                binder_entries: false,
             },
         )
     })
@@ -602,6 +603,7 @@ pub fn compile_js_with(
             style_imports: None,
             styles_href: None,
             devtools: false,
+            binder_entries: false,
         },
         loader,
     )
@@ -622,6 +624,8 @@ pub struct JsOptions<'a> {
     /// For the browser DevTools (`--devtools`): record the path, each part's source location and
     /// the script's signals by name. For development builds only; it adds bytes.
     pub devtools: bool,
+    /// Import each binder from its own runtime entry (see `emit_js::Options`): `@zubra/server`.
+    pub binder_entries: bool,
 }
 
 /// The JavaScript module for the component at `path`, with every option.
@@ -646,6 +650,7 @@ pub fn compile_js_options(
                 style_imports: options.style_imports,
                 styles_href: options.styles_href,
                 devtools: options.devtools.then_some(path),
+                binder_entries: options.binder_entries,
             },
         )
     })
@@ -708,6 +713,7 @@ pub fn compile_js_for_bundler(
             style_imports: Some(style_imports),
             styles_href: None,
             devtools: false,
+            binder_entries: false,
         },
         loader,
     )

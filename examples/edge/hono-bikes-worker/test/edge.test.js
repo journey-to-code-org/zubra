@@ -122,7 +122,8 @@ test('selling, and editing with errors and without, leave both shops in the same
 test('the browser modules are served by the Worker; htmx, the stylesheet and the runtime by its static assets', async () => {
   const home = await (await fetch(worker.url + '/')).text();
   const imports = JSON.parse(/<script type="importmap">(.*?)<\/script>/.exec(home)[1]).imports;
-  assert.equal(imports['@zubra/runtime'], '/_zubra/runtime/index.js');
+  // The runtime's core: the binders a page's components need beyond it are files beside it.
+  assert.equal(imports['@zubra/runtime'], '/_zubra/runtime/core.js');
   for (const path of [...Object.values(imports), '/app.css', '/vendor/htmx.js', '/_zubra/components/price-tag.js', '/_zubra/components/qty-input.js']) {
     const response = await fetch(worker.url + path);
     assert.equal(response.status, 200, path);

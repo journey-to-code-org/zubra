@@ -45,12 +45,20 @@ test('@hot and @dev fences', () => {
 
 test('dist/bundled: the entry and what it imports are one module, and every other module shares it', async () => {
   const dir = join(root, 'dist/bundled');
-  const [prod, one, entry] = await Promise.all([import('../../dist/production/index.js'), import('../../dist/bundled/zubra.js'), import('../../dist/bundled/index.js')]);
-  // zubra.js imports nothing, statically: it is the whole of the entry's graph.
+  const [prod, core, one, entry] = await Promise.all([import('../../dist/production/index.js'), import('../../dist/production/core.js'), import('../../dist/bundled/zubra.js'), import('../../dist/bundled/index.js')]);
+  // zubra.js imports nothing, statically: it is the whole of the core's graph.
   assert.doesNotMatch(readFileSync(join(dir, BUNDLE), 'utf8'), /(?:\bfrom|\bimport)\s*["']/);
-  // The entry's exports, and what the other modules take from inside (an effect's root).
+  // The core's exports, and what the other modules take from inside (an effect's root).
   assert.deepEqual(Object.keys(entry).sort(), Object.keys(prod).sort());
-  for (const name of Object.keys(prod)) assert.equal(entry[name], one[name], name);
+  for (const name of Object.keys(core)) assert.equal(entry[name], one[name], name);
+  // zb-if's and zb-each's binders are the core's (@zubra/server maps their entries to it);
+  // zb-await's, the slots' and $define are files of their own, which a page loads if it uses them.
+  for (const name of ['$when', '$each']) assert.equal(one[name], entry[name], name);
+  for (const [name, file] of [['$define', 'legacy.js'], ['$await', 'await.js'], ['$slot', 'slots.js'], ['$slotted', 'slots.js']]) {
+    assert.equal(one[name], undefined, `${name} isn't in ${BUNDLE}`);
+    assert.equal(typeof entry[name], name === '$slotted' ? 'object' : 'function', name);
+    assert.equal(entry[name], (await import(`../../dist/bundled/${file}`))[name], name);
+  }
   for (const name of ['root', 'batch', 'wrap']) assert.equal(typeof one[name], 'function', name);
   // The modules that went in are still there by name, and give the same things: one signal
   // graph, whichever file a module (or @zubra/sync) imports from.
@@ -59,10 +67,10 @@ test('dist/bundled: the entry and what it imports are one module, and every othe
   assert.equal(effect.effect, one.effect);
   assert.equal(effect.root, one.root);
   assert.equal(element.define, one.define);
-  for (const name of ['spread.js', 'track.js', 'bridge.js', 'context-element.js', 'zag.js']) {
+  for (const name of ['spread.js', 'track.js', 'bridge.js', 'context-element.js', 'zag.js', 'each.js', 'slots.js', 'legacy.js']) {
     const code = readFileSync(join(dir, name), 'utf8');
     assert.match(code, /from"\.\/zubra\.js"/, name);
-    assert.doesNotMatch(code, /from"\.\/(?:signal|effect|element|deep|resource|index|signal-impl)\.js"/, name);
+    assert.doesNotMatch(code, /from"\.\/(?:signal|effect|element|deep|resource|index|core|signal-impl)\.js"/, name);
   }
   // And it runs: an effect from one file sees a signal from another.
   const count = new signal.Signal.State(1);
@@ -84,12 +92,12 @@ test('bundle(): a name is given only by the module it belongs to, and a module t
     'other.js': 'import{inner as i}from"./one.js";export const b=i;',
     'lone.js': 'export const c=4;',
   };
-  const out = bundle(sources);
+  const out = bundle(sources, 'index.js');
   assert.deepEqual(Object.keys(out).sort(), ['index.js', 'lone.js', 'one.js', 'other.js', 'pick.js', BUNDLE].sort(), 'impl.js has nothing of its own to give');
   assert.match(out['one.js'], /export\{a,inner\}from"\.\/zubra\.js"/);
   assert.match(out['pick.js'], /export\{pick\}from"\.\/zubra\.js"/);
   assert.equal(out['other.js'], 'import{inner as i}from"./zubra.js";export const b=i;');
   assert.equal(out['lone.js'], sources['lone.js'], 'a module outside the graph is as it was');
-  assert.throws(() => bundle({ ...sources, 'other.js': 'import{pick as p}from"./impl.js";export const b=p;' }), /other\.js imports pick from impl\.js/);
-  assert.throws(() => bundle({ ...sources, 'other.js': 'import*as all from"./one.js";export const b=all.a;' }), /other than by name/);
+  assert.throws(() => bundle({ ...sources, 'other.js': 'import{pick as p}from"./impl.js";export const b=p;' }, 'index.js'), /other\.js imports pick from impl\.js/);
+  assert.throws(() => bundle({ ...sources, 'other.js': 'import*as all from"./one.js";export const b=all.a;' }, 'index.js'), /other than by name/);
 });
