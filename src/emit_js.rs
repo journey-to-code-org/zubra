@@ -55,6 +55,10 @@ pub struct Options<'a> {
     /// location as the definition's `source`, with each part's line and column in it (`at`) and the script's
     /// signals by name (`$dev`). `None` emits none of it.
     pub devtools: Option<&'a str>,
+    /// Import each block's and slot's binder from its own entry (`@zubra/runtime/each`, …) in
+    /// place of the runtime's main one: for a server that maps `@zubra/runtime` to the core and
+    /// sends a page only the binders its components use (`@zubra/server`).
+    pub binder_entries: bool,
 }
 
 /// Module specifiers for a component's stylesheet, as the bundler serves it.
@@ -429,7 +433,34 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     if out.contains("\n  slotting: $slotted,\n") {
         binders.push("$slotted");
     }
-    if !binders.is_empty() {
+    if options.binder_entries {
+        // One import per entry, in a fixed order: `$slot` and `$slotted` are both slots.js's.
+        let header_end = out.find('\n').map_or(0, |at| at + 1);
+        let mut lines = String::new();
+        for (file, names) in [
+            ("when", &["$when"][..]),
+            ("await", &["$await"]),
+            ("each", &["$each"]),
+            ("slots", &["$slot", "$slotted"]),
+        ] {
+            let used: Vec<&str> = names
+                .iter()
+                .copied()
+                .filter(|name| binders.contains(name))
+                .collect();
+            if !used.is_empty() {
+                lines.push_str(&format!(
+                    "import {{ {} }} from {};\n",
+                    used.join(", "),
+                    json(&entry(file))
+                ));
+            }
+        }
+        out.insert_str(
+            header_end + out[header_end..].find('\n').map_or(0, |at| at + 1),
+            &lines,
+        );
+    } else if !binders.is_empty() {
         let names = format!("$element as $define, $r, $t, {}", binders.join(", "));
         out = out.replacen(
             "import { $element as $define, $r, $t }",

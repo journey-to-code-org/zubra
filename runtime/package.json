@@ -15,6 +15,31 @@
       "production": "./dist/production/index.js",
       "default": "./src/index.js"
     },
+    "./core": {
+      "types": "./types/core.d.ts",
+      "production": "./dist/production/core.js",
+      "default": "./src/core.js"
+    },
+    "./when": {
+      "types": "./types/binders.d.ts",
+      "production": "./dist/production/when.js",
+      "default": "./src/when.js"
+    },
+    "./each": {
+      "types": "./types/binders.d.ts",
+      "production": "./dist/production/each.js",
+      "default": "./src/each.js"
+    },
+    "./await": {
+      "types": "./types/binders.d.ts",
+      "production": "./dist/production/await.js",
+      "default": "./src/await.js"
+    },
+    "./slots": {
+      "types": "./types/binders.d.ts",
+      "production": "./dist/production/slots.js",
+      "default": "./src/slots.js"
+    },
     "./signal": {
       "types": "./types/signal.d.ts",
       "production": "./dist/production/signal.js",

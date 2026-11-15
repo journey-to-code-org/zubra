@@ -65,8 +65,11 @@ test('a page preloads its components, what they import and the runtime, each onc
   const links = preloaded(html);
   assert.equal(links[0], '/_zubra/components/order-form.js', "the page's own components first");
   assert.ok(links.includes('/_zubra/components/count-stepper.js'), 'a component another imports');
-  assert.ok(links.includes('/_zubra/runtime/index.js'), "the runtime's entry, through the import map");
-  assert.ok(links.includes('/_zubra/runtime/element.js') && links.includes('/_zubra/runtime/signal-impl.js'), "and the entry's own modules, levels down");
+  assert.ok(links.includes('/_zubra/runtime/core.js'), "the runtime's core, through the import map");
+  assert.ok(links.includes('/_zubra/runtime/element.js') && links.includes('/_zubra/runtime/signal-impl.js'), "and the core's own modules, levels down");
+  // No zb-await and no slots in these two: neither of those files, no $define, and not the entry
+  // that has them all.
+  for (const file of ['index.js', 'legacy.js', 'await.js', 'slots.js']) assert.ok(!links.includes(`/_zubra/runtime/${file}`), file);
   assert.equal(new Set(links).size, links.length, 'each once');
   assert.ok(html.indexOf('<script type="importmap">') < html.indexOf('<link rel="modulepreload"'), 'after the import map');
   assert.ok(html.indexOf('<link rel="modulepreload"') < html.indexOf('</head>'), 'in the head');
@@ -141,7 +144,7 @@ test('with a nonce, each link carries it; with inline: false, the links follow t
   plain.render('hello-there', { name: 'Ada', items: [] });
   const linked = plain.finish(layout(''));
   assert.doesNotMatch(linked, /importmap/);
-  assert.ok(preloaded(linked).includes('/_zubra/runtime/index.js'), 'the modules are served with their imports resolved, and read that way');
+  assert.ok(preloaded(linked).includes('/_zubra/runtime/core.js'), 'the modules are served with their imports resolved, and read that way');
   assert.ok(linked.indexOf('rel="stylesheet"') < linked.indexOf('rel="modulepreload"'));
 });
 
@@ -188,4 +191,26 @@ test('in a browser, under a nonce-only policy: the preloads are allowed and the 
   await page.waitForFunction(() => document.querySelector('hello-there p').textContent.startsWith('Hello Ada!'));
   assert.deepEqual(errors, []);
   await context.close();
+});
+
+test("a page loads the binders its components use, and only those, by address; beside the runtime it's given", async () => {
+  const zubra = createZubra({ components, production: true });
+  const page = zubra.page();
+  page.render('review-list', { reviews: [] });
+  const links = preloaded(page.finish(layout('')));
+  // review-list has a zb-await and a zb-each: zb-await's binder is a file of its own, and
+  // zb-each's (like zb-if's) is the core's.
+  assert.ok(links.includes('/_zubra/runtime/await.js'));
+  for (const file of ['slots.js', 'legacy.js', 'index.js']) assert.ok(!links.includes(`/_zubra/runtime/${file}`), file);
+  // The module names them by address, so a page whose import map only has `@zubra/runtime` (a
+  // framework's own) loads them too.
+  const url = await listen((request, response) => zubra.handle(request, response));
+  const module = await (await fetch(`${url}/_zubra/components/review-list.js`)).text();
+  assert.match(module, /import \{ \$await \} from "\/_zubra\/runtime\/await\.js";/);
+  assert.match(module, /import \{ \$each \} from "\/_zubra\/runtime\/core\.js";/);
+  assert.match(module, /from "@zubra\/runtime";/, 'the core by its name, for the import map');
+  // With `@zubra/runtime` somewhere else (a CDN), the binders come from beside it: one runtime.
+  const elsewhere = createZubra({ components, production: true, imports: { '@zubra/runtime': 'https://cdn.example/zubra/core.js' } });
+  const there = await listen((request, response) => elsewhere.handle(request, response));
+  assert.match(await (await fetch(`${there}/_zubra/components/review-list.js`)).text(), /import \{ \$await \} from "https:\/\/cdn\.example\/zubra\/await\.js";/);
 });

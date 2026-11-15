@@ -1261,3 +1261,53 @@ fn the_runtime_option_moves_the_scripts_own_runtime_imports_too() {
         "{default:?}"
     );
 }
+
+#[test]
+fn binder_entries_import_each_binder_from_its_own_runtime_entry() {
+    let source = r#"<zb-x items={[]} open={false}><zb-if test={open}><p>on</p></zb-if><ul><zb-each items={items} as="item"><li>{item}</li></zb-each></ul><zb-slot></zb-slot></zb-x>"#;
+    let module = |binder_entries: bool, runtime: &str| {
+        zubra::compile_js_options(
+            source,
+            "test.zb",
+            &zubra::JsOptions {
+                runtime,
+                component_extension: Some(".js"),
+                style_imports: None,
+                styles_href: None,
+                devtools: false,
+                binder_entries,
+            },
+            &zubra::filesystem,
+        )
+        .unwrap()
+    };
+    // For @zubra/server: the main entry is the core, and each binder has an entry of its own.
+    let split = module(true, "@zubra/runtime");
+    assert!(
+        split.contains(
+            "import { $element as $define, $r, $t } from \"@zubra/runtime\";\n\
+             import { $when } from \"@zubra/runtime/when\";\n\
+             import { $each } from \"@zubra/runtime/each\";\n\
+             import { $slot, $slotted } from \"@zubra/runtime/slots\";\n"
+        ),
+        "{split}"
+    );
+    assert!(!split.contains("$await"), "{split}");
+    // A runtime given as a file gets the sibling files.
+    let files = module(true, "/vendor/zubra/core.js");
+    assert!(
+        files.contains("import { $each } from \"/vendor/zubra/each.js\";"),
+        "{files}"
+    );
+    // Without the option, as before: everything from the main entry.
+    let together = module(false, "@zubra/runtime");
+    assert!(
+        together.contains(
+            "import { $element as $define, $r, $t, $when, $each, $slot, $slotted } from \"@zubra/runtime\";\n"
+        ),
+        "{together}"
+    );
+    // The parts are the same either way.
+    let parts = |module: &str| module[module.find("setup(").unwrap()..].to_owned();
+    assert_eq!(parts(&split), parts(&together));
+}

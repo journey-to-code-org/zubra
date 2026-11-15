@@ -156,7 +156,7 @@ test('inline: false: stylesheet links, module scripts by src, no import map, and
 
   // The module's imports are resolved: the compiler's, and the script's own `@zubra/runtime`.
   const module = await (await fetch(`${url}/_zubra/components/hello-there.js`)).text();
-  assert.match(module, /import \{ hydrated \} from ['"]\/_zubra\/runtime\/index\.js['"]/);
+  assert.match(module, /import \{ hydrated \} from ['"]\/_zubra\/runtime\/core\.js['"]/);
   assert.doesNotMatch(module, /from ['"]@zubra\//);
   assert.match(inlined.module('hello-there'), /from ['"]@zubra\/runtime['"]/, 'left for the import map otherwise');
 
@@ -182,8 +182,8 @@ test('inline: false: `imports` and @zubra/sync resolve in the modules, the runti
   assert.match(module, /from "\/_zubra\/sync\/index\.js"/);
   assert.match(module, /from '\/vendor\/color\/shade\.js'/);
   assert.match(module, /from '\.\/tint\.js'/, 'relative imports stay');
-  assert.match(await text('/_zubra/components/tint.js'), /from '\/_zubra\/runtime\/index\.js'/, 'a plain module the component imports');
-  assert.match(await text('/_zubra/sync/index.js'), /from '\/_zubra\/runtime\/index\.js'/, "@zubra/sync's import of the runtime");
+  assert.match(await text('/_zubra/components/tint.js'), /from '\/_zubra\/runtime\/core\.js'/, 'a plain module the component imports');
+  assert.match(await text('/_zubra/sync/index.js'), /from '\/_zubra\/runtime\/core\.js'/, "@zubra/sync's import of the runtime");
   assert.doesNotMatch(await text('/_zubra/sync/index.js'), /from ['"]@zubra\/runtime['"]/);
 });
 

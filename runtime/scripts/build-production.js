@@ -91,25 +91,25 @@ export const BUNDLE = 'zubra.js';
  * `zubra.js` is still there by name, re-exporting from it, for anything that imports it directly.
  * `zubra.js` exports what `index.js` does and what those others need from inside.
  */
-export function bundle(sources) {
+export function bundle(sources, ENTRY = 'core.js') {
   const graph = graphOf(sources);
   const core = [];
   (function walk(name) {
     if (core.includes(name)) return;
     core.push(name);
     for (const next of graph[name] ?? []) walk(next);
-  })('index.js');
+  })(ENTRY);
   const dir = mkdtempSync(join(tmpdir(), 'zubra-bundled-'));
   try {
     for (const [name, code] of Object.entries(sources)) writeFileSync(join(dir, name), code);
     const exportsOf = (name) => Object.values(buildSync({ entryPoints: [join(dir, name)], bundle: false, write: false, metafile: true, format: 'esm', outdir: join(dir, 'out') }).metafile.outputs)[0].exports;
-    const entry = exportsOf('index.js');
+    const entry = exportsOf(ENTRY);
     // What each module adds to the entry's exports: the names only it has. A name two of them
     // export (`Signal`: the one chosen, and the implementation) is the entry's, or nobody's.
-    const owned = Object.fromEntries(core.filter((name) => name !== 'index.js').map((name) => [name, exportsOf(name)]));
+    const owned = Object.fromEntries(core.filter((name) => name !== ENTRY).map((name) => [name, exportsOf(name)]));
     const count = (name) => Object.values(owned).filter((names) => names.includes(name)).length;
     const extra = Object.fromEntries(Object.entries(owned).map(([name, names]) => [name, names.filter((one) => !entry.includes(one) && count(one) === 1)]));
-    const stdin = [`export * from './index.js';`, ...Object.entries(extra).filter(([, names]) => names.length).map(([name, names]) => `export { ${names.join(', ')} } from './${name}';`)].join('\n');
+    const stdin = [`export * from './${ENTRY}';`, ...Object.entries(extra).filter(([, names]) => names.length).map(([name, names]) => `export { ${names.join(', ')} } from './${name}';`)].join('\n');
     // A module loaded when it's first needed (`import('./remark.js')`) stays a file of its own.
     const lazy = [...new Set(core.flatMap((name) => [...sources[name].matchAll(/\bimport\(\s*["'](\.\/[^"']+)["']\s*\)/g)].map((match) => match[1])))];
     const { outputFiles } = buildSync({ stdin: { contents: stdin, resolveDir: dir, sourcefile: 'zubra.js' }, bundle: true, minify: true, format: 'esm', target: 'esnext', legalComments: 'none', external: lazy, write: false });
@@ -118,9 +118,9 @@ export function bundle(sources) {
     // Where the entry gets each of its names: a name two modules export is that module's.
     const origin = {};
     // (The entry only re-exports, under the names it imports; minified, that is `import{a as b}from`.)
-    for (const [, names, from] of sources['index.js'].matchAll(/(?:import|export)\s*\{([^}]*)\}\s*from\s*["']\.\/([^"']+)["']/g)) for (const one of names.split(',')) origin[one.trim().split(/\s+as\s+/)[0]] = from;
-    for (const one of entry) if (!origin[one]) throw new Error(`index.js exports ${one}, and not from a module by that name`);
-    const gives = { 'index.js': entry };
+    for (const [, names, from] of sources[ENTRY].matchAll(/(?:import|export)\s*\{([^}]*)\}\s*from\s*["']\.\/([^"']+)["']/g)) for (const one of names.split(',')) origin[one.trim().split(/\s+as\s+/)[0]] = from;
+    for (const one of entry) if (!origin[one]) throw new Error(`${ENTRY} exports ${one}, and not from a module by that name`);
+    const gives = { [ENTRY]: entry };
     for (const name of Object.keys(owned)) gives[name] = owned[name].filter((one) => extra[name].includes(one) || origin[one] === name);
     for (const name of core) {
       // A module with nothing that is its own to give (the signal implementation: `Signal` is
@@ -129,8 +129,11 @@ export function bundle(sources) {
     }
     const inside = new RegExp(`((?:\\bfrom|\\bimport)\\s*["'])\\./(${core.map((name) => name.replace(/[.$]/g, '\\$&')).join('|')})(["'])`, 'g');
     const named = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*["']\\./(${core.map((name) => name.replace(/[.$]/g, '\\$&')).join('|')})["']`, 'g');
-    for (const [name, code] of Object.entries(sources)) {
+    for (let [name, code] of Object.entries(sources)) {
       if (core.includes(name)) continue;
+      // `export * from './core.js'` (index.js): the core's own names, from `zubra.js`, and not the
+      // internals other modules of it give there too.
+      code = code.replace(new RegExp(`export\\s*\\*\\s*from\\s*["']\\./${ENTRY.replace('.', '\\.')}["'];?`, 'g'), `export{${entry.join(',')}}from"./${BUNDLE}";`);
       // Every name it takes from a module inside `zubra.js` must be one that module gives there.
       let imports = 0;
       for (const [, names, from] of code.matchAll(named)) {

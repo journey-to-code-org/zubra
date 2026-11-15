@@ -64,7 +64,7 @@ fn run() -> Result<(), String> {
     }
     if command.as_deref() != Some("compile") {
         return Err(
-            "usage: zubra check <component.zb>... [--format human|json] [--server] [--client]\n       zubra fmt <file.zb | folder>... [--check] [--stdin] [--indent <n> | --tabs] [--width <n>]\n       zubra convert <Component.jsx | my-element.js> [--prefix <word>] [--component <Name>] [--as jsx|zubra] [--out <file> | --stdout]\n       zubra request < request.json\n       zubra serve   (JSON lines: a request per line in, a response per line out)\n       zubra compile <component.zb> [--emit html|js|css|dts|manifest|html-data|interface|server|tsx] [--props <props.json>] [--slots <slots.json> [--slots-html]] [--partial] [--runtime <module>] [--keep-imports] [--no-imports] [--devtools] [--css-import <specifier> --css-import-inline <specifier>] [--framework react|vue] [--module-path <path>] [--output <file>]".into(),
+            "usage: zubra check <component.zb>... [--format human|json] [--server] [--client]\n       zubra fmt <file.zb | folder>... [--check] [--stdin] [--indent <n> | --tabs] [--width <n>]\n       zubra convert <Component.jsx | my-element.js> [--prefix <word>] [--component <Name>] [--as jsx|zubra] [--out <file> | --stdout]\n       zubra request < request.json\n       zubra serve   (JSON lines: a request per line in, a response per line out)\n       zubra compile <component.zb> [--emit html|js|css|dts|manifest|html-data|interface|server|tsx] [--props <props.json>] [--slots <slots.json> [--slots-html]] [--partial] [--runtime <module>] [--keep-imports] [--no-imports] [--devtools] [--binder-entries] [--css-import <specifier> --css-import-inline <specifier>] [--framework react|vue] [--module-path <path>] [--output <file>]".into(),
         );
     }
     let source_path = arguments
@@ -80,6 +80,7 @@ fn run() -> Result<(), String> {
     let mut module_path = None;
     let mut keep_imports = false;
     let mut devtools = false;
+    let mut binder_entries = false;
     let mut no_imports = false;
     let mut css_import = None;
     let mut css_import_inline = None;
@@ -93,6 +94,7 @@ fn run() -> Result<(), String> {
             "--keep-imports" => keep_imports = true,
             // For development builds: what the browser DevTools panel reads (--emit js).
             "--devtools" => devtools = true,
+            "--binder-entries" => binder_entries = true,
             // For --emit css: this component's stylesheet only (a bundler loads the others).
             "--no-imports" => no_imports = true,
             // For bundler plugins: import the <style> through the bundler instead of inlining it.
@@ -169,6 +171,7 @@ fn run() -> Result<(), String> {
                         style_imports,
                         styles_href: None,
                         devtools,
+                        binder_entries,
                     },
                     &zubra::filesystem,
                 )
