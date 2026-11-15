@@ -26,7 +26,7 @@ const npm = (args, cwd, stdio = 'inherit') => spawnSync('npm', args, { cwd, stdi
 
 // The order matters: the plugin and the server need the runtime and the compiler, and create-zubra's
 // templates need all of them. The compiler is built first. @zubra/sync needs the runtime, and
-// @zubra/actions the compiler and the server.
+// @zubra/actions the compiler and the server, and @zubra/router the same two.
 //
 // A package's first version can't come from here in CI: npm sets up trusted publishing only for a
 // package that exists. Publish it once by hand (`npm publish --access public` in its directory, on
@@ -41,6 +41,8 @@ const packages = [
   // The siblings, last: nothing above needs them, so if one fails, the rest are already out.
   { dir: 'sync' },
   { dir: 'actions' },
+  // After Actions: it reads an action's answer through the app's createActions().
+  { dir: 'router' },
 ];
 
 const manifest = (dir) => JSON.parse(readFileSync(join(repo, dir, 'package.json'), 'utf8'));
