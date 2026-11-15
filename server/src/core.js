@@ -15,6 +15,8 @@ export { SOURCE_EXTENSION, TYPES };
 // of keys and HTML in all, and the largest one answer may be.
 const RENDERS = 500;
 const RENDER_BYTES = 8 * 1024 * 1024;
+/** How many joined modules built only to answer a request are kept. */
+const ASKED = 64;
 const RENDER_LARGEST = 512 * 1024;
 
 /**
@@ -31,6 +33,8 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   if (typeof inline !== 'boolean') throw new Error(`@zubra/server: inline is true or false, not ${JSON.stringify(inline)}`);
   if (typeof preload !== 'boolean') throw new Error(`@zubra/server: preload is true or false, not ${JSON.stringify(preload)}`);
   const memo = new Map();
+  // Joined modules built only because a request named their set (bounded; see serve).
+  const asked = new Map();
   const once = (key, make) => {
     if (!cache || !memo.has(key)) memo.set(key, make());
     return memo.get(key);
@@ -353,10 +357,17 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     if (bundle && rest.startsWith('b/') && rest.endsWith('.js')) {
       const set = rest.slice('b/'.length, rest.lastIndexOf('.', rest.length - 4)).split('+').map((name) => name.replaceAll('~', '/'));
       const known = set.every((name) => files.has(name)) && set.join('+') === componentSet(set).join('+');
-      // (A set nobody rendered yet is built to answer, and kept only if this is its URL.)
-      const one = known ? (memo.get(joinedKey(set)) ?? join(set)) : null;
+      // A set no page rendered is built to answer, and kept with the few others only requests
+      // asked for, whatever the hash asked: a wrong one is answered from there, not built again,
+      // and a visitor naming set after set fills that, never the memo pages keep theirs in.
+      const key = joinedKey(set);
+      let one = known ? (memo.get(key) ?? asked.get(key)) : null;
+      if (known && !one) {
+        one = join(set);
+        asked.set(key, one);
+        if (asked.size > ASKED) asked.delete(asked.keys().next().value);
+      }
       if (!one || one.url !== `${base}/${rest}`) return { status: 404, type: 'text/plain', body: 'Not found' };
-      memo.set(joinedKey(set), one);
       return { status: 200, type: TYPES['.js'], body: one.body, immutable: true };
     }
     if (rest.startsWith('components/') && rest.endsWith('.js')) {
