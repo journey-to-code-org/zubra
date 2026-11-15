@@ -334,9 +334,21 @@ function rewriteImports(code, to) {
   return code.replace(/(\bfrom\s*|\bimport\s*\(?\s*)(['"])(\.{1,2}\/[^'"]+)\2/g, (_, keyword, quote, specifier) => `${keyword}${quote}${to(specifier)}${quote}`);
 }
 
+// A Host header is a host and an optional port. Anything else (a path, a query, an empty one)
+// would move the URL's path away from the request's: `Host: site/admin` with `GET /public` would
+// read as `/admin/public`, past a proxy that allowed `/public`. That's refused (the callers answer
+// 400); a request without one (HTTP/1.0) is for localhost.
+const HOST = /^(?:[\w.-]+|\[[\da-fA-F:.]+\])(?::\d{1,5})?$/;
+const hostOf = (req) => {
+  const { host } = req.headers;
+  if (host === undefined) return 'localhost';
+  if (!HOST.test(host)) throw new TypeError(`not a host: ${JSON.stringify(host)}`);
+  return host;
+};
+
 /** A Node GET or HEAD request as a fetch Request. */
 function toRequest(req) {
-  const host = req.headers.host ?? 'localhost';
+  const host = hostOf(req);
   const protocol = req.socket?.encrypted ? 'https' : 'http';
   const headers = new Headers();
   for (const [name, value] of Object.entries(req.headers)) {

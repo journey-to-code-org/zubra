@@ -79,9 +79,21 @@ export async function createActions({
   return { ...core, handle };
 }
 
+// A Host header is a host and an optional port. Anything else (a path, a query, an empty one)
+// would move the URL's path away from the request's: `Host: site/admin` with `GET /public` would
+// read as `/admin/public`, past a proxy that allowed `/public`. That's refused (the callers answer
+// 400); a request without one (HTTP/1.0) is for localhost.
+const HOST = /^(?:[\w.-]+|\[[\da-fA-F:.]+\])(?::\d{1,5})?$/;
+const hostOf = (req) => {
+  const { host } = req.headers;
+  if (host === undefined) return 'localhost';
+  if (!HOST.test(host)) throw new TypeError(`not a host: ${JSON.stringify(host)}`);
+  return host;
+};
+
 /** A Node request as a fetch Request (the body streams; nothing is read until it's ours). */
 export function toRequest(req) {
-  const host = req.headers.host ?? 'localhost';
+  const host = hostOf(req);
   const protocol = req.socket?.encrypted ? 'https' : 'http';
   const headers = new Headers();
   for (const [name, value] of Object.entries(req.headers)) {

@@ -55,5 +55,6 @@ export interface ActionContext {
 }
 
 export function createActions(options?: ActionsOptions): Promise<Actions>;
+/** Throws for a Host header that isn't a host and an optional port (answer 400). */
 export function toRequest(req: import('node:http').IncomingMessage): Request;
 export function send(response: Response, res: import('node:http').ServerResponse): Promise<void>;
