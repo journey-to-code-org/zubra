@@ -1116,7 +1116,7 @@ const compiledAs = ({ template = '', styles = null, props = {}, shadow = false, 
 // @dev-end
 
 function defineElement(tag, definition) {
-  const { props = {}, shadow = false, form = false, events = [], styled = false, inPage = false, stylesHref = null } = definition;
+  const { props = {}, shadow = false, form = false, events = [], styled = false, inPage = false, stylesHref = null, stylesFromPage = null } = definition;
   // Light-DOM slots, when the component has some: imported by its module (`$slotted`), filled in by $define.
   const slottingOf = (next) => (!shadow && next.slots?.length ? next.slotting ?? null : null);
   let slotting = slottingOf(definition);
@@ -1130,9 +1130,10 @@ function defineElement(tag, definition) {
   // b-tag"`. On a page that doesn't name this one (a fragment swapped into another page, a
   // page built without the server's head), the document gets the fetched sheet like any root.
   let carried;
-  const pageHasStyles = () => styles != null || (carried ??= document.querySelector(`[data-zb-components~="${tag}"]`) !== null);
+  const pageHasStyles = () => styles != null || stylesFromPage != null || (carried ??= document.querySelector(`[data-zb-components~="${tag}"]`) !== null);
   // (`stylesHref`: the page has the CSS and the module only its address; see `fetchedSheet`.)
-  const ownSheets = () => (styles == null ? (stylesHref ? [(sheet ??= fetchedSheet(stylesHref))] : []) : [(sheet ??= toSheet(styles))]);
+  // (`stylesFromPage`: the bundler put the CSS in the page, and the module has neither; see page-styles.js.)
+  const ownSheets = () => (styles != null ? [(sheet ??= toSheet(styles))] : stylesHref ? [(sheet ??= fetchedSheet(stylesHref))] : stylesFromPage && (sheet ??= stylesFromPage(tag)) ? [sheet] : []);
   const existing = customElements.get(tag);
   if (existing) {
     // @hot (left out of the production build: scripts/build-production.js)
@@ -1265,7 +1266,7 @@ function defineElement(tag, definition) {
 
     connectedCallback() {
       // A light-DOM component's styles go where it is: the document, or a shadow root.
-      if (!shadow && (styles != null || stylesHref)) {
+      if (!shadow && (styles != null || stylesHref || stylesFromPage)) {
         // A light-DOM component's sheet goes to the root it's in, unless the bundler already put
         // it in the page (`inPage`) and that root is the document.
         // (A callback can run after the element was moved out again: then the root is a detached

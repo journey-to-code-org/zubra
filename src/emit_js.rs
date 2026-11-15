@@ -221,6 +221,8 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     let mut styles = None;
     let mut in_page = false;
     let mut href = None;
+    // A light-DOM component whose stylesheet the bundler puts in the page: no text in the module.
+    let mut from_page = false;
     if let Some(style) = &component.style {
         match options.style_imports {
             Some(imports) if component.shadow => {
@@ -228,12 +230,12 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
                 styles = Some("$styles".to_owned());
             }
             Some(imports) => {
-                // Light DOM: the bundler puts the CSS in the page, and the text comes too, for
-                // when the element is inside someone else's shadow root (a Lit app, say), where
-                // page CSS doesn't reach.
+                // Light DOM: the bundler puts the CSS in the page, and that's the only copy. An
+                // element inside someone else's shadow root (a Lit app, say), where page CSS
+                // doesn't reach, gets this component's rules copied from the page's stylesheets
+                // (`stylesFromPage`, the runtime's `$pageStyles`).
                 out.push_str(&format!("import {};\n", json(imports.stylesheet)));
-                out.push_str(&format!("import $styles from {};\n", json(imports.inline)));
-                styles = Some("$styles".to_owned());
+                from_page = true;
                 in_page = true;
             }
             None => {
@@ -314,6 +316,9 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
         // `styled`: the runtime marks slotted content, where light-DOM styles stop.
         match (component.style.is_some(), styles) {
             (false, _) => String::new(),
+            (true, None) if from_page => {
+                "  styled: true,\n  stylesFromPage: $pageStyles,\n  inPage: true,\n".to_owned()
+            }
             (true, None) => "  styled: true,\n".to_owned(),
             (true, Some(_)) if href.is_some() => format!(
                 "  styled: true,\n  stylesHref: {},\n  inPage: true,\n",
@@ -465,6 +470,15 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
         out = out.replacen(
             "import { $element as $define, $r, $t }",
             &format!("import {{ {names} }}"),
+            1,
+        );
+    }
+    // `stylesFromPage` (a bundler's light-DOM component): from the runtime's main entry, beside
+    // the binders (after them: the line they're added to is matched whole).
+    if from_page {
+        out = out.replacen(
+            "import { $element as $define, $r, $t",
+            "import { $element as $define, $r, $t, $pageStyles",
             1,
         );
     }

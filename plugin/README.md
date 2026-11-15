@@ -73,7 +73,7 @@ Props go to the component, other attributes to its host, children to its slots (
 
 ## Styles
 
-With Vite, a component's `<style>` is a CSS module in Vite's pipeline, so PostCSS, Tailwind (`@reference "tailwindcss"`, `@apply`) and preprocessors (`<style lang="scss">`) process it. Light-DOM components' CSS lands in the page's CSS bundle; shadow components get theirs as a string (`?inline`) for their shadow roots. With other bundlers, plain CSS is inlined in the module. See the main README's Styles section.
+With Vite, a component's `<style>` is a CSS module in Vite's pipeline, so PostCSS, Tailwind (`@reference "tailwindcss"`, `@apply`) and preprocessors (`<style lang="scss">`) process it. Light-DOM components' CSS lands in the page's CSS bundle, and only there: a light-DOM element inside another shadow root (a Lit or FAST app's) gets its component's rules copied from the page's stylesheets. Shadow components get theirs as a string (`?inline`) for their shadow roots. With other bundlers, plain CSS is inlined in the module. See the main README's Styles section.
 
 ## Options
 

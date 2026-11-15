@@ -212,6 +212,8 @@ export declare function $element(tag: string, definition: Definition & { abi: nu
 export declare const $when: unknown, $await: unknown, $each: unknown, $slot: unknown;
 /** @internal A light-DOM component's slots: interface 4 output with slots imports it (`slotting: $slotted`). */
 export declare const $slotted: unknown;
+/** @internal A light-DOM component's rules from the page, for an element inside a shadow root (`stylesFromPage`). */
+export declare function $pageStyles(tag: string): CSSStyleSheet | null;
 /** The compiled-code interface version this runtime implements. */
 export declare const ABI: number;
 
