@@ -30,7 +30,8 @@ export async function serverHalves(root) {
 }
 
 /** A component's path without its extension, flattened into one file name: `forms/login.zb` → `forms__login`. */
-export const flatName = (relativePath) => relativePath.split(/[\\/]/).join('__').replace(SOURCE, '');
+// One name per path, with no two paths sharing one (`a/b.zb` and `a__b.zb` did).
+export const flatName = (relativePath) => relativePath.replace(SOURCE, '').split(/[\\/]/).map((part) => part.replace(/_/g, '_u')).join('_s');
 
 /** Rewrite each relative import (`'./x'`, `'../x'`) with `to(specifier)`: static, re-exports, and `import('./x')`. */
 export function rewriteImports(code, to) {

@@ -123,8 +123,8 @@ test('the build reaches a component in a nested folder, its static and dynamic i
   const out = join(dir, 'nested-out');
   const routes = await buildActions({ components: nested, out });
   assert.deepEqual(routes, ['/_zb/action/note-form/save']);
-  assert.deepEqual(readdirSync(out).sort(), ['forms__parts__note-form.server.js', 'index.js']);
-  const half = readFileSync(join(out, 'forms__parts__note-form.server.js'), 'utf8');
+  assert.deepEqual(readdirSync(out).sort(), ['forms_sparts_snote-form.server.js', 'index.js']);
+  const half = readFileSync(join(out, 'forms_sparts_snote-form.server.js'), 'utf8');
   assert.match(half, /import \{ tidy \} from '\.\.\/\.\.\/.*test\/nested\/lib\/tidy\.js'/);
   assert.match(half, /await import\('\.\.\/\.\.\/.*test\/nested\/lib\/stamp\.js'\)/, 'the dynamic import too');
   const { actions } = await import(pathToFileURL(join(out, 'index.js')).href);
@@ -159,4 +159,10 @@ test('the edge entry takes maxBytes', async () => {
   const response = await edge.fetch(cases['a post over maxBytes, enhanced: 413']());
   assert.equal(response.status, 413);
   assert.deepEqual(await response.json(), { error: 'Too large' });
+});
+
+test('two component paths never share a flattened name', async () => {
+  const { flatName } = await import('../src/compile.js');
+  const names = ['a/b.zb', 'a__b.zb', 'a_s_b.zb', 'a_sb.zb', 'a/_b.zb'].map(flatName);
+  assert.equal(new Set(names).size, names.length, names.join(' '));
 });

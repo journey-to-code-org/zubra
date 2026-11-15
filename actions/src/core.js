@@ -133,7 +133,10 @@ export function createActionsCore({ routes, client = null, origins = [], onError
   function result(request, setHeader) {
     const header = (typeof request.headers.get === 'function' ? request.headers.get('cookie') : request.headers.cookie) ?? '';
     const parts = header.split(/;\s*/);
-    const name = parts.some((part) => part.startsWith(`${SECURE_COOKIE}=`)) ? SECURE_COOKIE : COOKIE;
+    // Over https only the __Host- cookie is ours: the plain one can be planted by a sibling
+    // subdomain or over plain http, and would show its text as this site's answer.
+    const secure = /^https:/i.test(request.url ?? '') || request.socket?.encrypted === true;
+    const name = secure || parts.some((part) => part.startsWith(`${SECURE_COOKIE}=`)) ? SECURE_COOKIE : COOKIE;
     const match = parts.find((part) => part.startsWith(`${name}=`));
     if (!match) return null;
     let found;

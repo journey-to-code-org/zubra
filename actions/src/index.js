@@ -80,8 +80,13 @@ export async function createActions({
 }
 
 /** A Node request as a fetch Request (the body streams; nothing is read until it's ours). */
+// A Host header that is a host and nothing else: one carrying a path (`localhost/_zb/action/x/y?`)
+// would choose the URL, and so the action, past a check the app made on req.url.
+const HOST = /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$/;
+
 export function toRequest(req) {
   const host = req.headers.host ?? 'localhost';
+  if (!HOST.test(host)) throw new TypeError('a Host header that is not a host');
   const protocol = req.socket?.encrypted ? 'https' : 'http';
   const headers = new Headers();
   for (const [name, value] of Object.entries(req.headers)) {
