@@ -52,8 +52,9 @@ const BUDGETS = {
   // component ships about 1.2 KB less; 15.5 KB until $pageStyles and modifiers.js, optional modules
   // in this entry, about 0.25 KB together, which take 0.55 and 0.34 KB off the apps that don't use
   // what they replace; 15.75 KB until parts.js and shadow.js, about 90 B here, 0.42 to 0.46 KB
-  // off each of the comparison's hosts).
-  'dist/production/index.js': { gzip: 16 * 1024 },
+  // off each of the comparison's hosts; 16 KB until the signal graph's and an effect owner's
+  // private fields got short names in this build, about 150 B, which brought it back under).
+  'dist/production/index.js': { gzip: 15.75 * 1024 },
   // An app that only uses Signals and effects.
   'src/effect.js': { gzip: 4 * 1024 },
   // `animate`'s leave() and glide(), loaded only by components that animate.
@@ -155,8 +156,9 @@ test('dist/production as served fits its budget', (t) => {
 // binder, the slot router and $define were files of their own (5.18), which a page loads only if
 // its components use them. 14 KB until parts.js and shadow.js (5.20): what a component names
 // instead of every element carrying it, about 60 B here, where the core has them all, for 0.42 to
-// 0.46 KB off a bundled app.
-const BUNDLED = 14.25 * 1024;
+// 0.46 KB off a bundled app. 14.25 KB until private fields got short names in the production
+// build, about 145 B.
+const BUNDLED = 14 * 1024;
 
 test('dist/bundled/zubra.js fits its budget, under the file-by-file build', (t) => {
   const size = gzipSync(readFileSync(join(here, '../../dist/bundled/zubra.js'), 'utf8')).length;
