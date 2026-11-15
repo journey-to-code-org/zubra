@@ -556,18 +556,57 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
                 ));
             }
         }
+        // Who reads each top-level binding, by what its references resolve to, not by name: a
+        // browser function's own `db` is not the imported one, and must not keep the import.
+        let semantic = oxc_semantic::SemanticBuilder::new()
+            .with_build_nodes(true)
+            .build(&parsed.program)
+            .semantic;
+        let scoping = semantic.scoping();
+        let nodes = semantic.nodes();
+        let on_server = |at: u32| {
+            server_ranges
+                .iter()
+                .any(|range| range.contains(&(at as usize)))
+        };
+        let mut readers: std::collections::HashMap<String, (Option<u32>, bool)> =
+            std::collections::HashMap::new();
+        for symbol in scoping.get_bindings(scoping.root_scope_id()).values() {
+            let mut server = None;
+            let mut browser = false;
+            for reference in scoping.get_resolved_references(*symbol) {
+                let at = nodes.kind(reference.node_id()).span().start;
+                if on_server(at) {
+                    server.get_or_insert(at);
+                } else {
+                    browser = true;
+                }
+            }
+            let name = scoping.symbol_name(*symbol).to_string();
+            // The script's own bindings stay in the browser module, which the server never runs:
+            // one that server code reads would be shipped to every visitor, and undefined there.
+            let flags = scoping.symbol_flags(*symbol);
+            let declared = scoping.symbol_span(*symbol).start;
+            if let Some(at_read) = server {
+                if !flags.contains(oxc_syntax::symbol::SymbolFlags::Import) && !on_server(declared)
+                {
+                    return Err(Diagnostic::new(
+                        at(at_read),
+                        format!("`{name}` is the script's, which runs in the browser, so the server code here can't read it"),
+                    )
+                    .with_help(format!("declare `{name}` inside the function that reads it, or import it from a module (a `.server.js` one never reaches the browser): anything at the script's top level is sent to every visitor")));
+                }
+            }
+            readers.insert(name, (server, browser));
+        }
         let mut kept = Vec::new();
         for (import, local_names) in std::mem::take(&mut script.imports)
             .into_iter()
             .zip(import_locals)
         {
-            let for_server = local_names
-                .iter()
-                .any(|name| server_references.contains(name));
-            let for_browser = !for_server
-                || local_names
-                    .iter()
-                    .any(|name| elsewhere.names.contains(name));
+            let read = |name: &String| readers.get(name).copied().unwrap_or((None, false));
+            let for_server = local_names.iter().any(|name| read(name).0.is_some());
+            let for_browser = !for_server || local_names.iter().any(|name| read(name).1);
             if for_server && !crate::components::is_component(&import.specifier) {
                 script.server_imports.push(import.text.clone());
             }

@@ -247,3 +247,76 @@ fn a_key_load_returns_that_is_not_a_prop_is_a_warning() {
     let layout = "<script>\n  'use layout /farm'\n  export function load() { return { person: 1 }; }\n</script>\n<farm-shell><zb-slot></zb-slot></farm-shell>";
     assert!(messages(layout).is_empty());
 }
+
+#[test]
+fn a_browser_name_that_shadows_a_server_import_does_not_keep_it() {
+    // Each `db` below is the browser's own: a parameter, a block's const, a catch binding.
+    let source = r#"<script>
+  'use route /count'
+  import { db } from './db.server.js';
+  export async function load() { return { n: await db.count() } }
+  function plus(db) { return db + 1 }
+  const two = (() => { const db = 2; return db })();
+  try { plus(two) } catch (db) { console.log(db) }
+</script>
+<count-page n=""><p>{n}</p></count-page>"#;
+    let js = compile_js(source, "@zubra/runtime", "count-page.zb").unwrap();
+    assert!(!js.contains("db.server.js"), "{js}");
+    let server = compile_server(source).unwrap();
+    assert!(
+        server.contains("import { db } from './db.server.js'"),
+        "{server}"
+    );
+    // The same for an action's import.
+    let action = r#"<script>
+  import { db } from './db.server.js';
+  export async function save(form) { 'use server'; await db.save(form) }
+  const rows = [1, 2].map((db) => db * 2);
+</script>
+<save-form><form action={save}><button>Save</button></form></save-form>"#;
+    let js = compile_js(action, "@zubra/runtime", "save-form.zb").unwrap();
+    assert!(!js.contains("db.server.js"), "{js}");
+}
+
+#[test]
+fn server_code_cannot_read_the_scripts_own_bindings() {
+    // The script is the browser's: a secret there is sent to every visitor, and undefined where
+    // `load` runs.
+    let message = error(
+        r#"<script>
+  'use route /pay'
+  const API_KEY = 'sk-live-secret';
+  export async function load() { return { ok: API_KEY.length > 0 } }
+</script>
+<pay-page ok={false}></pay-page>"#,
+    )
+    .to_string();
+    assert!(message.contains("`API_KEY` is the script's"), "{message}");
+    let message = error(
+        r#"<script>
+  function secret() { return 'x' }
+  export async function save(form) { 'use server'; return secret() }
+</script>
+<save-form><form action={save}><button>Save</button></form></save-form>"#,
+    )
+    .to_string();
+    assert!(message.contains("`secret` is the script's"), "{message}");
+    // Its own locals, imports, and the other server functions are fine.
+    compile_server(
+        r#"<script>
+  'use route /pay'
+  import { keys } from './keys.server.js';
+  export async function load() { const KEY = keys.pay; return { ok: KEY.length > 0 } }
+</script>
+<pay-page ok={false}></pay-page>"#,
+    )
+    .unwrap();
+    compile_server(
+        r#"<script>
+  export async function check(form) { 'use server'; return form.get('x') }
+  export async function save(form) { 'use server'; return check(form) }
+</script>
+<save-form><form action={save}><button>Save</button></form></save-form>"#,
+    )
+    .unwrap();
+}
