@@ -283,10 +283,17 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     let list =
         |names: &mut dyn Iterator<Item = &str>| names.map(json).collect::<Vec<_>>().join(", ");
     out.push_str(&format!(
-        "  }},\n  abi: 4,\n  shadow: {},\n  form: {},\n  slots: [{}],\n  events: [{}],\n{}{}{}  template: {},\n  setup($p, $emit{}) {{\n",
+        "  }},\n  abi: 4,\n  shadow: {},\n  form: {},\n  slots: [{}],\n{}  events: [{}],\n{}{}{}  template: {},\n  setup($p, $emit{}) {{\n",
         component.shadow,
         component.form_associated,
         list(&mut slots.iter().map(String::as_str)),
+        // A light-DOM component with slots imports what places content in them; one without
+        // keeps the page's children out of sight with what the runtime always has.
+        if !component.shadow && !slots.is_empty() {
+            "  slotting: $slotted,\n"
+        } else {
+            ""
+        },
         list(&mut interface.events.iter().map(|event| event.name.as_str())),
         // `roots`: what server markup for a template that is only regions starts with.
         region_roots(&component.nodes).map_or_else(String::new, |roots| format!(
@@ -415,10 +422,13 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     // it, so a bundler leaves out the binders an app's components don't use. (The module still
     // calls `$define`, the runtime's `$element` by another name: tools that rewrite
     // `export default $define(` in compiled output, older ones included, keep working.)
-    let binders: Vec<&str> = ["$when", "$await", "$each", "$slot"]
+    let mut binders: Vec<&str> = ["$when", "$await", "$each", "$slot"]
         .into_iter()
         .filter(|binder| out.contains(&format!("binder: {binder},")))
         .collect();
+    if out.contains("\n  slotting: $slotted,\n") {
+        binders.push("$slotted");
+    }
     if !binders.is_empty() {
         let names = format!("$element as $define, $r, $t, {}", binders.join(", "));
         out = out.replacen(

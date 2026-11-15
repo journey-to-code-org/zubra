@@ -1054,6 +1054,77 @@ let nativeText, nativeHTML; // looked up on first use, so the module loads witho
 const ROUTED = ['insertBefore', 'appendChild', 'append', 'removeChild', 'replaceChild', 'replaceChildren', 'textContent', 'innerHTML', 'firstChild'];
 
 /** Route the host's child methods to its slots (see above). */
+/**
+ * A light-DOM host without slots: what a framework adds to it is the page's and isn't shown, so
+ * its child methods keep that content in a fragment of its own (`context.park`), where the
+ * framework still finds it (`firstChild`, `parentNode`). A component with slots imports
+ * `$slotted` instead, which places content in them (routeChildren below).
+ */
+function parkChildren(host, context, tag) {
+  const park = (context.park = document.createDocumentFragment());
+  const holds = (node) => node?.parentNode === park;
+  routeTo(host, {
+    insert(node, before) {
+      // @dev
+      if ((node.nodeType === 11 ? [...node.childNodes] : [node]).some(isContent)) console.warn(`zubra: <${tag}> has no slot named "default"; that content is not shown${see('slots')}`);
+      // @dev-end
+      park.insertBefore(node, holds(before) ? before : null);
+    },
+    remove: (node) => holds(node) && !!park.removeChild(node),
+    holds,
+    clear: () => park.replaceChildren(),
+    first: () => park.firstChild,
+  });
+}
+
+/**
+ * A light-DOM host's child methods, routed: what a framework adds, removes or replaces goes
+ * through `insert`, `remove` and `clear`, and `firstChild` is the page's first child (`first`).
+ * Reading `textContent` and `innerHTML` still shows the element's own markup.
+ */
+function routeTo(host, { insert, remove, holds, clear, first }) {
+  const asNodes = (items) => items.map((item) => (item instanceof Node ? item : document.createTextNode(String(item))));
+  Object.defineProperties(host, {
+    insertBefore: { value(node, before) { insert(node, before ?? null); return node; }, configurable: true },
+    appendChild: { value(node) { insert(node, null); return node; }, configurable: true },
+    append: { value(...items) { for (const node of asNodes(items)) insert(node, null); }, configurable: true },
+    removeChild: {
+      value(node) {
+        if (!remove(node)) Node.prototype.removeChild.call(host, node); // throws as natively
+        return node;
+      },
+      configurable: true,
+    },
+    replaceChild: {
+      value(node, old) {
+        if (!holds(old)) return Node.prototype.replaceChild.call(host, node, old);
+        insert(node, old);
+        remove(old);
+        return old;
+      },
+      configurable: true,
+    },
+    replaceChildren: { value(...items) { clear(); for (const node of asNodes(items)) insert(node, null); }, configurable: true },
+    textContent: {
+      get() { return (nativeText ??= Object.getOwnPropertyDescriptor(Node.prototype, 'textContent')).get.call(host); },
+      set(value) { clear(); if (value != null && value !== '') insert(document.createTextNode(String(value)), null); },
+      configurable: true,
+    },
+    // The page's first child, wherever its slot is: what a framework that reads it means.
+    firstChild: { get: first, configurable: true },
+    innerHTML: {
+      get() { return (nativeHTML ??= Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')).get.call(host); },
+      set(value) {
+        clear();
+        const template = document.createElement('template');
+        template.innerHTML = value;
+        insert(document.importNode(template.content, true), null);
+      },
+      configurable: true,
+    },
+  });
+}
+
 function routeChildren(host, context, slots, tag) {
   const home = slotRecord(context, 'default');
   const holding = (node) => {
@@ -1157,46 +1228,7 @@ function routeChildren(host, context, slots, tag) {
       show(slot);
     }
   };
-  const asNodes = (items) => items.map((item) => (item instanceof Node ? item : document.createTextNode(String(item))));
-  Object.defineProperties(host, {
-    insertBefore: { value(node, before) { insert(node, before ?? null); return node; }, configurable: true },
-    appendChild: { value(node) { insert(node, null); return node; }, configurable: true },
-    append: { value(...items) { for (const node of asNodes(items)) insert(node, null); }, configurable: true },
-    removeChild: {
-      value(node) {
-        if (!remove(node)) Node.prototype.removeChild.call(host, node); // throws as natively
-        return node;
-      },
-      configurable: true,
-    },
-    replaceChild: {
-      value(node, old) {
-        if (!holding(old)) return Node.prototype.replaceChild.call(host, node, old);
-        insert(node, old);
-        remove(old);
-        return old;
-      },
-      configurable: true,
-    },
-    replaceChildren: { value(...items) { clear(); for (const node of asNodes(items)) insert(node, null); }, configurable: true },
-    textContent: {
-      get() { return (nativeText ??= Object.getOwnPropertyDescriptor(Node.prototype, 'textContent')).get.call(host); },
-      set(value) { clear(); if (value != null && value !== '') insert(document.createTextNode(String(value)), null); },
-      configurable: true,
-    },
-    // The page's first child, wherever its slot is: what a framework that reads it means.
-    firstChild: { get() { const [first] = home.nodes; return first ? standsFor.get(first) ?? first : null; }, configurable: true },
-    innerHTML: {
-      get() { return (nativeHTML ??= Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')).get.call(host); },
-      set(value) {
-        clear();
-        const template = document.createElement('template');
-        template.innerHTML = value;
-        insert(document.importNode(template.content, true), null);
-      },
-      configurable: true,
-    },
-  });
+  routeTo(host, { insert, remove, holds: holding, clear, first: () => { const [first] = home.nodes; return first ? standsFor.get(first) ?? first : null; } });
 
   // Content removed or moved away through its real parent (Vue removes via child.parentNode),
   // and content whose `slot` attribute changed (it moves to that slot, as with native slots).
@@ -1274,6 +1306,27 @@ function routeChildren(host, context, slots, tag) {
 
 // Form controls' live state: bound as properties, so `value={draft}` keeps up with typing and
 // `checked={done}` with clicks.
+/**
+ * @internal A light-DOM component's slots (interface 4: `slotting: $slotted`, imported by
+ * components that have slots): the page's children go to theirs, and the host's child methods
+ * route what a framework adds later (routeChildren).
+ */
+export const $slotted = {
+  assign(context, children, slots, tag) {
+    assignSlots(children).forEach((name, i) => {
+      slotRecord(context, name).nodes.push(children[i]);
+      // An element for a named slot keeps its place among the page's children (see routeChildren).
+      if (name !== 'default' && isContent(children[i])) slotRecord(context, 'default').nodes.push(standIn(children[i]));
+    });
+    for (const [name, slot] of context.slots) {
+      // @dev
+      if (!slots.includes(name) && slot.nodes.some(isContent)) console.warn(`zubra: <${tag}> has no slot named "${name}"; that content is not shown${see('slots')}`);
+      // @dev-end
+    }
+  },
+  route: routeChildren,
+};
+
 const LIVE = new Set(['input.value', 'textarea.value', 'select.value', 'input.checked', 'option.selected']);
 
 // Changed by someone before the element started: no longer the server's default.
@@ -1799,7 +1852,7 @@ export function $define(tag, definition) {
     throw new Error(`zubra: <${tag}> was compiled for a different @zubra/runtime (interface ${definition?.abi ?? 1}, this runtime is ${ABI}); recompile it with the matching zubra`);
   }
   legacy = legacyBinder;
-  return defineElement(tag, definition);
+  return defineElement(tag, definition.slotting ? definition : { ...definition, slotting: $slotted });
 }
 
 /** @internal Register a component compiled for interface 4: its parts name their binders. */
@@ -1827,6 +1880,9 @@ const compiledAs = ({ template = '', styles = null, props = {}, shadow = false, 
 
 function defineElement(tag, definition) {
   const { props = {}, shadow = false, form = false, events = [], styled = false, inPage = false, stylesHref = null } = definition;
+  // Light-DOM slots, when the component has some: imported by its module (`$slotted`), filled in by $define.
+  const slottingOf = (next) => (!shadow && next.slots?.length ? next.slotting ?? null : null);
+  let slotting = slottingOf(definition);
   let { roots, template = '', slots = [], styles = null, setup } = definition;
   // On a server (no DOM), a stand-in with the same `zubra` description, so a module that imports a
   // component loads there: adapters render the host tag, and `@zubra/runtime/server` renders it.
@@ -1901,6 +1957,7 @@ function defineElement(tag, definition) {
     static [HOT](next) {
       if (shape(next) !== shape(definition)) return false;
       ({ roots, template = '', slots = [], setup } = next);
+      slotting = slottingOf(next);
       componentTemplate.content = blueprint({ template });
       templateSignature = signature(childRange(componentTemplate.content));
       const nextStyles = next.styles ?? null;
@@ -2054,7 +2111,7 @@ function defineElement(tag, definition) {
         for (const fn of this.#hooks.unmount) fn();
       }
       const kept = this.#hooks.states.map((signal) => untrack(() => signal.get()));
-      const slotted = shadow ? [] : [...this.#context.slots.values()].flatMap((slot) => slot.nodes).filter((node) => !standsFor.has(node));
+      const slotted = shadow ? [] : [...this.#context.slots.values()].flatMap((slot) => slot.nodes).filter((node) => !standsFor.has(node)).concat([...(this.#context.park?.childNodes ?? [])]);
       this.#context.observer?.disconnect();
       // The host's child methods are routed to the old slots (see routeChildren); back to native.
       for (const key of ROUTED) delete this[key];
@@ -2172,19 +2229,9 @@ function defineElement(tag, definition) {
           // An empty text node is a framework's (the parser makes none): Angular's `{{ }}` before
           // its first write, which is content once written, so it's kept though nothing shows yet.
           // (Without `server`, every child is text.)
-          if ((server || [...root.childNodes].some((node) => node.data === '')) && !shadow && slots.length) {
+          if ((server || [...root.childNodes].some((node) => node.data === '')) && slotting) {
             // Not server markup: the page's own children for this element, to be slotted.
-            const children = [...root.childNodes];
-            assignSlots(children).forEach((name, i) => {
-              slotRecord(context, name).nodes.push(children[i]);
-              // An element for a named slot keeps its place among the page's children (see routeChildren).
-              if (name !== 'default' && isContent(children[i])) slotRecord(context, 'default').nodes.push(standIn(children[i]));
-            });
-            for (const [name, slot] of context.slots) {
-              // @dev
-              if (!slots.includes(name) && slot.nodes.some(isContent)) console.warn(`zubra: <${tag}> has no slot named "${name}"; that content is not shown${see('slots')}`);
-              // @dev-end
-            }
+            slotting.assign(context, [...root.childNodes], slots, tag);
           } else if (server) {
             // No comments at all where the template has markers: something stripped them, and
             // they couldn't be put back for sure.
@@ -2206,7 +2253,8 @@ function defineElement(tag, definition) {
             if (!slot.region) slot.park.append(...slot.nodes);
             slot.filled.set(slot.nodes.some(isContent));
           }
-          routeChildren(this, context, slots, tag);
+          if (slotting) slotting.route(this, context, slots, tag);
+          else parkChildren(this, context, tag);
         } else if (this.#hooks.filled.size) {
           // Shadow DOM: the host's children are assigned by the browser; follow them.
           const follow = () => {
