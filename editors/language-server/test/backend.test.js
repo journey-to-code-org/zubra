@@ -142,6 +142,11 @@ test('in a zubra checkout, the CLI cargo built is used, the newer of debug and r
     cliSaying(join(root, 'target/release/zubra'), 'release');
     cliSaying(join(root, 'target/debug/zubra'), 'debug');
     utimesSync(join(root, 'target/debug/zubra'), new Date(2000, 0, 1), new Date(2000, 0, 1));
+    // Not until the folder is a zubra checkout: any repository can hold a target/release/zubra.
+    assert.equal(checkoutCompiler(join(root, 'examples/helpdesk')), null, 'a planted binary is not run');
+    writeFileSync(join(root, 'Cargo.toml'), '[package]\nname = "not-zubra"\n');
+    assert.equal(checkoutCompiler(join(root, 'examples/helpdesk')), null, 'nor in another crate');
+    writeFileSync(join(root, 'Cargo.toml'), '[package]\nname = "zubra"\nversion = "5.16.0"\n');
     assert.equal(checkoutCompiler(join(root, 'examples/helpdesk')), join(root, 'target/release/zubra'), 'from a folder inside the checkout');
     const backend = await createBackend({ root: join(root, 'examples/helpdesk') });
     assert.equal(backend.name, 'cli');
@@ -159,6 +164,7 @@ test('a CLI built after the server started is found without restarting it', asyn
   delete process.env.ZUBRA_COMPILER;
   process.env.PATH = join(root, 'empty');
   try {
+    writeFileSync(join(root, 'Cargo.toml'), '[package]\nname = "zubra"\n'); // a zubra checkout
     const told = [];
     const backend = await createBackend({ root, onUnavailable: (message) => told.push(message) });
     assert.deepEqual(backend.check(join(root, 'a.zb'), ''), []);
