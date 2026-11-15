@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -153,4 +153,61 @@ test('zubra fmt formats in place, checks, and reads standard input', () => {
   result = spawnSync(process.execPath, [cli, 'fmt', '--stdin'], { cwd: dir, env, encoding: 'utf8', input: '<x-a>\n<p>\n</x-a>\n' });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /closing tag/);
+});
+
+test('zubra types writes the typings a build with dts: { dir } writes, for the app\'s framework', () => {
+  const work = mkdtempSync(join(tmpdir(), 'zb-types-'));
+  const app = join(work, 'apps/web');
+  mkdirSync(join(app, 'src'), { recursive: true });
+  mkdirSync(join(work, 'ui'));
+  const rating = join(repo, 'runtime/test/browser/fixtures/rating.zb');
+  cpSync(rating, join(app, 'src/own.zb'));
+  cpSync(rating, join(work, 'ui/rating.zb'));
+  mkdirSync(join(app, 'node_modules/pkg'), { recursive: true });
+  cpSync(rating, join(app, 'node_modules/pkg/skipped.zb'));
+  const read = (file) => readFileSync(join(app, file), 'utf8');
+  const config = () => JSON.parse(read('.zubra/types/tsconfig.json')).compilerOptions;
+
+  // No package.json: the elements. The folder mirrors the app, and nothing is beside a component.
+  let run = zubra(['types'], app);
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /typings of 1 component in \.zubra\/types, for the elements/);
+  assert.match(read('.zubra/types/src/own.d.zb.ts'), /export declare class ZbRating extends HTMLElement/);
+  assert.doesNotMatch(read('.zubra/types/src/own.d.zb.ts'), /from "react"/);
+  assert.equal(existsSync(join(app, 'src/own.d.zb.ts')), false);
+  assert.equal(existsSync(join(app, '.zubra/types/node_modules')), false);
+  assert.deepEqual(config(), { allowArbitraryExtensions: true, rootDirs: ['../..', '.'] });
+
+  // The framework is the one the app depends on; a folder above the app goes under `__`.
+  writeFileSync(join(app, 'package.json'), JSON.stringify({ dependencies: { react: '^19.0.0' }, devDependencies: { typescript: '^6.0.0' } }));
+  run = zubra(['types', '.', '../../ui'], app);
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /typings of 2 components in \.zubra\/types, for react/);
+  assert.match(read('.zubra/types/src/own.d.zb.ts'), /from "react"/);
+  assert.match(read('.zubra/types/__/__/ui/rating.d.zb.ts'), /from "react"/);
+  assert.deepEqual(config().rootDirs, ['../..', '.', '../../..', '__', '../../../..', '__/__']);
+  // The list only grows: typing fewer folders keeps the ones it had.
+  assert.equal(zubra(['types', 'src'], app).status, 0);
+  assert.equal(config().rootDirs.length, 6);
+
+  // --framework and --dir say otherwise.
+  run = zubra(['types', 'src', '--framework', 'vue', '--dir', 'types/vue'], app);
+  assert.match(run.stdout, /typings of 1 component in types\/vue, for vue/);
+  assert.match(read('types/vue/src/own.d.zb.ts'), /from "vue"/);
+  run = zubra(['types', 'src', '--framework', 'angular'], app);
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /--framework is react, vue, svelte, solid or none, not "angular"/);
+
+  // Two frameworks: it asks. A component that doesn't compile: reported, the rest still written.
+  writeFileSync(join(app, 'package.json'), JSON.stringify({ dependencies: { react: '^19.0.0', 'solid-js': '^1.9.0' } }));
+  run = zubra(['types'], app);
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /depends on react and solid: say which the typings are for with --framework react\|solid/);
+  writeFileSync(join(app, 'src/broken.zb'), '<x-broken><p>{nope(</p></x-broken>');
+  run = zubra(['types', 'src', '--framework', 'solid', '--dir', 'types/solid'], app);
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /broken\.zb:1:/);
+  assert.match(read('types/solid/src/own.d.zb.ts'), /solid-js/);
+  run = zubra(['types', 'nowhere', '--framework', 'none'], app);
+  assert.match(run.stderr, /nowhere doesn't exist/);
 });
