@@ -4,11 +4,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { useBrowser, open, here, reported } from './harness.js';
+import { useBrowser, open, here, reported, emitElement } from './harness.js';
 
 useBrowser({ counter: join(here, 'fixtures/counter.zb') });
 
-test("a host without slots keeps a framework's children out of its markup, where the framework finds them", async () => {
+test("a host without slots keeps a framework's children out of its markup, where the framework finds them", { skip: emitElement && "--emit element output has no runtime to route a host's children" }, async () => {
   const { page, messages } = await open('<zb-counter></zb-counter>', { modules: ['counter'] });
   const result = await page.evaluate(async () => {
     const host = document.querySelector('zb-counter');
