@@ -147,6 +147,9 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
   // --devtools, and @zubra/runtime's development build (which has the hook) instead of its
   // production one. For demos, staging and previews; it costs bytes, so it's opt-in.
   const devtoolsInBuilds = options.devtools ?? process.env.ZUBRA_DEVTOOLS === '1';
+  // An app that never renders on a server: components compiled without what takes over server
+  // markup, so the runtime's hydrate.js stays out of the bundle.
+  const clientOnly = options.hydrate === false;
 
   /** CLI flags → a request for the WebAssembly compiler. */
   function asRequest(args) {
@@ -156,6 +159,7 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
       if (flag === '--keep-imports') request.keepImports = true;
       else if (flag === '--no-imports') request.noImports = true;
       else if (flag === '--devtools') request.devtools = true;
+      else if (flag === '--client-only') request.clientOnly = true;
       else {
         const key = { '--emit': 'emit', '--framework': 'framework', '--runtime': 'runtime', '--css-import': 'cssImport', '--css-import-inline': 'cssImportInline' }[flag];
         if (!key) throw new Error(`zubra: unexpected compiler flag ${flag}`);
@@ -405,7 +409,10 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
         // In Vite's dev server, what the browser DevTools panel reads: each part's place in the
         // `.zb` file and the script's signals by name (the runtime's development build reads them).
         const devtools = ((dev && meta.framework === 'vite') || devtoolsInBuilds) && !server ? ['--devtools'] : [];
-        output = compile(path, '--emit', 'js', '--keep-imports', '--runtime', runtime, ...styles, ...devtools);
+        // (A server build keeps hydration whatever `hydrate` says: it renders, and its output is
+        // what the server's own render reads.)
+        const hydration = clientOnly && !server ? ['--client-only'] : [];
+        output = compile(path, '--emit', 'js', '--keep-imports', '--runtime', runtime, ...styles, ...devtools, ...hydration);
       } catch (error) {
         return fail(this, error, path);
       }

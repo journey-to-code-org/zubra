@@ -81,6 +81,7 @@ fn run() -> Result<(), String> {
     let mut keep_imports = false;
     let mut devtools = false;
     let mut binder_entries = false;
+    let mut client_only = false;
     let mut no_imports = false;
     let mut css_import = None;
     let mut css_import_inline = None;
@@ -95,6 +96,8 @@ fn run() -> Result<(), String> {
             // For development builds: what the browser DevTools panel reads (--emit js).
             "--devtools" => devtools = true,
             "--binder-entries" => binder_entries = true,
+            // For apps that never render on a server: compiled output without hydration.
+            "--client-only" => client_only = true,
             // For --emit css: this component's stylesheet only (a bundler loads the others).
             "--no-imports" => no_imports = true,
             // For bundler plugins: import the <style> through the bundler instead of inlining it.
@@ -172,6 +175,7 @@ fn run() -> Result<(), String> {
                         styles_href: None,
                         devtools,
                         binder_entries,
+                        client_only,
                     },
                     &zubra::filesystem,
                 )

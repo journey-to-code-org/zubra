@@ -30,7 +30,8 @@ export default {
     "when.js",
     "each.js",
     "modifiers.js",
-    "form.js"
+    "form.js",
+    "hydrate.js"
   ],
   "deep.js": [
     "signal.js"
@@ -54,6 +55,10 @@ export default {
     "element.js"
   ],
   "forms.js": [],
+  "hydrate.js": [
+    "element.js",
+    "signal.js"
+  ],
   "index.js": [
     "core.js",
     "legacy.js",
@@ -68,7 +73,8 @@ export default {
     "slots.js",
     "when.js",
     "modifiers.js",
-    "form.js"
+    "form.js",
+    "hydrate.js"
   ],
   "modifiers.js": [
     "effect.js",
@@ -161,6 +167,9 @@ export const bundled = {
     "zubra.js"
   ],
   "forms.js": [],
+  "hydrate.js": [
+    "zubra.js"
+  ],
   "index.js": [
     "zubra.js",
     "legacy.js",

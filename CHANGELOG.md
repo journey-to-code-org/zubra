@@ -4,6 +4,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Added
+
+- **`hydrate: false` in `@zubra/unplugin`, for an app whose pages are never rendered on a server.** Taking over server markup (telling it from the page's own children, finding the parts in it, putting back markers a sanitizer stripped) moved out of every element into `hydrate.js`; compiled components import it (`hydrating: $hydrate`, from `@zubra/runtime`) unless compiled with `--client-only` (`clientOnly` in `@zubra/compiler`), which is what `hydrate: false` asks for in browser builds (server builds keep it). Such an element renders fresh over any children it starts with, as the page's own. The comparison's hosts built that way: Svelte, Vue and Angular about 1.0 KB smaller, React 0.4 KB, and the on-demand marker repair chunk (1.2 KB) is gone; all 24 host checks pass. The default costs about 0.08 KB in `@zubra/server`'s `zubra.js` (14.17 to 14.25 KB), which every server page loads. Modules compiled by earlier releases get hydration through `$define`.
+
 ### Changed
 
 - **`@zubra/server` sends the runtime's core as one file in production, with `bundle` or without.** It was one file (`runtime/zubra.js`) only with `bundle: true`; by default a page preloaded the core's dozen modules one by one. Now `bundle` only joins a page's components into one module, and in production the runtime is `zubra.js` either way (development and the DevTools keep it file by file, as before). The comparison's server page without `bundle`: 22.1 KB in 16 modules to 17.8 KB in 5 (with `bundle`, 15.8 KB in 2, as before). `writeAssets()` writes `dist/bundled` in production accordingly. A page's import map, preload links and the modules' imports change with it; nothing a page or an app writes does.

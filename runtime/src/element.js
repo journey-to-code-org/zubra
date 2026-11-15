@@ -541,44 +541,6 @@ function blueprint(source, parent = null) {
   return content;
 }
 
-// Markup whose comments were stripped is put back by `remark.js`, loaded only when an element
-// meets such markup (see connectedCallback).
-let remarker = null; // the module, once loaded
-let remarking = null; // its import
-const loadRemark = () => (remarking ??= import('./remark.js').then(
-  (module) => (remarker = module),
-  () => (remarker = { remark: () => false }),
-));
-/**
- * Whether `root`'s server markup lost the comments `template` has (its top-level elements are
- * there). A template that is only regions has none of its own: `roots`, from the compiler, names
- * the elements its regions' blocks start with, and markup with none of them is the page's own
- * content (text a framework gave it, say), which needs no check, so the element renders now.
- */
-function lostComments(root, template, roots) {
-  if (!root || !hasContent(root) || !hasComment(template) || hasComment(root)) return false;
-  // The page's own children for a slot aren't server markup: the template's top-level elements
-  // must be there, in order.
-  const children = [...root.children];
-  let at = 0;
-  let elements = 0;
-  for (const node of positions(template.firstChild, null)) {
-    if (node.nodeType !== 1) continue;
-    while (at < children.length && children[at].localName !== node.localName) at++;
-    if (at++ >= children.length) return false;
-    elements++;
-  }
-  return elements || !roots ? true : children.some((child) => roots.includes(child.localName));
-}
-
-/** A range's shape: its top-level positions as tag names and region markers. */
-const hasComment = (root) =>
-  !!document.createTreeWalker(root, NodeFilter.SHOW_COMMENT | NodeFilter.SHOW_PROCESSING_INSTRUCTION).nextNode();
-const signature = (range) =>
-  [...positions(range.first, range.stop)]
-    .map((node) => (node.nodeType === 1 ? node.localName : isOpen(node) ? '[' : '#'))
-    .join(' ');
-
 // ---- binding parts -------------------------------------------------------------------------
 
 // ---- event helpers: the modifiers, as functions (for JSX, and for handlers built in scripts) --
@@ -1097,6 +1059,9 @@ function defineElement(tag, definition) {
   let slotting = slottingOf(definition);
   // A form-associated component's API and callbacks: imported by its module (`$form`), filled in by $define.
   const forming = form ? definition.forming ?? null : null;
+  // Taking over server markup (hydrate.js): what compiled output imports, unless built for an app
+  // that never renders on a server.
+  const hydrating = definition.hydrating ?? null;
   let { roots, template = '', slots = [], styles = null, setup } = definition;
   // On a server (no DOM), a stand-in with the same `zubra` description, so a module that imports a
   // component loads there: adapters render the host tag, and `@zubra/runtime/server` renders it.
@@ -1134,7 +1099,6 @@ function defineElement(tag, definition) {
     return existing;
   }
   const componentTemplate = { content: blueprint({ template }) };
-  let templateSignature = signature(childRange(componentTemplate.content));
   // Whether children that have the template's shape but no markers can be the server's markup
   // with its markers stripped. In light DOM they can just as well be the page's own content for
   // a slot (`<status-badge><span>3</span></status-badge>`, where the badge's root is a <span>),
@@ -1178,7 +1142,6 @@ function defineElement(tag, definition) {
       ({ roots, template = '', slots = [], setup } = next);
       slotting = slottingOf(next);
       componentTemplate.content = blueprint({ template });
-      templateSignature = signature(childRange(componentTemplate.content));
       const nextStyles = next.styles ?? null;
       if (nextStyles !== styles) {
         styles = nextStyles;
@@ -1254,10 +1217,11 @@ function defineElement(tag, definition) {
         const root = this.getRootNode();
         if (root.adoptedStyleSheets && !(inPage && root === document && pageHasStyles())) adopt(root, ownSheets());
       }
+      let waits;
       if (this.#scope) this.#scope.resume();
-      else if (!remarker && claimed(this) && lostComments(shadow ? this.shadowRoot : this, componentTemplate.content, roots)) {
+      else if ((waits = hydrating?.waits(shadow ? this.shadowRoot : this, componentTemplate.content, roots, claimed(this)))) {
         // Server markup without its comments: start once the code that puts them back is here.
-        this.#starting ??= loadRemark().then(() => {
+        this.#starting ??= waits.then(() => {
           this.#starting = null;
           if (this.isConnected && !this.#scope) this.connectedCallback();
         });
@@ -1400,18 +1364,14 @@ function defineElement(tag, definition) {
         } finally { current = previous; }
         forming?.model(this.#hooks, $p, props, this.#internals);
 
-
-
         const context = { slots: new Map(), slotted: styled && !shadow ? tag : null, filled: this.#hooks.filled, states: this.#states };
         this.#context = context;
         const server = hasContent(root);
-        // Server markup whose comments were stripped: put them back, where the template says.
-        const stripped = server && !reloading && claimed(this) && hasComment(componentTemplate.content) && !hasComment(root);
-        const restored = stripped && !!remarker?.remark(root, componentTemplate.content, parts, { blueprint, isOpen, isClose, read: $r, untrack, State: Signal.State, filled: shadow ? [] : (this.getAttribute('data-zb-filled') ?? '').split(' ') });
-        // Server markup has the template's shape; anything else is the page's own children.
-        const nodes = server && !reloading && signature(childRange(root)) === templateSignature
-          ? locate(childRange(root), parts, true)
-          : null;
+        // Server markup has the template's shape (its stripped comments put back first); anything
+        // else is the page's own children. (Without `hydrating`, it's all the page's.)
+        const [nodes, lost] = server && !reloading && hydrating
+          ? hydrating.adopt(root, componentTemplate.content, parts, claimed(this), shadow ? [] : (this.getAttribute('data-zb-filled') ?? '').split(' '))
+          : [];
         if (nodes) {
           parts.forEach((part, index) => bind(part, nodes[index], true, context));
         } else {
@@ -1425,7 +1385,7 @@ function defineElement(tag, definition) {
             // No comments at all where the template has markers: something stripped them, and
             // they couldn't be put back for sure.
             // @dev
-            console.warn(stripped && !restored
+            console.warn(lost
               ? `zubra: <${tag}>'s hydration markers (<?zb [?>, <?zb ]?>, …) are missing, so it's rendered fresh. A sanitizer or a fragment parser removed them; keep processing instructions (and comments, for markup from a 4.x server)${see('hydration-markers')}`
               : `zubra: <${tag}>'s markup doesn't match its template; rendering it fresh${see('server-rendering-and-hydration')}`);
             // @dev-end
@@ -1478,4 +1438,4 @@ function defineElement(tag, definition) {
 }
 
 /** @internal What the runtime's feature modules (blocks, when, each, await, slots) take from here. */
-export { APPLE, COMMENT, PI, READS, TEXT, bind, formOf, blueprint, childRange, current, defineElement, isContent, isOpen, locate, mark, marker, matchingClose, positions, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, unmark, untrack };
+export { APPLE, bind, blueprint, childRange, COMMENT, current, defineElement, formOf, hasContent, isClose, isContent, isOpen, locate, mark, marker, matchingClose, PI, positions, READS, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, TEXT, unmark, untrack };

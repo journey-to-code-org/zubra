@@ -9,6 +9,7 @@ import { $slotted, bindSlot } from './slots.js';
 import { bindWhen } from './when.js';
 import { $modified } from './modifiers.js';
 import { $form } from './form.js';
+import { $hydrate } from './hydrate.js';
 
 
 /** An interface 2 or 3 part's binder, from its keys. */
@@ -22,5 +23,5 @@ export function $define(tag, definition) {
     throw new Error(`zubra: <${tag}> was compiled for a different @zubra/runtime (interface ${definition?.abi ?? 1}, this runtime is ${ABI}); recompile it with the matching zubra`);
   }
   useLegacy(legacyBinder);
-  return defineElement(tag, { ...definition, slotting: definition.slotting ?? $slotted, forming: definition.forming ?? $form });
+  return defineElement(tag, { ...definition, slotting: definition.slotting ?? $slotted, forming: definition.forming ?? $form, hydrating: definition.hydrating ?? $hydrate });
 }

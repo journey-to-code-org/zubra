@@ -16,6 +16,13 @@ export interface ZubraOptions {
   runtime?: string;
   /** Server builds register a renderer, which needs `@zubra/compiler` at run time. Default: `true`. */
   ssr?: boolean;
+  /**
+   * `false` for an app whose pages are never rendered on a server (no SSR, no prerendering, no
+   * Zubra server): components are compiled without what takes over server markup, and the
+   * runtime's hydration code (about 0.3 KB gzip) stays out of the bundle. An element then renders
+   * fresh over whatever children it starts with, as the page's own. Default: `true`.
+   */
+  hydrate?: boolean;
   /** The module server builds render with. Default: `'@zubra/compiler'`. */
   compilerModule?: string;
   /** Compile for the Zubra DevTools in builds too, not only in Vite's dev server. Default: `$ZUBRA_DEVTOOLS === '1'`. */
