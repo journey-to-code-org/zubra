@@ -25,7 +25,7 @@ const RENDER_LARGEST = 512 * 1024;
  * host serves under `<base>/` beyond the components' modules (`{ status, type, body }` or null).
  * `needs(name, code)`: the host's check on a compiled module (a package it needs being installed).
  */
-export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, runtimeModules = {}, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}` }) {
+export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}` }) {
   if (gaps !== 'warn' && gaps !== 'ignore') throw new Error(`@zubra/server: gaps is "warn" or "ignore", not ${JSON.stringify(gaps)}`);
   if (clientModules !== 'all' && clientModules !== 'needed') throw new Error(`@zubra/server: clientModules is "all" or "needed", not ${JSON.stringify(clientModules)}`);
   if (typeof inline !== 'boolean') throw new Error(`@zubra/server: inline is true or false, not ${JSON.stringify(inline)}`);
@@ -224,13 +224,14 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   });
 
   /** What each bare specifier a browser module may import resolves to: the import map's entries. */
-  // `bundle`: the runtime's entry and what it imports are one file (`@zubra/runtime`'s
-  // `dist/bundled`), so a page asks for one module where it asked for seven.
-  // The core, without the binders and $define, which the modules this server compiles import from
-  // their own entries (`binderEntries`).
+  // `runtimeFile`: the runtime's core, `zubra.js` where it and what it imports are one file
+  // (`@zubra/runtime`'s `dist/bundled`, what the Node server sends in production), so a page asks
+  // for one module where it asked for a dozen, or `core.js` file by file. It has neither
+  // zb-await's binder, the slots' nor $define, which the modules this server compiles import
+  // from their own entries (`binderEntries`).
   // Each binder's file sits beside the runtime, wherever `imports` points `@zubra/runtime` (a CDN,
   // say), so a page never mixes two copies of it. (The modules import them by address: js().)
-  const runtimeUrl = imports['@zubra/runtime'] ?? `${base}/runtime/${bundle ? 'zubra.js' : 'core.js'}`;
+  const runtimeUrl = imports['@zubra/runtime'] ?? `${base}/runtime/${runtimeFile}`;
   // zb-if's, zb-each's, event modifiers' and form controls' binders are the core's own, so they
   // come from `@zubra/runtime` like the rest of it. zb-await's and the slots' are files of their own, beside the core: by a path
   // relative to the component's module, so they move with the folder (a static site that serves

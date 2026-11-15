@@ -59,11 +59,14 @@ export function createZubra({ components = 'components', packages = [], prefix =
   const sourceDir = dirname(fileURLToPath(import.meta.resolve('@zubra/runtime')));
   const productionDir = join(sourceDir, '..', 'dist', 'production');
   // The Zubra DevTools need the runtime's development build, whose hook the production one leaves out.
-  // `bundle`: the production build with the entry and its imports as one file. Development and
+  // In production the runtime's core and what it imports are one file (`dist/bundled/zubra.js`),
+  // with `bundle` or without: one request where it was a dozen, and fewer bytes, since they
+  // compress together. `bundle` also joins a page's components into one module. Development and
   // the DevTools keep the runtime file by file, as it is read and edited.
   const bundledDir = join(sourceDir, '..', 'dist', 'bundled');
-  const bundling = Boolean(bundle) && production && !devtools && existsSync(bundledDir);
-  const runtimeDir = bundling ? bundledDir : production && !devtools && existsSync(productionDir) ? productionDir : sourceDir;
+  const oneFile = production && !devtools && existsSync(bundledDir);
+  const bundling = Boolean(bundle) && oneFile;
+  const runtimeDir = oneFile ? bundledDir : production && !devtools && existsSync(productionDir) ? productionDir : sourceDir;
   const base = prefix.replace(/\/$/, '');
 
   // @zubra/sync, for components that start with 'use collection': found from the components
@@ -160,7 +163,8 @@ export function createZubra({ components = 'components', packages = [], prefix =
     inline,
     preload,
     bundle: bundling,
-    runtimeModules: bundling ? bundledModules : runtimeModules,
+    runtimeFile: oneFile ? 'zubra.js' : 'core.js',
+    runtimeModules: oneFile ? bundledModules : runtimeModules,
     // The compiler keys a context by its module's path, joined to the importing component's.
     contextKey: ({ module, export: name }) => `${joinPath(posix(root), module)}#${name}`,
     // A `.js` file in the components folder, served as it is (core serves only those a browser

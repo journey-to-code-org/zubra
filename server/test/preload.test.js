@@ -65,8 +65,7 @@ test('a page preloads its components, what they import and the runtime, each onc
   const links = preloaded(html);
   assert.equal(links[0], '/_zubra/components/order-form.js', "the page's own components first");
   assert.ok(links.includes('/_zubra/components/count-stepper.js'), 'a component another imports');
-  assert.ok(links.includes('/_zubra/runtime/core.js'), "the runtime's core, through the import map");
-  assert.ok(links.includes('/_zubra/runtime/element.js') && links.includes('/_zubra/runtime/signal-impl.js'), "and the core's own modules, levels down");
+  assert.ok(links.includes('/_zubra/runtime/zubra.js'), "the runtime's core, one file in production, through the import map");
   // No zb-await and no slots in these two: neither of those files, no $define, and not the entry
   // that has them all.
   for (const file of ['index.js', 'legacy.js', 'await.js', 'slots.js']) assert.ok(!links.includes(`/_zubra/runtime/${file}`), file);
@@ -85,14 +84,15 @@ test("the runtime's modules come from its own list, so they are there in either 
   for (const [name, imports] of Object.entries(modules)) {
     for (const file of [name, ...imports]) assert.ok(existsSync(join(runtime, 'src', file)) && existsSync(join(runtime, 'dist/production', file)), file);
   }
-  // A development server (the default) preloads the same runtime modules as a production one.
+  // A development server (the default) preloads the runtime's modules file by file, the
+  // development build's hook left out; a production one the core as one file.
   const links = (options) => {
     const page = createZubra({ components, ...options }).page();
     page.render('hello-there', { name: 'Ada', items: [] });
     return preloaded(page.finish(layout(''))).filter((link) => link.startsWith('/_zubra/runtime/'));
   };
-  assert.deepEqual(links({}), links({ production: true }));
-  assert.ok(links({}).length > 3 && !links({}).some((link) => link.includes('devhook')));
+  assert.ok(links({}).length > 3 && links({}).includes('/_zubra/runtime/core.js') && !links({}).some((link) => link.includes('devhook')));
+  assert.deepEqual(links({ production: true }), ['/_zubra/runtime/zubra.js']);
 });
 
 test('preload: false leaves the links out; anything else is refused', () => {
@@ -200,14 +200,16 @@ test("a page loads the binders its components use, and only those, by address; b
   const links = preloaded(page.finish(layout('')));
   // review-list has a zb-await and a zb-each: zb-await's binder is a file of its own, and
   // zb-each's (like zb-if's) is the core's.
-  assert.ok(links.includes('/_zubra/runtime/await.js'));
-  for (const file of ['slots.js', 'legacy.js', 'index.js']) assert.ok(!links.includes(`/_zubra/runtime/${file}`), file);
+  assert.ok(links.includes('/_zubra/runtime/await.js') && links.includes('/_zubra/runtime/zubra.js'));
+  for (const file of ['slots.js', 'legacy.js', 'index.js', 'core.js']) assert.ok(!links.includes(`/_zubra/runtime/${file}`), file);
   // zb-await's by a path beside the module, so a page whose import map only has `@zubra/runtime`
   // (a framework's own) loads it too, and a site that serves `/_zubra/` from elsewhere still finds
   // it; zb-each's from `@zubra/runtime`, whose core has it.
   const url = await listen((request, response) => zubra.handle(request, response));
   const module = await (await fetch(`${url}/_zubra/components/review-list.js`)).text();
   assert.match(module, /import \{ \$await \} from "\.\.\/runtime\/await\.js";/);
+  // (await.js, in production the bundled build's, imports the core as zubra.js: one copy.)
+  assert.match(String(await (await fetch(`${url}/_zubra/runtime/await.js`)).text()), /from"\.\/zubra\.js"/);
   assert.match(module, /import \{ \$each \} from "@zubra\/runtime";/);
   // With `@zubra/runtime` somewhere else (a CDN), the binders come from beside it: one runtime.
   const elsewhere = createZubra({ components, production: true, imports: { '@zubra/runtime': 'https://cdn.example/zubra/core.js' } });
