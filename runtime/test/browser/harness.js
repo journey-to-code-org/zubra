@@ -18,6 +18,11 @@ const launcher = createRequire(import.meta.url)('playwright')[engine];
 
 export let site;
 export const production = process.env.ZUBRA_RUNTIME === 'production';
+/**
+ * Whether the runtime said so: the development build reports with a console message, the
+ * production build has none of its messages (5.17) and must stay quiet.
+ */
+export const reported = (messages, matches) => (production ? !messages.some(matches) : messages.some(matches));
 let server, origin, browser;
 const pages = new Map();
 
