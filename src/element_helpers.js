@@ -31,7 +31,8 @@ function @attribute(node, name, value) {
 //@@ isSafeUrl:
 /** The rule the compiler checks at build time: http(s), mailto and tel URLs, and relative ones. */
 function @isSafeUrl(value) {
-  const url = String(value).trim();
+  // A browser reads `\` as `/` in an http(s) URL, so `/\evil.example` is `//evil.example`.
+  const url = String(value).trim().replaceAll("\\", "/");
   if (!url || /[\u0000-\u001f\u007f-\u009f]/.test(url) || url.startsWith("//")) return false;
   const beforePath = url.split(/[/?#]/)[0];
   const colon = beforePath.indexOf(":");

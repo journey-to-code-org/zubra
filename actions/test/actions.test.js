@@ -111,6 +111,7 @@ test('Node\'s http: answers ours, leaves the rest (and their bodies) alone', asy
     assert.deepEqual(await json.json(), { ok: true, email: 'a@example.com' });
     const plain = await fetch(`${base}/_zb/action/login-form/login`, { method: 'POST', body, redirect: 'manual' });
     assert.equal(plain.status, 303);
+    assert.equal(plain.headers.get('location'), '/', 'no Referer goes to the root');
     const page = await fetch(`${base}/`, { headers: { cookie: plain.headers.getSetCookie()[0].split(';')[0] } });
     assert.match(await page.text(), /"email":"a@example.com"/);
   } finally {
@@ -160,4 +161,19 @@ test('going back never leaves the site, even from a path that starts with //', a
     assert.equal(response.status, 303);
     assert.equal(response.headers.get('location'), location, referer);
   }
+});
+
+test('the result cookie is __Host- and Secure on HTTPS, and only the page the form came from reads it', async () => {
+  const secure = await post('https://shop.example/_zb/action/login-form/login', { email: 'b@example.com' }, { referer: 'https://shop.example/account?tab=1', origin: 'https://shop.example' });
+  const cookie = secure.headers.get('set-cookie');
+  assert.match(cookie, /^__Host-zb_result=.+; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=60$/);
+  const value = cookie.split(';')[0];
+  const cleared = [];
+  assert.equal(actions.result(new Request('https://shop.example/other', { headers: { cookie: value } }), (n, v) => cleared.push(v)), null, 'another page leaves it');
+  assert.deepEqual(cleared, [], 'and does not clear it');
+  assert.deepEqual(actions.result(new Request('https://shop.example/account', { headers: { cookie: value } }), (n, v) => cleared.push(v)), { action: '/_zb/action/login-form/login', value: { error: 'Invalid login' } });
+  assert.match(cleared[0], /^__Host-zb_result=; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=0$/);
+  // Plain HTTP (local development) keeps the plain name: browsers refuse __Host- without Secure.
+  const plain = await post(URL_LOGIN, { email: 'b@example.com' }, { referer: 'http://localhost/account' });
+  assert.match(plain.headers.get('set-cookie'), /^__zb_result=/);
 });

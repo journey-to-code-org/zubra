@@ -788,3 +788,12 @@ test('a malformed escape in a /_zubra/ path is a 400, and the server keeps answe
   assert.equal(bad.status, 400);
   assert.equal(await (await fetch(url)).text(), 'page');
 });
+
+test("injectShadowRoots: a quoted '>' in a host's attribute doesn't end its start tag", () => {
+  const zubra = createZubra({ components });
+  const html = `<count-stepper name="qty" value="3" label="Ann > Bob"></count-stepper><count-stepper name='q2' value="1" label='a>b'></count-stepper>`;
+  const injected = zubra.injectShadowRoots(html);
+  assert.match(injected, /^<count-stepper name="qty" value="3" label="Ann > Bob"><template shadowrootmode="open">[^]*aria-label="Ann &gt; Bob"/);
+  assert.match(injected, /<count-stepper name='q2' value="1" label='a>b'><template shadowrootmode="open">/);
+  assert.equal((injected.match(/shadowrootmode/g) ?? []).length, 2);
+});

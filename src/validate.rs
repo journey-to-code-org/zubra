@@ -1471,6 +1471,7 @@ impl Context<'_> {
                             }
                         }
                         check_attribute_statically(attribute)?;
+                        check_animation_value(element, attribute)?;
                     }
                     self.resolve_nodes(&element.children, scopes)?;
                 }
@@ -2988,6 +2989,56 @@ fn joined(parts: &[Part]) -> String {
         .collect()
 }
 
+/// SVG `<set>` and `<animate>` can animate any attribute, `href` included, to the URL in their
+/// `to`, `from`, `by` or `values`, which no URL check sees. A value from data there could make
+/// a link `javascript:`, so it's a compile error, as in `srcdoc`; a literal one that animates
+/// a URL attribute is checked like that attribute.
+fn check_animation_value(
+    element: &ast::Element,
+    attribute: &ast::Attribute,
+) -> Result<(), Diagnostic> {
+    let tag = element.name.to_ascii_lowercase();
+    let lower = attribute.name.to_ascii_lowercase();
+    if !matches!(tag.as_str(), "set" | "animate")
+        || !matches!(lower.as_str(), "to" | "from" | "by" | "values")
+    {
+        return Ok(());
+    }
+    match &attribute.value {
+        AttributeValue::Expression(..) => Err(Diagnostic::new(
+            attribute.span,
+            format!("interpolation in <{tag} {lower}> is not supported: it can animate a link to a URL nothing checks"),
+        )),
+        AttributeValue::Text(parts) if parts.iter().any(|part| matches!(part, AstPart::Expression { .. })) => Err(Diagnostic::new(
+            attribute.span,
+            format!("interpolation in <{tag} {lower}> is not supported: it can animate a link to a URL nothing checks"),
+        )),
+        AttributeValue::Text(parts) => {
+            let animates_url = element.attributes.iter().any(|other| {
+                other.name.eq_ignore_ascii_case("attributename")
+                    && matches!(&other.value, AttributeValue::Text(name) if URL_ATTRIBUTES.iter().any(|url| literal_text(name).eq_ignore_ascii_case(url)))
+            });
+            let text = literal_text(parts);
+            if animates_url && text.split(';').any(|value| !is_safe_url(value)) {
+                return Err(Diagnostic::new(attribute.span, format!("unsafe URL in <{tag} {lower}>")));
+            }
+            Ok(())
+        }
+        AttributeValue::None => Ok(()),
+    }
+}
+
+/// The text of an attribute with no expressions in it.
+fn literal_text(parts: &[AstPart]) -> String {
+    parts
+        .iter()
+        .map(|part| match part {
+            AstPart::Literal(text) => text.as_str(),
+            _ => "",
+        })
+        .collect()
+}
+
 /// Checks that don't depend on values, applied to every branch.
 fn check_attribute_statically(attribute: &ast::Attribute) -> Result<(), Diagnostic> {
     let lower = attribute.name.to_ascii_lowercase();
@@ -3225,7 +3276,9 @@ fn validate_custom_element(tag: &str, span: Span) -> Result<(), Diagnostic> {
 
 pub fn is_safe_url(value: &str) -> bool {
     let value = html_escape::decode_html_entities(value);
-    let value = value.trim();
+    // A browser reads `\` as `/` in an http(s) URL, so `/\evil.example` is `//evil.example`.
+    let value = value.trim().replace('\\', "/");
+    let value = value.as_str();
     if value.is_empty() || value.chars().any(char::is_control) || value.starts_with("//") {
         return false;
     }

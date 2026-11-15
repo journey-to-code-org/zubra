@@ -18,10 +18,10 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createActionsCore, routesFrom, MOUNT, SCRIPT_PATH, COOKIE } from './core.js';
+import { createActionsCore, routesFrom, MOUNT, SCRIPT_PATH, COOKIE, SECURE_COOKIE } from './core.js';
 import { flatName, rewriteImports, serverHalves } from './compile.js';
 
-export { MOUNT, SCRIPT_PATH, COOKIE };
+export { MOUNT, SCRIPT_PATH, COOKIE, SECURE_COOKIE };
 
 const CLIENT = readFileSync(new URL('./client.js', import.meta.url), 'utf8');
 

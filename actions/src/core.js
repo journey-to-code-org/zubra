@@ -4,7 +4,13 @@
 export const MOUNT = '/_zb/action/';
 export const SCRIPT_PATH = '/_zb/actions.js';
 export const COOKIE = '__zb_result';
+/**
+ * On HTTPS the result cookie is `__Host-zb_result` and `Secure`: browsers then refuse it from a
+ * sibling subdomain or plain HTTP, so nobody else can plant a "result" for the next page.
+ */
+export const SECURE_COOKIE = '__Host-zb_result';
 export const CLEAR = `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+const SECURE_CLEAR = `${SECURE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 /** The largest post read by default: 10 MB, files and fields together. */
 export const MAX_BYTES = 10 * 1024 * 1024;
 /** What a function's caller gets for a post over the limit; the function doesn't run. */
@@ -55,6 +61,9 @@ export function createActionsCore({ routes, client = null, origins = [], onError
    */
   const back = (request) => {
     const referer = request.headers.get('referer');
+    // No Referer (a privacy setting, or a client that sends none) goes to the root, not to
+    // `new URL(null)`'s `<action path>/null`.
+    if (!referer) return '/';
     try {
       const url = new URL(referer, request.url);
       if (url.origin === new URL(request.url).origin) return '/' + (url.pathname + url.search).replace(/^\/+/, '');
@@ -106,11 +115,13 @@ export function createActionsCore({ routes, client = null, origins = [], onError
         headers: { 'content-type': 'application/json' },
       });
     }
-    const headers = new Headers({ location: back(request) });
-    const cookie = encodeURIComponent(JSON.stringify({ action: url.pathname, value: value ?? null }));
+    const location = back(request);
+    const headers = new Headers({ location });
+    // `page` is where the result goes back to: only that page reads it (docs/actions.md).
+    const cookie = encodeURIComponent(JSON.stringify({ action: url.pathname, page: location.split('?')[0], value: value ?? null }));
     // A cookie holds about 4 KB; a bigger result reaches only the enhanced path.
     if (cookie.length < 3800) {
-      headers.append('set-cookie', `${COOKIE}=${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=60`);
+      headers.append('set-cookie', url.protocol === 'https:' ? `${SECURE_COOKIE}=${cookie}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=60` : `${COOKIE}=${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=60`);
     }
     return new Response(null, { status: 303, headers });
   }
@@ -121,14 +132,22 @@ export function createActionsCore({ routes, client = null, origins = [], onError
    */
   function result(request, setHeader) {
     const header = (typeof request.headers.get === 'function' ? request.headers.get('cookie') : request.headers.cookie) ?? '';
-    const match = header.split(/;\s*/).find((part) => part.startsWith(`${COOKIE}=`));
+    const parts = header.split(/;\s*/);
+    const name = parts.some((part) => part.startsWith(`${SECURE_COOKIE}=`)) ? SECURE_COOKIE : COOKIE;
+    const match = parts.find((part) => part.startsWith(`${name}=`));
     if (!match) return null;
-    setHeader?.('set-cookie', CLEAR);
+    let found;
     try {
-      return JSON.parse(decodeURIComponent(match.slice(COOKIE.length + 1)));
+      found = JSON.parse(decodeURIComponent(match.slice(name.length + 1)));
     } catch {
       return null;
     }
+    // Another page leaves it for the one the form came from.
+    const path = (request.url ? new URL(request.url, 'http://localhost').pathname : null) ?? null;
+    if (found?.page && path && found.page !== path) return null;
+    setHeader?.('set-cookie', name === SECURE_COOKIE ? SECURE_CLEAR : CLEAR);
+    const { page, ...rest } = found ?? {};
+    return found && typeof found === 'object' ? rest : found;
   }
 
   return {
