@@ -554,7 +554,27 @@ fn lower_rest(
         }
     }
     let mut scopes = Vec::new();
-    context.resolve_nodes(&component.nodes, &mut scopes)?;
+    // Whether the template's names resolve depends on the template and on the names in scope,
+    // not on their values: once it has passed with these names, it passes with them again.
+    // (A component's names are the same for every render; the check is that they are.)
+    let in_scope = || {
+        props
+            .iter()
+            .map(|prop| prop.name.as_str())
+            .chain(locals.iter().map(|(name, _)| name.as_str()))
+    };
+    let passed = component
+        .resolved
+        .0
+        .get()
+        .is_some_and(|names| names.iter().map(String::as_str).eq(in_scope()));
+    if !passed {
+        context.resolve_nodes(&component.nodes, &mut scopes)?;
+        let _ = component
+            .resolved
+            .0
+            .set(in_scope().map(str::to_owned).collect());
+    }
     if let Supply::Templates(templates) = supply {
         for nodes in templates.values() {
             context.resolve_nodes(nodes, &mut scopes)?;

@@ -36,6 +36,9 @@ pub struct ComponentAst {
     pub nodes: Vec<Node>,
     /// Components imported from `.zb` files, by tag, once loaded.
     pub children: Vec<ChildComponent>,
+    /// The names in scope (props, then the script's) its template's names were last found to
+    /// resolve against: the same names again need no second look (`validate.rs`).
+    pub resolved: Checked<Vec<String>>,
     /// The contexts the script provides or injects, once loaded: local name, a key the same in
     /// every file (the resolved module and the export's name), and the context's default when
     /// the server could read it.
@@ -291,6 +294,35 @@ pub struct ChildComponent {
     pub ast: ComponentAst,
     /// The child's interface, once something has asked for it (`validate.rs`).
     pub interface: Once<crate::validate::Interface>,
+}
+
+/// What a check of the tree it sits in passed with, kept so the same check needn't run again.
+/// It has no part in whether two trees are the same, and a copy of the tree starts without it:
+/// a copy may be changed, and what held for the original then says nothing about it.
+pub struct Checked<T>(pub std::cell::OnceCell<T>);
+
+impl<T> Default for Checked<T> {
+    fn default() -> Self {
+        Self(std::cell::OnceCell::new())
+    }
+}
+
+impl<T> Clone for Checked<T> {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl<T> std::fmt::Debug for Checked<T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Checked")
+    }
+}
+
+impl<T> PartialEq for Checked<T> {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 /// Something worked out from the tree it sits in, at most once, and kept with it: a copy of
