@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSyncServer, inScope, parseScope, allowAnyone } from '../src/server.js';
 import { backends } from './backends.js';
+import { syncObject } from '../src/durable-core.js';
+import { durableStorage } from './durable-storage.js';
 
 let n = 0;
 const at = () => `${String(++n).padStart(15, '0')}-00000-dev1`;
@@ -110,6 +112,17 @@ test("the server's scope: two businesses on one log, each seeing and writing onl
   while (!got.includes('g2')) got.push(...values((await stream.next()).value.data));
   assert.deepEqual(got, ['g2'], "Garrett's page never saw Cumberland's change (an empty batch, at most)");
   await stream.return();
+});
+
+test("a Durable Object keeps the server's scope it is given, and refuses an option it doesn't know", async () => {
+  const business = (request) => request.headers.get('x-business');
+  const options = { scope: ({ request }) => ({ seats: `${business(request)}/` }), maxChanges: 1 };
+  const sync = syncObject({ storage: durableStorage() }, { authorize: allowAnyone }, options);
+  await sync.write('seats', 'garrett-8/s1', { v: 'g' });
+  await sync.write('seats', 'cumberland/s1', { v: 'c' });
+  assert.deepEqual(values(await pull(sync, undefined, { 'x-business': 'garrett-8' })), ['g']);
+  assert.equal((await push(sync, [change('seats', 'garrett-8/a', 1), change('seats', 'garrett-8/b', 2)], { 'x-business': 'garrett-8' })).status, 413, 'maxChanges kept too');
+  assert.throws(() => syncObject({ storage: durableStorage() }, {}, { scopes: () => null }), /`scopes` is not an option/);
 });
 
 test('inScope: true, a prefix, a list, and a collection not named', () => {

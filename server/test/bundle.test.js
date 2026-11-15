@@ -252,6 +252,21 @@ test('bundle: writeAssets writes the joined modules of the pages rendered', () =
   }
 });
 
+test("bundle: a set only a request named is answered, and neither kept for good nor written out", () => {
+  const url = pageOf(createZubra({ components, production: true, bundle: true })).match(/\/_zubra\/b\/[^'"]+\.js/)[0];
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-bundle-'));
+  try {
+    // Another instance, which renders no page: it builds the set to answer.
+    const zubra = createZubra({ components, production: true, bundle: true });
+    assert.equal(get(zubra, url.replace(/\.[0-9a-z]{11}\.js$/, '.00000000000.js')).status, 404);
+    assert.equal(get(zubra, url).status, 200, 'the right hash, from what the wrong one built');
+    zubra.writeAssets(dir);
+    assert.equal(existsSync(join(dir, url)), false, "a visitor's sets are not the site's files");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('bundle: in a browser a page of two components asks for two modules, and both components work', async () => {
   const zubra = createZubra({ components, production: true, bundle: true });
   const server = createServer((request, response) => {

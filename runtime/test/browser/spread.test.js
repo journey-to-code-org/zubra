@@ -67,14 +67,28 @@ test('listeners follow the latest function and go when their key does; propertie
 
 test('what an attribute could not do, a spread cannot: unsafe URLs, text handlers, markup, style text', async () => {
   const { page, messages } = await open('<spread-demo></spread-demo>', { modules: ['spread'] });
-  await set(page, { attrs: { href: 'javascript:alert(1)', srcset: '/a 1x, javascript:alert(1) 2x', onclick: 'alert(1)', innerHTML: '<img src=x onerror=alert(1)>', style: 'color: red', children: 'x' } });
+  await set(page, { attrs: { href: 'javascript:alert(1)', srcset: '/a 1x, javascript:alert(1) 2x', onclick: 'alert(1)', innerHTML: '<img src=x onerror=alert(1)>', style: 'color: red', children: 'x', ping: '/account/delete' } });
   const { attributes } = await link(page);
   assert.equal(attributes.href, undefined, 'no unsafe URL');
   assert.equal(attributes.srcset, undefined, 'no unsafe srcset candidate');
   assert.equal(attributes.onclick, undefined, 'no handler as text');
   assert.equal(attributes.style, undefined, 'no style text');
+  assert.equal(attributes.ping, undefined, "no ping: a click would post to it with the visitor's cookies");
   assert.equal(await page.textContent('spread-demo a'), 'link', 'no markup');
-  assert.equal(messages.filter((message) => message.startsWith('error: zubra:')).length, 6, messages.join('\n'));
+  assert.equal(messages.filter((message) => message.startsWith('error: zubra:')).length, 7, messages.join('\n'));
+});
+
+test("an animation's values and target, and a meta's http-equiv, are the template's only", async () => {
+  const { page, messages } = await open('<spread-demo></spread-demo>', { modules: ['spread'] });
+  await set(page, {
+    anim: { attributeName: 'href', to: 'javascript:alert(1)', values: 'javascript:alert(1)', begin: '0s', fill: 'freeze' },
+    meta: { 'http-equiv': 'refresh', content: '0;url=https://evil.example/' },
+  });
+  const set_ = await page.$eval('spread-demo set', (el) => Object.fromEntries([...el.attributes].map((a) => [a.name, a.value])));
+  assert.deepEqual(set_, { begin: '0s', fill: 'freeze' });
+  assert.equal(await page.$eval('spread-demo a[href="/ok"]', (a) => a.getAttribute('href')), '/ok');
+  assert.equal(await page.$eval('spread-demo meta', (el) => el.getAttribute('http-equiv')), null);
+  assert.equal(messages.filter((message) => message.startsWith('error: zubra:')).length, 4, messages.join('\n'));
 });
 
 test("a key that can't be an attribute or CSS property name is left out, and the rest still applies (audit Z3)", async () => {

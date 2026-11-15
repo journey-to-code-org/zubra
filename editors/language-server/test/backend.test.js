@@ -137,9 +137,16 @@ test("a compiler that can't be run is said once, not as an error in every file",
 test('in a zubra checkout, the CLI cargo built is used, the newer of debug and release', async () => {
   const root = mkdtempSync(join(tmpdir(), 'zubra-backend-'));
   const saved = process.env.ZUBRA_COMPILER;
+  const savedDev = process.env.ZUBRA_DEV_CHECKOUT;
   delete process.env.ZUBRA_COMPILER;
   try {
     cliSaying(join(root, 'target/release/zubra'), 'release');
+    // Only for someone working on zubra, who says so: a repository can claim to be zubra.
+    writeFileSync(join(root, 'Cargo.toml'), '[package]\nname = "zubra"\n');
+    delete process.env.ZUBRA_DEV_CHECKOUT;
+    assert.equal(checkoutCompiler(join(root, 'examples/helpdesk')), null, 'not without ZUBRA_DEV_CHECKOUT');
+    rmSync(join(root, 'Cargo.toml'));
+    process.env.ZUBRA_DEV_CHECKOUT = '1';
     cliSaying(join(root, 'target/debug/zubra'), 'debug');
     utimesSync(join(root, 'target/debug/zubra'), new Date(2000, 0, 1), new Date(2000, 0, 1));
     // Not until the folder is a zubra checkout: any repository can hold a target/release/zubra.
@@ -154,15 +161,18 @@ test('in a zubra checkout, the CLI cargo built is used, the newer of debug and r
     assert.equal(checkoutCompiler(mkdtempSync(join(tmpdir(), 'zubra-elsewhere-'))), null);
   } finally {
     if (saved !== undefined) process.env.ZUBRA_COMPILER = saved;
+    if (savedDev === undefined) delete process.env.ZUBRA_DEV_CHECKOUT;
+    else process.env.ZUBRA_DEV_CHECKOUT = savedDev;
     rmSync(root, { recursive: true, force: true });
   }
 });
 
 test('a CLI built after the server started is found without restarting it', async () => {
   const root = mkdtempSync(join(tmpdir(), 'zubra-backend-'));
-  const saved = { compiler: process.env.ZUBRA_COMPILER, path: process.env.PATH };
+  const saved = { compiler: process.env.ZUBRA_COMPILER, path: process.env.PATH, dev: process.env.ZUBRA_DEV_CHECKOUT };
   delete process.env.ZUBRA_COMPILER;
   process.env.PATH = join(root, 'empty');
+  process.env.ZUBRA_DEV_CHECKOUT = '1';
   try {
     writeFileSync(join(root, 'Cargo.toml'), '[package]\nname = "zubra"\n'); // a zubra checkout
     const told = [];
@@ -172,6 +182,8 @@ test('a CLI built after the server started is found without restarting it', asyn
     cliSaying(join(root, 'target/debug/zubra'), 'built');
     assert.equal(backend.check(join(root, 'a.zb'), '')[0].message, 'built');
   } finally {
+    if (saved.dev === undefined) delete process.env.ZUBRA_DEV_CHECKOUT;
+    else process.env.ZUBRA_DEV_CHECKOUT = saved.dev;
     if (saved.compiler !== undefined) process.env.ZUBRA_COMPILER = saved.compiler;
     process.env.PATH = saved.path;
     rmSync(root, { recursive: true, force: true });

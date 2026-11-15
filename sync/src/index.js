@@ -92,14 +92,24 @@ channel?.addEventListener('message', ({ data }) =>
 
 // Presence: each tab is one peer per document ("room"). What it sends goes to the other tabs
 // (BroadcastChannel) and, through a connection, to other devices; nothing is stored.
-const tab = Math.random().toString(36).slice(2, 10);
+let tab = Math.random().toString(36).slice(2, 10);
 const rooms = new Map(); // room → Set of (peer, state) handlers
 const presenceSenders = new Set();
-const joined = new Set(); // rooms this tab has presence in, to leave on pagehide
+const joined = new Map(); // room → this tab's presence there, to leave on pagehide (or say again)
 /** @internal Called with `{ room, peer, state }` for each presence this tab sends (state null: left). */
 export const onPresence = (fn) => (presenceSenders.add(fn), () => presenceSenders.delete(fn));
 /** @internal This tab's peer id. */
 export const peerId = () => tab;
+/**
+ * @internal A new peer id for this tab, when the server says another viewer holds this one (the
+ * tab was away longer than the server keeps an id for its key). Its presence is said again as the
+ * new peer, so the others see it come back.
+ */
+export function newPeerId() {
+  tab = Math.random().toString(36).slice(2, 10);
+  for (const [room, state] of [...joined]) sendPresence(room, state);
+  return tab;
+}
 /** @internal Presence from elsewhere. */
 export function receivePresence({ room, peer, state }) {
   if (peer === tab) return;
@@ -108,13 +118,13 @@ export function receivePresence({ room, peer, state }) {
 function sendPresence(room, state) {
   const message = { room, peer: tab, state };
   if (state === null) joined.delete(room);
-  else joined.add(room);
+  else joined.set(room, state);
   channel?.postMessage({ kind: 'presence', ...message });
   for (const send of presenceSenders) send(message);
 }
 if (typeof addEventListener === 'function') {
   addEventListener('pagehide', () => {
-    for (const room of [...joined]) sendPresence(room, null);
+    for (const room of [...joined.keys()]) sendPresence(room, null);
   });
 }
 function deliver(collection, key, fields, from) {

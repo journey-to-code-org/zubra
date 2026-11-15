@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { connect } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { createActions } from '../src/index.js';
+import { createActionsCore, routesFrom } from '../src/core.js';
 
 const components = fileURLToPath(new URL('./components', import.meta.url));
 const actions = await createActions({ components, onError: () => {} });
@@ -145,6 +146,17 @@ test("a Host header that isn't a host is a 400 from handle(), and the server kee
     });
     assert.match(answer, /^HTTP\/1\.1 400/);
     assert.equal(await (await fetch(`http://127.0.0.1:${port}/`)).text(), 'page');
+    // A Host carrying a path would choose the action past the app's own check on req.url.
+    for (const host of ['localhost/_zb/action/login-form/crash?', 'localhost/_zb/action/login-form/crash#', 'x\\y']) {
+      const raw = await new Promise((done) => {
+        let out = '';
+        const socket = connect(port, '127.0.0.1', () => socket.write(`POST /_zb/action/login-form/login HTTP/1.1\r\nHost: ${host}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`));
+        socket.setTimeout(3000, () => socket.destroy());
+        socket.on('data', (chunk) => (out += chunk));
+        socket.on('close', () => done(out));
+      });
+      assert.match(raw, /^HTTP\/1\.1 400/, host);
+    }
   } finally {
     server.close();
   }
@@ -173,6 +185,15 @@ test('the result cookie is __Host- and Secure on HTTPS, and only the page the fo
   assert.deepEqual(cleared, [], 'and does not clear it');
   assert.deepEqual(actions.result(new Request('https://shop.example/account', { headers: { cookie: value } }), (n, v) => cleared.push(v)), { action: '/_zb/action/login-form/login', value: { error: 'Invalid login' } });
   assert.match(cleared[0], /^__Host-zb_result=; Path=\/; HttpOnly; Secure; SameSite=Lax; Max-Age=0$/);
+  // Over HTTPS a plain __zb_result (planted by a sibling subdomain, or over plain HTTP) is not ours.
+  const planted = `__zb_result=${encodeURIComponent(JSON.stringify({ action: '/_zb/action/login-form/login', value: { error: 'Your account is locked: call +1-555-0100' }, page: '/account' }))}`;
+  assert.equal(actions.result(new Request('https://shop.example/account', { headers: { cookie: planted } })), null);
+  assert.ok(actions.result(new Request('http://localhost/account', { headers: { cookie: planted } })), 'over plain HTTP it is the only one there is');
+  // Behind a proxy that ends TLS, requests arrive as http: `secure: true` says the site is HTTPS.
+  const proxied = createActionsCore({ routes: routesFrom({ '/_zb/action/login-form/login': () => ({ ok: true }) }), secure: true });
+  const behind = await proxied.fetch(new Request('http://shop.example/_zb/action/login-form/login', { method: 'POST', headers: { origin: 'http://shop.example', referer: 'http://shop.example/account' }, body: new URLSearchParams({ email: 'a@b.c' }) }));
+  assert.match(behind.headers.get('set-cookie'), /^__Host-zb_result=.*; Secure/);
+  assert.equal(proxied.result(new Request('http://shop.example/account', { headers: { cookie: planted } })), null, 'and a planted plain cookie is not read');
   // Plain HTTP (local development) keeps the plain name: browsers refuse __Host- without Secure.
   const plain = await post(URL_LOGIN, { email: 'b@example.com' }, { referer: 'http://localhost/account' });
   assert.match(plain.headers.get('set-cookie'), /^__zb_result=/);

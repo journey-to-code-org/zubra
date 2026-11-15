@@ -51,8 +51,6 @@ fn a_spread_known_only_in_the_browser_is_left_for_the_element() {
 #[test]
 fn what_an_attribute_couldn_t_do_a_known_spread_can_t() {
     for (attrs, message) in [
-        (r#"{ onclick: "alert(1)" }"#, "a handler as text"),
-        (r#"{ innerHTML: "<b>x</b>" }"#, "can't set `innerHTML`"),
         (r#"{ style: "color: red" }"#, "must be an object"),
         (
             r#"{ style: { color: "red; background: url(x)" } }"#,
@@ -438,6 +436,46 @@ fn every_html_attribute_name_a_spread_writes_still_passes() {
     let html = compile(source, "{}").unwrap();
     assert!(
         html.contains(r#"aria-label="a" data-x.y_z="b" xml:lang="en" _private="c" tabindex="0""#),
+        "{html}"
+    );
+}
+
+#[test]
+fn a_spread_never_sets_an_animations_values_or_a_metas_http_equiv() {
+    // As props (a visitor's data): left out, not an error.
+    let source = r#"<x-anim anim={{}} meta={{}}><svg><a href="/ok"><set {...anim}/><text>t</text></a></svg><meta {...meta}></x-anim>"#;
+    let props = r#"{"anim": {"attributeName": "href", "to": "javascript:alert(1)", "values": "javascript:alert(1)", "begin": "0s"}, "meta": {"http-equiv": "refresh", "content": "0;url=https://evil.example/"}}"#;
+    let html = compile(source, props).unwrap();
+    assert!(html.contains(r#"<set begin="0s">"#), "{html}");
+    // (The host tag carries the props themselves; what matters is what the children say.)
+    let children = &html[html.find("<svg>").unwrap()..];
+    assert!(!children.contains("javascript:"), "{html}");
+    assert!(!children.contains("http-equiv"), "{html}");
+    // `animate`, `animateMotion`, `animateTransform` too; other elements keep `to` and `values`.
+    let source = r#"<x-anim anim={{}}><svg><animate {...anim}/><animateTransform {...anim}/><g {...anim}/></svg></x-anim>"#;
+    let html = compile(source, r#"{"anim": {"to": "x", "values": "y"}}"#).unwrap();
+    let children = &html[html.find("<svg>").unwrap()..];
+    assert_eq!(children.matches("to=").count(), 1, "{html}");
+    assert_eq!(children.matches("values=").count(), 1, "{html}");
+}
+
+#[test]
+fn what_a_spread_cant_set_is_left_out_not_a_failed_render() {
+    // Spread objects are often a visitor's data: one stored `onclick` or `srcdoc` must not make
+    // every render that spreads it fail. Left out, as the runtime leaves it out.
+    let source = "<x-a attrs={{}}><a {...attrs}>go</a><iframe {...attrs}></iframe></x-a>";
+    let props = r#"{"attrs": {"onclick": "alert(1)", "innerHTML": "<b>x</b>", "srcdoc": "<script>x</script>", "ping": "/account/delete", "title": "kept"}}"#;
+    let html = compile(source, props).unwrap();
+    let children = &html[html.find("<a").unwrap()..];
+    for key in ["onclick", "<b>", "srcdoc", "ping"] {
+        assert!(!children.contains(key), "{key}: {html}");
+    }
+    assert_eq!(children.matches(r#"title="kept""#).count(), 2, "{html}");
+    // The same from the script's own constant.
+    let source = "<script>\n  const attrs = { onclick: 'alert(1)', title: 'kept' }\n</script>\n<x-a><a {...attrs}>go</a></x-a>";
+    let html = compile(source, "{}").unwrap();
+    assert!(
+        !html.contains("onclick") && html.contains(r#"title="kept""#),
         "{html}"
     );
 }

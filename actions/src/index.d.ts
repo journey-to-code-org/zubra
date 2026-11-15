@@ -17,6 +17,11 @@ export interface ActionsOptions {
    */
   maxBytes?: number;
   /**
+   * Whether the app is served over HTTPS, for the result cookie (`__Host-` and `Secure`): true behind
+   * a proxy that ends TLS, whose requests arrive as http. Unset: each request's own protocol.
+   */
+  secure?: boolean;
+  /**
    * What else a server function gets beside `request`, per request: the signed-in user, a
    * database handle. `req` is Node's request (Node, Express, Fastify); `c` is Hono's context.
    */

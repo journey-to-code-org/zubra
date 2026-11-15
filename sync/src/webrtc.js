@@ -17,6 +17,8 @@
 const RETRY = 4000;
 
 export function mesh({ self, signal, deliver, iceServers = [] }) {
+  // This tab's peer id: a string, or a function giving the current one.
+  const me = typeof self === 'function' ? self : () => self;
   const peers = new Map(); // peer → { connection, channel, rooms: Set }
   const rooms = new Map(); // room → Set of peers seen in it
 
@@ -57,7 +59,7 @@ export function mesh({ self, signal, deliver, iceServers = [] }) {
     };
     connection.addEventListener('datachannel', ({ channel }) => attach(channel));
     // One side starts: the lower id. Both know both ids, so they agree without talking.
-    if (self < peer) {
+    if (me() < peer) {
       attach(connection.createDataChannel('presence', { ordered: false, maxRetransmits: 0 }));
       connection
         .createOffer()
@@ -76,7 +78,7 @@ export function mesh({ self, signal, deliver, iceServers = [] }) {
   }
 
   async function receiveSignal({ room, from, data }) {
-    if (from === self) return;
+    if (from === me()) return;
     // A new offer means the other side started again: so do we.
     if (data.description?.type === 'offer' && peers.get(from)?.connection.remoteDescription) drop(from);
     const entry = link(from, room);
@@ -103,7 +105,7 @@ export function mesh({ self, signal, deliver, iceServers = [] }) {
     receiveSignal,
     /** A peer's presence arrived through the server: meet it, if we're both here. */
     sawPeer(room, peer, state) {
-      if (peer === self) return;
+      if (peer === me()) return;
       if (!rooms.has(room)) rooms.set(room, new Set());
       if (state === null) {
         rooms.get(room).delete(peer);

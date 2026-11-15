@@ -192,6 +192,8 @@ export function createZubra({ components = 'components', packages = [], prefix =
 
   /** Node's http (and Express, Koa, Fastify's raw request): true when it answered. */
   function handle(req, res) {
+    // `//host/_zubra/…` would read as a path of the URL's host: not ours, as the router's isn't.
+    if (typeof req.url !== 'string' || !req.url.startsWith('/') || req.url.startsWith('//')) return false;
     const served = core.serve(new URL(req.url, 'http://x').pathname);
     if (!served) return false;
     res.writeHead(served.status, { 'content-type': served.type, 'cache-control': core.cacheControlOf(served) });
@@ -250,7 +252,8 @@ export function createZubra({ components = 'components', packages = [], prefix =
   function injectShadowRootsStream(options) {
     const decoder = new StringDecoder('utf8');
     let carry = '';
-    options = { ...options, hosts: { count: 0 } }; // one count of hosts for the whole stream
+    // One count of hosts for the whole stream, and what the last piece ended inside.
+    options = { ...options, hosts: { count: 0 }, state: {} };
     const pass = (text, flush) => {
       const all = carry + text;
       // Hold back from an unclosed `<` (a tag cut in two), and from an opened host tag whose
@@ -262,8 +265,8 @@ export function createZubra({ components = 'components', packages = [], prefix =
       const { pattern } = core.shadowHosts(options?.lightDom);
       if (!flush && pattern) {
         let last = null;
-        for (const match of all.slice(0, cut).matchAll(pattern)) last = match;
-        if (last && cut - (last.index + last[0].length) < 64) cut = last.index;
+        for (const found of pattern.hosts(all.slice(0, cut), { ...options.state })) last = found;
+        if (last && cut - last.end < 64) cut = last.index;
       }
       carry = all.slice(cut);
       return core.injectShadowRoots(all.slice(0, cut), options);

@@ -68,6 +68,21 @@ test('S2: a field named key is refused in a push and in write()', async () => {
   await assert.rejects(() => sync.write('tasks', 't1', { key: 'other' }), /`key` can't be a field name/);
 });
 
+test("S2: a field named like what every object has is refused: __proto__ would set a document's prototype", async () => {
+  const sync = createSyncServer({ authorize: allowAnyone });
+  for (const field of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+    const refused = await push(sync, [change(field, { owner: 'mallory' }, stamp(Date.now()))]);
+    assert.equal(refused.status, 400, field);
+    assert.match((await refused.json()).error, /__proto__/);
+    await assert.rejects(() => sync.write('tasks', 't1', JSON.parse(`{"${field}": 1}`)), /can't be a field name/, field);
+  }
+  // Ordinary names, and ones that only look alike, still go through.
+  assert.equal((await push(sync, [change('proto', 1, stamp(Date.now())), change('owner', 'ada', stamp(Date.now() + 1))])).status, 200);
+  const [doc] = (await sync.documents()).all('tasks');
+  assert.equal(Object.getPrototypeOf(doc), Object.prototype);
+  assert.equal(doc.owner, 'ada');
+});
+
 test('S2: documents().all() lists each document under its own key, whatever its fields', async () => {
   const log = memoryLog();
   // A field named key that got into a log before this check.
@@ -110,6 +125,7 @@ test('S1 and S2 in the zubra-sync binary: far-future clocks and a field named ke
     assert.equal(ahead.status, 400);
     assert.match((await ahead.json()).error, /ahead of the server's/);
     assert.equal((await send([change('key', 'other', stamp(Date.now()))])).status, 400);
+    for (const field of ['__proto__', 'constructor', 'toString']) assert.equal((await send([change(field, { owner: 'mallory' }, stamp(Date.now()))])).status, 400, field);
     assert.equal((await send([change('title', 'fast device', stamp(Date.now() + 30_000))])).status, 200);
     const read = await (await fetch(`${base}/_zb/sync/pull?since=0`)).json();
     assert.deepEqual(read.changes.map((c) => c.value), ['fast device']);

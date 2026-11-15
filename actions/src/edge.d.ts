@@ -21,6 +21,11 @@ export interface EdgeActionsOptions<Extra extends object = object> {
    * no limit. A bigger one gets `{ error: 'Too large' }` (status 413) and the function doesn't run.
    */
   maxBytes?: number;
+  /**
+   * Whether the app is served over HTTPS, for the result cookie (`__Host-` and `Secure`): true behind
+   * a proxy that ends TLS, whose requests arrive as http. Unset: each request's own protocol.
+   */
+  secure?: boolean;
   /** What else a server function gets beside `request`; `extra` is fetch's second argument (`{ env, ctx }`). */
   context?: (from: { request: Request } & Extra) => object | Promise<object>;
 }

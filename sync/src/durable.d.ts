@@ -1,4 +1,4 @@
-import type { Change, Documents } from './server.js';
+import type { Change, Documents, Scope } from './server.js';
 export { durableObjectLog, type DurableObjectStorageLike } from './durable-log.js';
 
 /** `{ collection: [{ key, ...fields }] }` */
@@ -15,6 +15,16 @@ export interface SyncObjectOptions {
   table?: string;
   /** Other origins allowed to push. */
   origins?: string[];
+  /** The scope a request may see and write, as `createSyncServer`'s: what keeps tenants apart. */
+  scope?: (from: { request: Request }) => Scope | null | Promise<Scope | null>;
+  /** As `createSyncServer`'s, when the class has no `authorize` method. */
+  authorize?: SyncObject['authorize'];
+  /** How far ahead of the server's clock a pushed change's clock may be (ms, default 60 000). */
+  maxSkew?: number;
+  /** The largest push body, in bytes (default 1 MiB). */
+  maxBytes?: number;
+  /** The most changes in one push (default 1000). */
+  maxChanges?: number;
 }
 
 /** Extend it with your Durable Object class. Methods you add are the stub's, over RPC. */
@@ -23,7 +33,7 @@ export class SyncObject<Env = unknown> {
   constructor(ctx: any, env: Env);
   protected ctx: any;
   protected env: Env;
-  /** Refuse a write or hide a change; as `createSyncServer`'s. Allows everything if not defined. */
+  /** Refuse a write or hide a change; as `createSyncServer`'s. Without it (and without `options.authorize`), pages may read and not write. */
   authorize?(asked: { request: Request; collection: string; key: string; field?: string; value?: unknown; write: boolean; kind: 'change' | 'presence' | 'read' }): boolean | Promise<boolean>;
   fetch(request: Request): Promise<Response>;
   documents(): Promise<Documents>;

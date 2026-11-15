@@ -396,6 +396,13 @@ fn rejects_unsafe_literal_urls_and_leaves_out_unsafe_values() {
             );
         }
     }
+    // A literal value is the author's, checked as a URL when the name is one, spaces and all
+    // (Chromium doesn't trim them, but the check doesn't count on that).
+    assert_error(
+        "<zb-svg><svg><a><set attributeName=\" href \" to=\"javascript:alert(7)\"></set><text>x</text></a></svg></zb-svg>",
+        "{}",
+        "unsafe URL",
+    );
     assert_error(
         "<zb-svg><svg><a><set attributeName=\"href\" to=\"javascript:alert(7)\"></set></a></svg></zb-svg>",
         "{}",
@@ -444,6 +451,54 @@ fn rejects_unsafe_literal_urls_and_leaves_out_unsafe_values() {
         "unsafe URL",
     );
     assert!(compile(GREETING, r#"{"name":"x","url":"/safe/path"}"#).is_ok());
+}
+
+#[test]
+fn ping_is_the_templates_text_only() {
+    let error = compile(r#"<x-a to=""><a href="/x" ping={to}>go</a></x-a>"#, "{}").unwrap_err();
+    assert!(
+        error.message.contains("interpolation in ping"),
+        "{}",
+        error.message
+    );
+    assert!(zubra::compile_js(
+        r#"<x-a to=""><a href="/x" ping="/t/{to}">go</a></x-a>"#,
+        "@zubra/runtime",
+        "x-a.zb"
+    )
+    .is_err());
+    compile(r#"<x-a><a href="/x" ping="/track">go</a></x-a>"#, "{}").unwrap();
+}
+
+#[test]
+fn a_meta_refresh_is_the_templates_text_only() {
+    for source in [
+        r#"<x-go next=""><meta http-equiv="refresh" content="0;url={next}"></x-go>"#,
+        r#"<x-go next=""><meta http-equiv="refresh" content={next}></x-go>"#,
+        r#"<x-go kind=""><meta http-equiv={kind} content="0"></x-go>"#,
+    ] {
+        let error = compile(source, "{}").unwrap_err();
+        assert!(
+            error.message.contains("<meta http-equiv>"),
+            "{source}: {}",
+            error.message
+        );
+        assert!(
+            zubra::compile_js(source, "@zubra/runtime", "x-go.zb").is_err(),
+            "{source}"
+        );
+    }
+    // A meta without http-equiv may say what it likes.
+    compile(
+        r#"<x-go d=""><meta name="description" content={d}></x-go>"#,
+        "{}",
+    )
+    .unwrap();
+    compile(
+        r#"<x-go><meta http-equiv="refresh" content="30"></x-go>"#,
+        "{}",
+    )
+    .unwrap();
 }
 
 #[test]

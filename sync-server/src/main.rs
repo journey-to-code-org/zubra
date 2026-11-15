@@ -19,12 +19,12 @@
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 use std::collections::hash_map::RandomState;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasher, Hasher};
 use std::io::{Read, Write};
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
 const MOUNT: &str = "/_zb/sync";
@@ -96,6 +96,9 @@ struct Listener {
 struct State {
     db: Mutex<Connection>,
     listeners: Mutex<Vec<Listener>>,
+    /// Peers whose stream ended, with its key and until when only that key may take the id back:
+    /// otherwise whoever asked first in the gap would take it, and be sent its signals.
+    released: Mutex<HashMap<String, (String, Instant)>>,
     next: Mutex<u64>,
     origins: Vec<String>,
     keep_alive: Duration,
@@ -142,6 +145,7 @@ fn main() {
     let state = Arc::new(State {
         db: Mutex::new(db),
         listeners: Mutex::new(Vec::new()),
+        released: Mutex::new(HashMap::new()),
         next: Mutex::new(0),
         origins: options.origins,
         keep_alive: options.keep_alive,
@@ -341,7 +345,7 @@ fn handle(state: &State, mut request: Request) {
                     request,
                     extra,
                     400,
-                    json!({ "error": "Expected { changes: [{ collection, key, field, value, clock }] }; a field can't be named key or $clocks" }),
+                    json!({ "error": "Expected { changes: [{ collection, key, field, value, clock }] }; a field can't be named key, $clocks, or a name every object has (__proto__, constructor, toString…)" }),
                 );
             };
             // As @zubra/sync/server's default `maxChanges`: connect() sends batches under it.
@@ -507,9 +511,28 @@ fn valid_change(change: &Value) -> bool {
     });
     text("collection").is_some()
         && text("key").is_some()
-        && text("field").is_some_and(|field| field != "$clocks" && field != "key")
+        && text("field").is_some_and(|field| {
+            field != "$clocks" && field != "key" && !INHERITED.contains(&field)
+        })
         && clock_ok
 }
+
+/// The names every JavaScript object already has: documents are plain objects on every device,
+/// so `__proto__` would set a document's prototype and the rest would never be applied.
+const INHERITED: [&str; 12] = [
+    "constructor",
+    "__defineGetter__",
+    "__defineSetter__",
+    "hasOwnProperty",
+    "__lookupGetter__",
+    "__lookupSetter__",
+    "isPrototypeOf",
+    "propertyIsEnumerable",
+    "toString",
+    "valueOf",
+    "__proto__",
+    "toLocaleString",
+];
 
 /// How far ahead of this server's clock a pushed change's clock may be (the JavaScript server's
 /// default `maxSkew`). Further ahead would win every merge for ever.
@@ -663,8 +686,22 @@ fn speaks_as(state: &State, peer: &str, key: Option<&str>, held: bool) -> bool {
     let listeners = state.listeners.lock().expect("listeners");
     match listeners.iter().find(|listener| listener.peer == peer) {
         Some(listener) => key == Some(listener.key.as_str()),
-        None => !held,
+        None => match released_key(state, peer) {
+            Some(kept) => key == Some(kept.as_str()),
+            None => !held,
+        },
     }
+}
+
+/// How long a peer whose stream ended keeps its id for a reconnect with its key.
+const RECONNECT: Duration = Duration::from_secs(60);
+
+/// The key of `peer`'s stream that ended within the grace, if one did.
+fn released_key(state: &State, peer: &str) -> Option<String> {
+    let mut released = state.released.lock().expect("released");
+    let now = Instant::now();
+    released.retain(|_, (_, until)| *until > now);
+    released.get(peer).map(|(key, _)| key.clone())
 }
 
 /// A secret for a live stream: 128 bits from the standard library's randomly keyed hasher.
@@ -748,7 +785,11 @@ fn live(state: &State, request: Request, url: &str, extra: Vec<Header>) {
                 (previous.key, previous.rooms)
             }
             Some(_) => (String::new(), HashSet::new()),
-            None => (new_key(), HashSet::new()),
+            None => match released_key(state, &peer) {
+                Some(kept) if query(url, "key") == Some(kept.as_str()) => (kept, HashSet::new()),
+                Some(_) => (String::new(), HashSet::new()),
+                None => (new_key(), HashSet::new()),
+            },
         };
         if key.is_empty() {
             drop(listeners);
@@ -758,6 +799,9 @@ fn live(state: &State, request: Request, url: &str, extra: Vec<Header>) {
                 409,
                 json!({ "error": "That peer id is another viewer's; pick another" }),
             );
+        }
+        if !peer.is_empty() {
+            state.released.lock().expect("released").remove(&peer);
         }
         listeners.push(Listener {
             id,
@@ -824,7 +868,16 @@ fn live(state: &State, request: Request, url: &str, extra: Vec<Header>) {
     let gone = {
         let mut listeners = state.listeners.lock().expect("listeners");
         let at = listeners.iter().position(|listener| listener.id == id);
-        at.map(|at| listeners.remove(at))
+        let gone = at.map(|at| listeners.remove(at));
+        // Kept for its page to come back to, unless another stream with the key already has.
+        if !peer.is_empty() && !listeners.iter().any(|listener| listener.peer == peer) {
+            state
+                .released
+                .lock()
+                .expect("released")
+                .insert(peer.clone(), (key.clone(), Instant::now() + RECONNECT));
+        }
+        gone
     };
     if let Some(listener) = gone {
         for room in listener.rooms {

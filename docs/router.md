@@ -72,7 +72,8 @@ A layout is a component with a `<zb-slot></zb-slot>` where the page goes.
 
 - **`app.zb`** is the shell, the layout around every page. It needs no directive.
 - **`'use layout /farm'`** wraps `/farm` and every page under it, inside the shell. Prefixes are whole segments, so it is not around `/farmers`. In `routes/`, `routes/farm/layout.zb` with a bare `'use layout'` is the same thing. Layouts nest to any depth.
-- **`'use layout /farm root'`** starts over at its prefix: its pages are not inside `app.zb` or any layout above. For a section with its own frame, such as a dashboard beside a public site.
+- **`'use layout /farm root'`** starts over at its prefix: its pages are not drawn inside `app.zb` or any layout above. For a section with its own frame, such as a dashboard beside a public site. The `load`s of the layouts above still run first, so their checks still guard it.
+- Which layouts are around a page is decided by the path asked for, not by how the page spells its pattern: `/org/:orgId/invoices`, `/org/:org(\d+)/x` and `/org/[...rest]` are all inside `'use layout /org/:org'`, and the layout's `load` gets its own `params.org`.
 - A layout or page that declares a **`route`** prop is given `{ path, pattern, params }`.
 - The router writes the document around them: the doctype, `<html lang>`, the charset and viewport, the components' CSS and scripts. `createRouter({ lang: 'en-GB', head: '<link rel="stylesheet" href="/site.css">' })` sets the language and adds to `<head>`; `head` may be a function of `{ url, request, route }`. It is written as given, so it is for the app's own markup, never a visitor's text.
 
@@ -89,12 +90,14 @@ It returns the page's props, and may also return or answer with:
 |---|---|
 | `title` | The document's `<title>`. A page's wins over its layout's |
 | `notFound()` | The 404 page, with a 404 |
-| `redirect('/cart')` | 303 to there; `redirect(to, 301)` for another status |
+| `redirect('/cart')` | 303 to there; `redirect(to, 301)` or `redirect(to, { status, external })` otherwise. It stays on this site: `//elsewhere` is read as the path `/elsewhere`, and another origin or a non-http scheme is a 500 unless `external: true` says it means to leave (never a script URL) |
 | `show('sign-in', { next })` | Another component at the same URL, in place of this one. `{ status: 403 }` as a third argument sets the response's |
 
 `show()` is for a sign-in form or a "this page is for farmers" notice: the address stays what was asked for.
 
 A layout's `load` covers its section. What it returns reaches every layout and page inside it that declares the prop. When it answers with `notFound()`, `redirect()` or `show()`, the loads inside it don't run, so one check guards every page under the prefix. Its `show()` takes the layout's place, inside the layouts over it: from a `root` layout, that is the shell.
+
+A page whose `load`s ran is sent with `Cache-Control: private, no-store`, since what they returned may be one person's. A path starting `//` is no route, and on Node's `http`, `handle()` answers a request whose `Host` isn't a host, or whose target isn't a path, with 400; so the path routed is always the one `req.url` gave the app's own checks. Params are as the URL wrote them, percent-encoding and all: compare them the way the app's guards do.
 
 Live data needs nothing more: return the current value as a prop and let the component follow its `@zubra/sync` document from there.
 

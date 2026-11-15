@@ -275,3 +275,34 @@ fn a_nested_form_control_carries_its_value_for_a_form_submitted_before_javascrip
         "{html}"
     );
 }
+
+#[test]
+fn hydration_markers_at_the_top_of_slot_html_are_left_out() {
+    // A visitor's sanitized text keeps comments; one reading as a marker would end the slot's
+    // region, and what follows it would vanish when the page hydrates.
+    let source = "<x-box><div><zb-slot></zb-slot></div></x-box>\n";
+    let component = Component::new("/app/box.zb", source, &[]);
+    let slot =
+        "<b>user</b><!--]--><?zb ]?><i>after</i><!--[!--><?zb [?><!----><!-- wp:paragraph -->";
+    let html = component
+        .render_with(
+            &json!({}),
+            &json!({ "default": slot }),
+            zubra::SlotSource::Html,
+        )
+        .unwrap();
+    assert!(
+        html.contains("<b>user</b><i>after</i><!-- wp:paragraph -->"),
+        "{html}"
+    );
+    // Inside an element they are a rendered component's own, and kept.
+    let nested = "<x-inner><!--[--><p>1</p><!--]--></x-inner>";
+    let html = component
+        .render_with(
+            &json!({}),
+            &json!({ "default": nested }),
+            zubra::SlotSource::Html,
+        )
+        .unwrap();
+    assert!(html.contains(nested), "{html}");
+}

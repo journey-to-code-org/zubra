@@ -136,6 +136,9 @@ test('page.provide(): every component the page renders gets the value, on the se
   // (Dots are resolved before the request reaches us; an encoded slash isn't, and is decoded after.)
   const status = await new Promise((resolve) => request(`${url}/`, { path: '/_zubra/components/..%2F..%2Fsrc%2Findex.js' }, (response) => resolve(response.statusCode)).end());
   assert.equal(status, 404, 'no way out of the components folder');
+  // `//host/_zubra/…` is not a path of ours (the router agrees), so it falls through to the app.
+  const type = await new Promise((resolve) => request(`${url}/`, { path: '//evil.example/_zubra/components/theme.js' }, (response) => resolve(response.headers['content-type'])).end());
+  assert.notEqual(type, 'text/javascript; charset=utf-8');
   assert.match(html, /<ctx-themed>\s*<p><\/p>/, 'the one before: its default is left to the browser');
   const page = await open(url);
   await page.waitForFunction(() => customElements.get('ctx-themed'));
@@ -330,6 +333,36 @@ test('injectShadowRoots: shadow components complete before JavaScript, form valu
   assert.deepEqual(await page.evaluate(() => [...new FormData(document.querySelector('form'))]), [['qty', '4']]);
   assert.deepEqual(page.errors, []);
   await page.done();
+});
+
+test("injectShadowRoots fills only host tags the browser would see: not one in an attribute, a comment or a script", async () => {
+  const zubra = createZubra({ components });
+  // A visitor's text as Solid and Svelte write it into an attribute: only " and & escaped.
+  const quoted = '<count-stepper name=x> <img src=x onerror=alert(1)>';
+  const html = layout(`
+    <div title="${quoted}">a</div><p title="1 > 0 <count-stepper name=q>">q</p><p data-x='<count-stepper name="b"></count-stepper>'>b</p>
+    <!-- <count-stepper name="c"></count-stepper> -->
+    <script>const tag = "<count-stepper name=d></count-stepper>";</script>
+    <textarea><count-stepper name="e"></count-stepper></textarea>
+    <count-stepper name="real"></count-stepper>`);
+  const injected = zubra.injectShadowRoots(html);
+  assert.equal(injected.match(/<template shadowrootmode/g)?.length, 1, injected);
+  assert.match(injected, /<count-stepper name="real"><template shadowrootmode/);
+  // Everything before the real host is exactly as it was.
+  assert.equal(injected.slice(0, injected.indexOf('<count-stepper name="real">')), html.slice(0, html.indexOf('<count-stepper name="real">')));
+  // And streamed, however the chunks fall: a piece ending inside the comment, the script or an
+  // attribute's value still knows where it is.
+  for (const size of [1, 2, 5, 11, 4096]) {
+    const stream = zubra.injectShadowRootsStream();
+    const out = [];
+    stream.on('data', (chunk) => out.push(chunk));
+    const done = new Promise((resolve) => stream.on('end', resolve));
+    const bytes = Buffer.from(html);
+    for (let at = 0; at < bytes.length; at += size) stream.write(bytes.subarray(at, at + size));
+    stream.end();
+    await done;
+    assert.equal(Buffer.concat(out.map((chunk) => Buffer.from(chunk))).toString(), injected, `chunks of ${size} bytes`);
+  }
 });
 
 test('injectShadowRootsStream: the same result as the whole page, however the chunks fall', async () => {

@@ -13,7 +13,7 @@
 //
 // Merging is last-writer-wins per field, by clock. A device that was offline pushes what it
 // wrote when it's back; whichever write has the later clock wins, on every device alike.
-import { onWrite, receive, currentStore, onPresence, receivePresence, peerId, startingPull } from './index.js';
+import { onWrite, receive, currentStore, onPresence, receivePresence, peerId, newPeerId, startingPull } from './index.js';
 import { mesh } from './webrtc.js';
 
 const CLOCKS = '$clocks';
@@ -252,7 +252,8 @@ export function connect({ url = '/_zb/sync', interval = 2000, live = true, webrt
   let key = '';
   const listen = () => {
     if (!live || typeof EventSource === 'undefined' || stopped) return;
-    source = new EventSource(`${base}/live?since=${encodeURIComponent(cursor)}&peer=${encodeURIComponent(peerId())}${key ? `&key=${key}` : ''}${scoped}`);
+    const at = `${base}/live?since=${encodeURIComponent(cursor)}&peer=${encodeURIComponent(peerId())}${key ? `&key=${key}` : ''}${scoped}`;
+    source = new EventSource(at);
     source.addEventListener('open', () => (open = true));
     source.addEventListener('hello', (event) => (key = JSON.parse(event.data).key ?? ''));
     source.addEventListener('changes', (event) => apply(JSON.parse(event.data)));
@@ -264,11 +265,25 @@ export function connect({ url = '/_zb/sync', interval = 2000, live = true, webrt
     source.addEventListener('signal', (event) => rtc?.receiveSignal(JSON.parse(event.data)));
     source.addEventListener('error', () => {
       // Reconnect from the current cursor (EventSource would reuse the first one).
+      const opened = open;
       open = false;
       source?.close();
       source = null;
       clearTimeout(retry);
-      retry = setTimeout(listen, 1000);
+      if (opened) return void (retry = setTimeout(listen, 1000));
+      // It never opened: the server may be down, or (EventSource can't say which) answered 409
+      // because another viewer holds this peer id now. Asked once to tell: a 409 means a new id.
+      const asking = new AbortController();
+      fetch(at, { signal: asking.signal })
+        .then((answer) => {
+          asking.abort();
+          if (answer.status === 409) {
+            key = '';
+            newPeerId();
+          }
+        })
+        .catch(() => {})
+        .finally(() => (retry = setTimeout(listen, 1000)));
     });
   };
 
@@ -278,7 +293,7 @@ export function connect({ url = '/_zb/sync', interval = 2000, live = true, webrt
   const rtc =
     webrtc && typeof RTCPeerConnection !== 'undefined'
       ? mesh({
-          self: peerId(),
+          self: peerId, // read each time: a tab can be given a new one
           iceServers: webrtc.iceServers ?? [],
           deliver: receivePresence,
           signal: (room, to, data) =>
