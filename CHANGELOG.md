@@ -4,6 +4,8 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+## 5.18.0 — 2026-11-15
+
 ### Security
 
 From a review of what changed since the 2026-11-12 audit (the joined modules, CSS and sources sent once, the render cache, the slot routers, interface 4 and `@zubra/router`).
