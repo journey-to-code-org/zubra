@@ -1,0 +1,46 @@
+{
+  "name": "@zubra/router",
+  "version": "5.15.0",
+  "description": "Serve Zubra components that say 'use route <path>' as pages, with a server-only load, for apps with no host framework.",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./table": {
+      "types": "./src/table.d.ts",
+      "default": "./src/table.js"
+    }
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "dependencies": {
+    "urlpattern-polyfill": "10.1.0"
+  },
+  "peerDependencies": {
+    "@zubra/compiler": "^5.15.0",
+    "@zubra/server": "^5.15.0"
+  },
+  "devDependencies": {
+    "@zubra/compiler": "file:../compiler",
+    "@zubra/runtime": "file:../runtime",
+    "@zubra/server": "file:../server"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/journey-to-code-org/zubra.git",
+    "directory": "router"
+  }
+}

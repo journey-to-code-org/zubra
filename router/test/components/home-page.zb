@@ -1,0 +1,4 @@
+<script>
+  'use route /'
+</script>
+<home-page><h1>Home</h1></home-page>
