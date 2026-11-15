@@ -4,6 +4,14 @@
 // A page says where it lives with 'use route /farms/:id', or, in a `routes/` folder, with a
 // bare 'use route' and its place in the folder (`routes/farms/[id].zb` is `/farms/:id`).
 // Both make the same table. Matching is URLPattern's pathname syntax.
+//
+// A layout wraps the pages under its prefix, the page in its default <zb-slot>: `app.zb` wraps
+// every page, 'use layout /farm' (or `routes/farm/layout.zb` with a bare 'use layout') wraps
+// /farm and everything below it, and they nest. 'use layout /farm root' starts over there:
+// its pages aren't inside `app.zb` or any layout above it.
+
+/** The component that is the app's shell, the outermost layout, when there is one. */
+export const APP = 'app';
 
 /** The folder `routes/` pages live in, relative to the components folder. */
 export const ROUTES = 'routes';
@@ -12,11 +20,15 @@ export const ROUTES = 'routes';
  * The path a component's place in `routes/` gives it, or null outside the folder:
  * `routes/index` → `/`, `routes/farms/[id]` → `/farms/:id`, `routes/docs/[...path]` → `/docs/:path*`.
  */
-export function folderPattern(name) {
+export function folderPattern(name, kind = 'page') {
   const parts = name.split('/');
   if (parts[0] !== ROUTES || parts.length < 2) return null;
   const segments = parts.slice(1);
-  if (segments.at(-1) === 'index') segments.pop();
+  // A layout's prefix is its folder (`routes/farm/layout` → `/farm`); any other name isn't one.
+  if (kind === 'layout') {
+    if (segments.at(-1) !== 'layout') return null;
+    segments.pop();
+  } else if (segments.at(-1) === 'index') segments.pop();
   const pattern = segments.map((segment) => {
     const rest = /^\[\.\.\.([A-Za-z_$][\w$]*)\]$/.exec(segment);
     if (rest) return `:${rest[1]}*`;
@@ -51,16 +63,26 @@ export class RouteError extends Error {
 export function buildTable(entries) {
   const pages = [];
   const layouts = [];
-  for (const { name, file = name, props = [], route } of entries) {
-    const fromFolder = route.kind === 'layout' ? null : folderPattern(name);
-    let pattern = route.pattern;
+  for (const entry of entries) {
+    const { name, file = name, props = [], slots } = entry;
+    // `app.zb` is the shell whether or not it says so; it can say 'use layout /' to have a `load`.
+    const route = entry.route ?? (name === APP ? { kind: 'layout', pattern: '/' } : null);
+    if (!route) continue;
+    if (name === APP && (route.kind !== 'layout' || (route.pattern ?? '/') !== '/')) {
+      throw new RouteError(`${file} is the app's shell, the layout around every page: it can say 'use layout /' (to export \`load\`), not 'use ${[route.kind === 'layout' ? 'layout' : 'route', route.pattern].filter(Boolean).join(' ')}'`);
+    }
+    const layout = route.kind === 'layout';
+    const word = layout ? 'layout' : 'route';
+    const fromFolder = folderPattern(name, route.kind);
+    let pattern = route.pattern ?? (name === APP ? '/' : null);
+    if (layout && slots && !slots.includes('default')) {
+      throw new RouteError(`${file} is a layout with nowhere for its page: put \`<zb-slot></zb-slot>\` where the page goes`);
+    }
     if (pattern == null) {
-      if (route.kind === 'layout') {
-        // Layouts by folder are A3's; until then a layout names its prefix.
-        throw new RouteError(`${file} says 'use layout' with no prefix: name it, 'use layout /farm'`);
-      }
       if (fromFolder == null) {
-        throw new RouteError(`${file} says 'use route' with no path, and isn't in a ${ROUTES}/ folder: name its path ('use route /farms/:id'), or move it to ${ROUTES}/`);
+        throw new RouteError(layout
+          ? `${file} says 'use layout' with no prefix, and isn't a layout.zb in a ${ROUTES}/ folder: name its prefix ('use layout /farm'), or make it ${ROUTES}/farm/layout.zb`
+          : `${file} says 'use route' with no path, and isn't in a ${ROUTES}/ folder: name its path ('use route /farms/:id'), or move it to ${ROUTES}/`);
       }
       pattern = fromFolder;
       // The compiler checked a written path's parameters; a folder's are checked here.
@@ -69,10 +91,9 @@ export function buildTable(entries) {
         if (!read) throw new RouteError(`${file} is ${pattern}, whose parameter \`${param}\` neither \`load\` nor a prop reads`);
       }
     } else if (fromFolder != null && fromFolder !== pattern) {
-      throw new RouteError(`${file} says 'use route ${pattern}', but its place in ${ROUTES}/ makes it ${fromFolder}: drop the path from the directive, or move the file`);
+      throw new RouteError(`${file} says 'use ${word} ${pattern}', but its place in ${ROUTES}/ makes it ${fromFolder}: drop the path from the directive, or move the file`);
     }
-    const entry = { name, file, pattern, params: patternParams(pattern), load: Boolean(route.load), root: Boolean(route.root) };
-    (route.kind === 'layout' ? layouts : pages).push(entry);
+    (layout ? layouts : pages).push({ name, file, pattern, params: patternParams(pattern), load: Boolean(route.load), root: Boolean(route.root) });
   }
   for (const list of [pages, layouts]) {
     const seen = new Map();
@@ -83,7 +104,25 @@ export function buildTable(entries) {
     }
   }
   pages.sort((a, b) => compareSpecificity(a.pattern, b.pattern));
+  layouts.sort((a, b) => segmentsOf(a.pattern).length - segmentsOf(b.pattern).length);
+  for (const page of pages) page.layouts = layoutsFor(page.pattern, layouts).map((layout) => layout.name);
   return { pages, layouts };
+}
+
+const segmentsOf = (pattern) => pattern.split('/').filter(Boolean);
+
+/**
+ * The layouts around a page, outermost first: every layout whose prefix is the start of the
+ * page's path, segment for segment (`/farm` is around `/farm` and `/farm/stock`, not
+ * `/farmers`), from the innermost `root` one inwards.
+ */
+export function layoutsFor(pattern, layouts) {
+  const path = segmentsOf(pattern);
+  const around = layouts
+    .filter((layout) => segmentsOf(layout.pattern).every((segment, index) => path[index] === segment))
+    .sort((a, b) => segmentsOf(a.pattern).length - segmentsOf(b.pattern).length);
+  const from = around.findLastIndex((layout) => layout.root);
+  return from > 0 ? around.slice(from) : around;
 }
 
 // Static segments before parameters before wildcards, segment by segment; then longer first.

@@ -85,6 +85,13 @@ fn a_layout_has_a_prefix_and_can_be_a_root() {
     assert_eq!(interface["route"]["kind"], "layout");
     assert_eq!(interface["route"]["pattern"], "/farm");
     assert_eq!(interface["route"]["root"], true);
+    // The interface names the slots, so the router can tell a layout has somewhere for its page.
+    assert_eq!(interface["slots"], serde_json::json!(["default"]));
+    let named: serde_json::Value = serde_json::from_str(
+        &compile_interface(r#"<x-y><zb-slot name="side"></zb-slot></x-y>"#).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(named["slots"], serde_json::json!(["side"]));
     let plain =
         r#"<script>'use layout /farm'</script><farm-shell><zb-slot></zb-slot></farm-shell>"#;
     let interface: serde_json::Value =

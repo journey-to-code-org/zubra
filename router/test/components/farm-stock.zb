@@ -1,0 +1,4 @@
+<script>
+  'use route /farm/stock'
+</script>
+<farm-stock><h1>Stock</h1></farm-stock>

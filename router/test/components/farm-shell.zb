@@ -1,0 +1,14 @@
+<script>
+  'use layout /farm root'
+  export async function load({ url }) {
+    return { farmer: url.searchParams.get('as') ?? 'Ada', hidden: 'stays on the server' }
+  }
+</script>
+<farm-shell route={{}} farmer="">
+  <nav class="farm">
+    <a href="/farm" aria-current={route.path === '/farm' ? 'page' : null}>Today</a>
+    <a href="/farm/stock" aria-current={route.path === '/farm/stock' ? 'page' : null}>Stock</a>
+  </nav>
+  <p class="farmer">{farmer}</p>
+  <section><zb-slot></zb-slot></section>
+</farm-shell>
