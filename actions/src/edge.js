@@ -11,7 +11,7 @@
 // /_zb/actions.js, as the runtime is, unless you pass its source as `client`.
 import { createActionsCore, routesFrom } from './core.js';
 
-export { MOUNT, SCRIPT_PATH, COOKIE } from './core.js';
+export { MOUNT, SCRIPT_PATH, COOKIE, SECURE_COOKIE } from './core.js';
 
 /**
  * `actions`: `{ url: fn }`, the build's `actions` (or several merged). `context(…)` gets

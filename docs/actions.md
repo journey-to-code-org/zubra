@@ -123,6 +123,8 @@ page.render('login-form', { message: done?.value?.error ?? '' });
 
 The adapters do this for you: `c.get('zubraAction')` (Hono), `res.locals.zubraAction` (Express), `request.zubraAction` (Fastify). A result bigger than a cookie holds (about 4 KB) reaches only the JavaScript path.
 
+Only that page reads it: `result()` on any other path answers `null` and leaves the cookie for the page it's meant for. On HTTPS the cookie is `__Host-zb_result` and `Secure`, so a sibling subdomain or a plain-HTTP response can't plant a result of its own; on plain HTTP (local development) it's `__zb_result`. With no `Referer` (a browser setting, or a client that sends none) the post goes back to `/`.
+
 ## Security
 
 - **Cross-site posts are refused** (by `Sec-Fetch-Site`, or `Origin` when that's missing), so a form on another site can't call an action with your users' cookies. Allow more origins with `origins: [...]`.
