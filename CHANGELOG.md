@@ -4,6 +4,8 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+## 5.19.0 — 2026-11-15
+
 ### Security
 
 What the second 2026-11-15 security audit found, most of it in `@zubra/router` (new in 5.17.0), beyond what 5.18.0 fixed.
