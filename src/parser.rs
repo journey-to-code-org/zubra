@@ -311,6 +311,7 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
         script,
         nodes,
         children: Vec::new(),
+        resolved: crate::ast::Checked::default(),
         contexts: Vec::new(),
     })
 }

@@ -39,6 +39,7 @@ mod format;
 mod ir;
 mod joined;
 mod jsx;
+mod loaded;
 mod namespaces;
 mod parser;
 mod pure;
@@ -80,6 +81,11 @@ fn load(
     path: &str,
     loader: Option<Loader<'_>>,
 ) -> Result<std::rc::Rc<ast::ComponentAst>, Diagnostic> {
+    // A set loaded once doesn't change (its tsconfig.json files neither), so what it parsed
+    // is the answer, without the checks below.
+    if let Some(component) = loaded::parsed(path, source) {
+        return Ok(component);
+    }
     // A TypeScript component is compiled under its nearest tsconfig.json. The options are read
     // before the cache is asked, and are part of what it checks: a tsconfig.json that changed,
     // or appeared nearer, means a fresh parse.
@@ -90,6 +96,7 @@ fn load(
         _ => tsconfig::Options::default(),
     };
     if let Some(component) = parsed::get(source, path, loader, &options) {
+        loaded::keep(path, source, &component);
         return Ok(component);
     }
     // Record what the loader answers, so a later request can check that the imports are unchanged.
@@ -116,6 +123,7 @@ fn load(
     })?;
     let component = std::rc::Rc::new(component);
     parsed::put(source, path, &component, answers.into_inner(), options);
+    loaded::keep(path, source, &component);
     Ok(component)
 }
 

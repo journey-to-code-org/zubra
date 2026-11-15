@@ -267,6 +267,16 @@ test('dts: { dir }: apps in different frameworks type one shared components fold
   assert.equal(loose, '');
   assert.match(typecheck(fresh, ['src/client.d.ts', 'src/App.tsx'], { extends: './.zubra/types/tsconfig.json' }), /TS5083/);
 
+  // `zubra types` on that fresh checkout writes what the build wrote, so tsc is strict before one.
+  writeFileSync(join(fresh, 'package.json'), JSON.stringify({ dependencies: { react: '^19.0.0' } }));
+  const typed = spawnSync(process.execPath, [join(repo, 'compiler/cli.js'), 'types', 'src', '../ui'], { cwd: fresh, encoding: 'utf8', env: { ...process.env, ZUBRA_COMPILER: compiler } });
+  assert.equal(typed.status, 0, typed.stderr);
+  for (const file of ['__/ui/rating.d.zb.ts', '__/ui/card.d.zb.ts', 'tsconfig.json']) {
+    assert.equal(readFileSync(join(fresh, '.zubra/types', file), 'utf8'), readFileSync(join(roots.react, '.zubra/types', file), 'utf8'), file);
+  }
+  assert.equal(typecheck(fresh, ['src/client.d.ts', 'src/App.tsx', 'src/kinds.ts'], own), '');
+  assert.match(typecheck(fresh, ['src/client.d.ts', 'src/bad.tsx'], own), /bad\.tsx\(3,.*Type 'string' is not assignable to type 'number'/);
+
   // The app's own components (inside the root) are mirrored as they are.
   cpSync(join(fixtures, 'badge.zb'), join(roots.react, 'src/own-badge.zb'));
   writeFileSync(join(roots.react, 'src/kinds.ts'), `${readFileSync(join(roots.react, 'src/kinds.ts'), 'utf8')}\nimport './own-badge.zb';\n`);

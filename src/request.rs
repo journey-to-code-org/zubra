@@ -24,6 +24,10 @@
 //! (`start`, `end` in bytes) answers with the one edit that formats the lines the range touches. `command: "refactor"`
 //! with `action: "extract"`, `start`/`end` (byte offsets of the markup to extract) and `tag`
 //! answers with the edits that turn it into a new component (see `refactor.rs`).
+//! `command: "load"` with `files` keeps them and answers with a handle; a request then has
+//! `"loaded": "<handle>"` where it would have `"files"`, and gets the answer the files would. A
+//! compiler that doesn't have the handle answers not ok with `"reload": true`: load the files
+//! again (see `loaded.rs`).
 //! `command: "join"` takes no component: `modules` (`[{ path, code }]`, browser modules) and `at`
 //! (the path the result is served at), and answers with them as one module, or, not ok and with
 //! `"apart": true`, with why they have to stay separate (see `joined.rs`).
@@ -101,20 +105,54 @@ fn respond(request: &Map<String, Value>) -> Value {
             }
         };
     }
-    let Some(path) = text("path") else {
-        return failure("`path` is required");
-    };
-    let files: HashMap<String, String> = match request.get("files") {
-        Some(Value::Object(files)) => files
+    let given = |files: &Map<String, Value>| -> HashMap<String, String> {
+        files
             .iter()
             .filter_map(|(path, source)| {
                 source
                     .as_str()
                     .map(|source| (normalize(path), source.to_owned()))
             })
-            .collect(),
+            .collect()
+    };
+    // `load`: keep `files` for the requests that follow, and answer with the handle they name
+    // them by (`"loaded"`, where `"files"` would be). See `loaded.rs`.
+    if text("command") == Some("load") {
+        return match request.get("files") {
+            Some(Value::Object(files)) => {
+                json!({ "ok": true, "output": crate::loaded::load(given(files)), "error": null, "warnings": [], "diagnostics": [] })
+            }
+            _ => failure("`files` must map paths to sources"),
+        };
+    }
+    let Some(path) = text("path") else {
+        return failure("`path` is required");
+    };
+    // The request's files: a set loaded before, or its own.
+    let set = match (text("loaded"), request.get("files")) {
+        (Some(handle), None) => match crate::loaded::get(handle) {
+            Some(set) => set,
+            // A compiler started since, or one that let the set go: send the files again.
+            None => {
+                let mut response =
+                    failure("`loaded` names no set this compiler has: `load` its files again");
+                response["reload"] = json!(true);
+                return response;
+            }
+        },
+        (None, Some(Value::Object(files))) => {
+            std::rc::Rc::new(crate::loaded::Set::new(given(files)))
+        }
+        (Some(_), Some(_)) => return failure("a request has `loaded` or `files`, not both"),
         _ => return failure("`files` must map paths to sources"),
     };
+    crate::loaded::reading(&set, || answer(request, path, &set))
+}
+
+/// A request for the component at `path`, answered from `set`'s files.
+fn answer(request: &Map<String, Value>, path: &str, set: &crate::loaded::Set) -> Value {
+    let text = |key: &str| request.get(key).and_then(Value::as_str);
+    let files = &set.files;
     let path = normalize(path);
     let Some(source) = files.get(&path) else {
         return failure(&format!("`files` has no source for `{path}`"));
@@ -330,7 +368,7 @@ fn respond(request: &Map<String, Value>) -> Value {
         };
     }
 
-    let warnings = crate::warnings_with(source, &path, &loader);
+    let warnings = set.warnings(&path, || crate::warnings_with(source, &path, &loader));
     let mut diagnostics: Vec<Value> = warnings
         .iter()
         .map(|warning| entry(&path, warning, "warning"))
@@ -670,6 +708,122 @@ mod tests {
         // Nothing to say for a component with no styles.
         let bare = "<x-tag><b>x</b></x-tag>";
         assert_eq!(js(bare, Some("/x.css")), js(bare, None));
+    }
+
+    #[test]
+    fn files_loaded_once_answer_every_request_that_names_them_as_the_files_would() {
+        let parent = r#"<script>import ZbTag from './tag.zb'</script><zb-list name="x"><zb-tag tone={name}></zb-tag><p onclick={() => 1}>{name}</p></zb-list>"#;
+        let tag = r#"<zb-tag tone="plain"><b>{tone}</b></zb-tag>"#;
+        let files = json!({ "/app/list.zb": parent, "/app/tag.zb": tag });
+        let loaded = call(json!({ "command": "load", "files": files }));
+        assert_eq!(loaded["ok"], true, "{loaded}");
+        let handle = loaded["output"].as_str().unwrap().to_owned();
+        // Every kind of answer, several times over (the second from what the set kept), is
+        // the answer the files themselves get: output, warnings and diagnostics.
+        for _ in 0..3 {
+            for (emit, props) in [
+                ("html", json!({ "name": "Ada" })),
+                ("html", json!({ "name": "Bo" })),
+                ("js", json!({})),
+                ("css", json!({})),
+                ("interface", json!({})),
+            ] {
+                let with = |source: (&str, Value)| {
+                    let mut request = json!({ "path": "/app/list.zb", "emit": emit, "props": props, "partial": true, "gaps": true });
+                    request[source.0] = source.1;
+                    call(request)
+                };
+                let by_handle = with(("loaded", json!(handle)));
+                assert_eq!(by_handle["ok"], true, "{emit}: {by_handle}");
+                assert_eq!(by_handle, with(("files", files.clone())), "{emit}");
+            }
+        }
+        let html = call(
+            json!({ "path": "/app/tag.zb", "loaded": handle, "emit": "html", "props": { "tone": "warm" } }),
+        );
+        assert!(
+            html["output"].as_str().unwrap().contains("<b>warm</b>"),
+            "any file of the set: {html}"
+        );
+        // An error is the same error.
+        let broken = json!({ "/app/list.zb": "<zb-list><p>{missing}</p></zb-list>" });
+        let broken_handle = call(json!({ "command": "load", "files": broken }))["output"].clone();
+        assert_eq!(
+            call(json!({ "path": "/app/list.zb", "loaded": broken_handle, "emit": "html" })),
+            call(json!({ "path": "/app/list.zb", "files": broken, "emit": "html" }))
+        );
+        // The child edited is another set, under another handle; the first still answers as it was.
+        let edited = json!({ "/app/list.zb": parent, "/app/tag.zb": tag.replace("<b>", "<i>").replace("</b>", "</i>") });
+        let edited_handle = call(json!({ "command": "load", "files": edited }))["output"].clone();
+        assert_ne!(edited_handle, json!(handle));
+        let render = |handle: &Value| {
+            call(json!({ "path": "/app/list.zb", "loaded": handle, "emit": "html", "props": { "name": "Ada" } }))["output"].as_str().unwrap().to_owned()
+        };
+        assert!(render(&edited_handle).contains("<i>Ada</i>"));
+        assert!(render(&json!(handle)).contains("<b>Ada</b>"));
+    }
+
+    #[test]
+    fn a_handle_this_compiler_does_not_have_asks_for_the_files_again() {
+        let unknown = call(
+            json!({ "path": "/app/list.zb", "loaded": "00000000000000000000000000000000", "emit": "html" }),
+        );
+        assert_eq!(unknown["ok"], false);
+        assert_eq!(unknown["reload"], true, "{unknown}");
+        // Other mistakes are not a reason to send the files again.
+        let files = json!({ "/app/x.zb": "<x-x></x-x>" });
+        let handle = call(json!({ "command": "load", "files": files }))["output"].clone();
+        for request in [
+            json!({ "path": "/app/x.zb", "loaded": handle, "files": files, "emit": "html" }),
+            json!({ "path": "/app/other.zb", "loaded": handle, "emit": "html" }),
+            json!({ "path": "/app/x.zb", "emit": "html" }),
+            json!({ "command": "load" }),
+            json!({ "command": "load", "files": [] }),
+        ] {
+            let response = call(request.clone());
+            assert_eq!(response["ok"], false, "{request}");
+            assert!(response.get("reload").is_none(), "{request}: {response}");
+        }
+    }
+
+    #[test]
+    fn a_templates_names_are_resolved_once_and_an_unknown_one_is_still_an_error_every_time() {
+        let render = |source: &str, props: Value, slots: Value| {
+            call(
+                json!({ "path": "/app/x-names.zb", "files": { "/app/x-names.zb": source }, "emit": "html", "props": props, "slots": slots }),
+            )
+        };
+        let good = "<script>\n  let count = 2\n</script>\n<x-names label=\"a\"><p>{label} {count}</p><zb-if test={count > 5}><b>{label}</b></zb-if><slot></slot></x-names>";
+        // The same parsed component, render after render, whatever the props are.
+        for label in ["one", "two", "three"] {
+            let response = render(good, json!({ "label": label }), json!({}));
+            assert!(
+                response["output"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains(&format!("<p>{label} 2</p>")),
+                "{response}"
+            );
+        }
+        // A name that doesn't resolve is the error on the first render and on every one after,
+        // in a branch that isn't rendered too.
+        let bad = good.replace("<b>{label}</b>", "<b>{lable}</b>");
+        let first = render(&bad, json!({}), json!({}));
+        assert_eq!(first["ok"], false);
+        assert!(
+            first["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("lable"),
+            "{first}"
+        );
+        assert_eq!(
+            render(&bad, json!({ "label": "x" }), json!({})),
+            render(&bad, json!({ "label": "x" }), json!({}))
+        );
+        assert_eq!(render(&bad, json!({}), json!({}))["error"], first["error"]);
+        // And the edit that fixes it renders.
+        assert_eq!(render(good, json!({}), json!({}))["ok"], true);
     }
 
     #[test]

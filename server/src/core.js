@@ -41,8 +41,41 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     return path;
   };
   const sourcesOf = (path) => once(`sources:${path}`, () => readSources(path));
+  /**
+   * A request about a component, its sources sent once. The compiler keeps a set of files
+   * under a handle (`command: 'load'`), and a request that names the handle doesn't carry
+   * them: for a small component the sources were most of the request, and reading them most
+   * of the work. A compiler that doesn't have the handle (a new instance after a crash, one
+   * that let the set go) says `reload`, and gets the files again.
+   *
+   * Only with `cache`, where a component's sources are read once and so are the same object
+   * each time (without it they are read again for every request, to pick up edits). And not
+   * with a compiler that doesn't keep what it loads (an older one, or a process per request):
+   * after one try, the files go with every request as before.
+   */
+  const handles = new WeakMap(); // a component's sources → their handle
+  let loads = cache;
+  const send = (body) => {
+    if (!loads) return request(body);
+    const { files: sources, ...rest } = body;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let handle = handles.get(sources);
+      if (handle === undefined) {
+        const loaded = request({ command: 'load', files: sources });
+        // (An older compiler doesn't know `load`: its answer has no handle.)
+        if (typeof loaded.output !== 'string') break;
+        handle = loaded.output;
+        handles.set(sources, handle);
+      }
+      const response = request({ ...rest, loaded: handle });
+      if (!response.reload) return response;
+      handles.delete(sources);
+    }
+    loads = false;
+    return request(body);
+  };
   const call = (path, body) => {
-    const response = request({ path, files: sourcesOf(path), ...body });
+    const response = send({ path, files: sourcesOf(path), ...body });
     if (!response.ok) throw new Error(response.error);
     return response.output;
   };
@@ -101,7 +134,7 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   let renderedSize = 0;
   const answer = (name, props, slots, pending, idPrefix, context) => {
     const path = pathOf(name);
-    const ask = () => request({ path, files: sourcesOf(path), emit: 'html', props, slots, slotSource: 'html', partial: true, ...(gaps === 'warn' ? { gaps: true } : {}), ...(pending.length ? { pending } : {}), ...(idPrefix ? { idPrefix } : {}), ...(Object.keys(context).length ? { context } : {}) });
+    const ask = () => send({ path, files: sourcesOf(path), emit: 'html', props, slots, slotSource: 'html', partial: true, ...(gaps === 'warn' ? { gaps: true } : {}), ...(pending.length ? { pending } : {}), ...(idPrefix ? { idPrefix } : {}), ...(Object.keys(context).length ? { context } : {}) });
     if (!cache || pending.length) return ask();
     // What the request would say, as it would say it (JSON), so two keys are equal exactly when
     // the two requests are.
@@ -177,7 +210,7 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   // address in place of its text (a light-DOM component's; see the joined module below).
   const js = (name, stylesHref) => once(`js:${name}${stylesHref ? `:${stylesHref}` : ''}`, () => {
     const path = pathOf(name);
-    const response = request({ emit: 'js', runtime: '@zubra/runtime', devtools, path, files: sourcesOf(path), ...(stylesHref ? { stylesHref } : {}) });
+    const response = send({ emit: 'js', runtime: '@zubra/runtime', devtools, path, files: sourcesOf(path), ...(stylesHref ? { stylesHref } : {}) });
     if (!response.ok) throw new Error(response.error);
     return resolved(needs(name, response.output));
   });
