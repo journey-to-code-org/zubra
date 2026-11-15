@@ -1016,10 +1016,17 @@ function serverElement(tag, options) {
 /**
  * The version of the compiled-code interface: what `$define()`'s arguments and parts mean, and the
  * server markup they hydrate. 3 (5.0) is 2 with processing-instruction markers; this runtime reads
- * 2's comment markers too, so modules compiled by 3.x and 4.x still run.
+ * 2's comment markers too, so modules compiled by 3.x and 4.x still run. 4 (5.17) is parts that
+ * name their binders, as 5.17 and 5.18 wrote them; 5 (5.19.1) also names event modifiers'
+ * binder, form controls and hydration, which 4 left to the runtime.
+ *
+ * Bump it whenever compiled output starts naming something the runtime used to do unasked:
+ * output from before the change still says the old number, and only `legacy.js` fills in what it
+ * doesn't name. (5.19.0 didn't, and ran 5.18's interface 4 output without its modifiers, form
+ * association or hydration: `test/browser/since-4.test.js`.)
  */
-export const ABI = 4;
-const READS = [2, 3, 4]; // what $define (legacy.js) reads; interface 4 output calls $element
+export const ABI = 5;
+const READS = [2, 3, 4, 5]; // what $define and $element (legacy.js) read; interface 5 output calls $component
 
 /**
  * What modules compiled for runtime 1.x call. Their compiled shape differs, so they're refused
@@ -1029,12 +1036,18 @@ export function define(tag) {
   throw new Error(`zubra: <${tag}> was compiled for @zubra/runtime 1.x; recompile it with zubra 2 (the CLI, @zubra/compiler or @zubra/unplugin)`);
 }
 
-/** @internal Register a component compiled for interface 4: its parts name their binders. */
-export function $element(tag, definition) {
-  if (definition?.abi !== ABI) {
-    throw new Error(`zubra: <${tag}> was compiled for a different @zubra/runtime (interface ${definition?.abi ?? 1}, this runtime is ${ABI}); recompile it with the matching zubra`);
-  }
+/**
+ * @internal Register a component compiled for interface 5: its parts and definition name what
+ * they need (binders, slots, form controls, hydration). Older output calls `$define` or `$element`.
+ */
+export function $component(tag, definition) {
+  if (definition?.abi !== ABI) refuse(tag, definition);
   return defineElement(tag, definition);
+}
+
+/** @internal A module compiled for an interface this runtime doesn't read: say what to do. */
+export function refuse(tag, definition) {
+  throw new Error(`zubra: <${tag}> was compiled for a different @zubra/runtime (interface ${definition?.abi ?? 1}, this runtime is ${ABI}); recompile it with the matching zubra`);
 }
 
 // @hot (left out of the production build: scripts/build-production.js)
