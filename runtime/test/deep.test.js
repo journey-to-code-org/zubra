@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { state, computed, from, raw, Signal } from '../src/index.js';
+import { trackItems } from '../src/deep.js';
 import { effect, flush } from '../src/effect.js';
 
 const watch = (fn) => {
@@ -132,4 +133,35 @@ test('an array read through a state mutated from inside a handler-like closure u
   items.get().push(3);
   flush();
   assert.equal(runs, 2);
+});
+
+test('trackItems: one read follows every item, through index writes, length, delete and array methods', () => {
+  const items = state(['a', 'b', 'c']);
+  let runs = 0;
+  effect(() => { trackItems(items.get()); runs++; });
+  flush();
+  const after = (change) => { change(items.get()); flush(); return runs; };
+  assert.equal(after((list) => { list[1] = 'B'; }), 2, 'an index write');
+  assert.equal(after((list) => { list[1] = 'B'; }), 2, 'the same value again is no change');
+  assert.equal(after((list) => { list.push('d'); }), 3, 'push');
+  assert.equal(after((list) => { delete list[0]; }), 4, 'delete');
+  assert.equal(after((list) => { list.length = 1; }), 5, 'length');
+  assert.equal(after((list) => { list.sort(); }), 5, 'a sort that moves nothing');
+  assert.equal(after((list) => { list.label = 'x'; }), 6, 'any own key counts, as reading each index did not: a list re-runs and finds nothing to do');
+  // A plain array, or anything else, is not tracked and not an error.
+  trackItems([1, 2]);
+  trackItems(null);
+});
+
+test('a read nothing is tracking keeps no signal: only tracked properties are held', () => {
+  const rows = state(Array.from({ length: 50 }, (_, id) => ({ id })));
+  const list = rows.get();
+  // Untracked: an event handler's loop.
+  for (let index = 0; index < list.length; index++) list[index].id;
+  const seen = watch(() => list[3].id);
+  list[3].id = 'three';
+  flush();
+  list[4].id = 'four';
+  flush();
+  assert.deepEqual(seen, [3, 'three'], 'the tracked read follows its property, and only that one');
 });

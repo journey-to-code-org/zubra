@@ -37,8 +37,11 @@ const BUDGETS = {
   // what @zubra/unplugin's light-DOM components import in place of their CSS as text, which
   // takes 0.55 KB off each of the comparison's hosts. Event modifiers in a module of their own,
   // modifiers.js, about 90 B here, to 17.75 KB: a component whose listeners have none no longer
-  // carries them, 0.34 KB off the comparison's six.)
-  'src/index.js': { gzip: 17.75 * 1024 },
+  // carries them, 0.34 KB off the comparison's six. A list's rows found by the places their
+  // template's first copy had, a one-element row copied without a fragment, and a list watching its
+  // array through one signal, about 230 B, to 18 KB: a fifth less script time to create, replace
+  // and append 1,000 rows.)
+  'src/index.js': { gzip: 18 * 1024 },
   // The production build (the `production` export condition): the same, without hot reloading
   // (12.5 KB until 3.2, 13 KB until 4.2, 13.5 KB until `animate`, 14 KB until the list work,
   // 14.25 KB until the faster Signals core, 14.75 KB until rows without markers, 15 KB until
@@ -48,8 +51,8 @@ const BUDGETS = {
   // with slots now imports, about 170 B here: this entry has both, an app with no slotted
   // component ships about 1.2 KB less; 15.5 KB until $pageStyles and modifiers.js, optional modules
   // in this entry, about 0.25 KB together, which take 0.55 and 0.34 KB off the apps that don't use
-  // what they replace).
-  'dist/production/index.js': { gzip: 15.75 * 1024 },
+  // what they replace; 15.75 KB until a list's rows were found by remembered places, about 230 B).
+  'dist/production/index.js': { gzip: 16 * 1024 },
   // An app that only uses Signals and effects.
   'src/effect.js': { gzip: 4 * 1024 },
   // `animate`'s leave() and glide(), loaded only by components that animate.
@@ -125,7 +128,8 @@ for (const [entry, budget] of Object.entries(ADAPTERS)) {
 // once event modifiers and form controls were modules of their own too (so a bundler leaves them
 // out), two more files in the core's graph. @zubra/server sends the core as one file in
 // production (dist/bundled/zubra.js), so this is for a server without a bundler that doesn't.
-const SERVED = 18.75 * 1024;
+// 19.0 KB once a list's rows were found by remembered places (about 230 B, in blocks.js and deep.js).
+const SERVED = 19 * 1024;
 
 test('dist/production as served fits its budget', (t) => {
   const dir = join(here, '../../dist/production');
@@ -146,8 +150,8 @@ test('dist/production as served fits its budget', (t) => {
 // The same as one file (`dist/bundled/zubra.js`, what `@zubra/server` sends with `bundle`): the
 // modules compress together. 18.6 KB file by file, 16.0 KB as one (5.15); 13.6 KB once zb-await's
 // binder, the slot router and $define were files of their own (5.18), which a page loads only if
-// its components use them.
-const BUNDLED = 14 * 1024;
+// its components use them; 14.2 KB once a list's rows were found by remembered places.
+const BUNDLED = 14.25 * 1024;
 
 test('dist/bundled/zubra.js fits its budget, under the file-by-file build', (t) => {
   const size = gzipSync(readFileSync(join(here, '../../dist/bundled/zubra.js'), 'utf8')).length;

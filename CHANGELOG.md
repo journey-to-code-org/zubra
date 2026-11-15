@@ -4,6 +4,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Changed
+
+- **Lists are created with about a fifth less script time.** Three changes in `@zubra/runtime`, none to compiled output: a `zb-each` row's bound nodes are found by the places they had in the template's first copy, not by walking each copy for markers (rows with a custom element inside are found as before); a row that is one element is a copy of that element, with no fragment around it; and a list watches its array through one signal for "an item or the length changed", in place of one signal per index. A property read through reactive state that nothing is tracking (an event handler, a loop outside an effect) no longer makes a signal for that property. On the js-framework-benchmark's operations, script time in Chromium (CPU profile, 30 cycles, three runs): create then clear 1,000 rows 34.9 to 27.6 ms, replace 1,000 rows 70.6 to 55.0 ms, create, append 1,000 and clear 74.2 to 60.7 ms (Solid: 13.6, 25.9 and 27.5 ms on the same machine). The runtime is about 230 B larger compressed.
+
 ## 5.19.0 — 2026-11-15
 
 ### Security
