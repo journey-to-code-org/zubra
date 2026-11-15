@@ -2535,12 +2535,11 @@ impl Context<'_> {
                 continue; // a prop of the child, passed as one
             }
             let lower = key.to_ascii_lowercase();
+            // A spread's object is data, often a visitor's: what it can't set is left out, as the
+            // runtime leaves it out, not an error that would fail every render spreading it.
             if lower.len() > 2 && lower.starts_with("on") {
                 if value.is_string() {
-                    return Err(Diagnostic::new(
-                        *span,
-                        format!("a spread can't add a handler as text (`{key}`): pass a function"),
-                    ));
+                    omit_name("a handler (pass a function, not text)", &key);
                 }
                 continue; // listeners exist only in the browser
             }
@@ -2550,15 +2549,14 @@ impl Context<'_> {
                 "innertext",
                 "textcontent",
                 "srcdoc",
+                "ping",
                 "dangerouslysetinnerhtml",
                 "children",
             ]
             .contains(&lower.as_str())
             {
-                return Err(Diagnostic::new(
-                    *span,
-                    format!("a spread can't set `{key}`"),
-                ));
+                omit_name("one a spread may set", &key);
+                continue;
             }
             let name = match lower.as_str() {
                 "classname" => "class".to_owned(),
@@ -3098,6 +3096,14 @@ fn check_attribute_statically(attribute: &ast::Attribute) -> Result<(), Diagnost
         return Err(Diagnostic::new(
             attribute.span,
             "interpolation in srcdoc is not supported",
+        ));
+    }
+    // `ping` makes every click on the link POST to the URLs it lists, with the visitor's cookies
+    // when they are this site's (`/account/delete`): the template's text only.
+    if lower == "ping" && dynamic {
+        return Err(Diagnostic::new(
+            attribute.span,
+            "interpolation in ping is not supported: a click posts to every URL it lists, with the visitor's cookies",
         ));
     }
     if lower == "srcset" {

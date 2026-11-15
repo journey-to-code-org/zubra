@@ -447,6 +447,23 @@ fn rejects_unsafe_literal_urls_and_leaves_out_unsafe_values() {
 }
 
 #[test]
+fn ping_is_the_templates_text_only() {
+    let error = compile(r#"<x-a to=""><a href="/x" ping={to}>go</a></x-a>"#, "{}").unwrap_err();
+    assert!(
+        error.message.contains("interpolation in ping"),
+        "{}",
+        error.message
+    );
+    assert!(zubra::compile_js(
+        r#"<x-a to=""><a href="/x" ping="/t/{to}">go</a></x-a>"#,
+        "@zubra/runtime",
+        "x-a.zb"
+    )
+    .is_err());
+    compile(r#"<x-a><a href="/x" ping="/track">go</a></x-a>"#, "{}").unwrap();
+}
+
+#[test]
 fn a_meta_refresh_is_the_templates_text_only() {
     for source in [
         r#"<x-go next=""><meta http-equiv="refresh" content="0;url={next}"></x-go>"#,

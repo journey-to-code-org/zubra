@@ -16,7 +16,7 @@ const see = (section) => ` (see https://github.com/journey-to-code-org/zubra#${s
 // The same lists the compiler checks attributes against (src/validate.rs).
 const SPREAD_URLS = new Set(['action', 'background', 'cite', 'codebase', 'data', 'formaction', 'href', 'longdesc', 'manifest', 'poster', 'profile', 'src', 'xlink:href', 'usemap']);
 // Keys that would write markup or script: never from a spread.
-const SPREAD_REFUSED = new Set(['innerhtml', 'outerhtml', 'innertext', 'textcontent', 'srcdoc', 'dangerouslysetinnerhtml', 'children']);
+const SPREAD_REFUSED = new Set(['innerhtml', 'outerhtml', 'innertext', 'textcontent', 'srcdoc', 'ping', 'dangerouslysetinnerhtml', 'children']);
 // An animation's values and target (`<set attributeName="href" to="javascript:…">` is a link to a
 // URL nothing checks) and a <meta>'s http-equiv (a refresh redirects anywhere): the template's
 // text only, never a spread's, as on the server.
