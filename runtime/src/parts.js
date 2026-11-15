@@ -1,7 +1,7 @@
 // Binders for the less common simple parts: a window or document listener, a computed class list,
 // a class toggle and a style property. Interface 5 output names them (`binder: $classes`), so a
 // component without one carries none of their code; legacy.js fills them in for older output.
-import { $r, listen } from './element.js';
+import { $r, $srcset, $url, listen } from './element.js';
 import { effect } from './effect.js';
 
 /** @internal `<zb-window>`/`<zb-document>`: listening while this part of the template is rendered. */
@@ -42,4 +42,4 @@ export function $style(part, node) {
 }
 
 // A URL attribute's check (`url: $url`, `srcset: $srcset`), for output that imports by entry.
-export { $url, $srcset } from './element.js';
+export { $url, $srcset };
