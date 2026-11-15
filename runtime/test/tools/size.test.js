@@ -39,8 +39,11 @@ const BUDGETS = {
   // (12.5 KB until 3.2, 13 KB until 4.2, 13.5 KB until `animate`, 14 KB until the list work,
   // 14.25 KB until the faster Signals core, 14.75 KB until rows without markers, 15 KB until
   // form input kept through hydration, 15.25 KB until slots' stand-ins, 15.75 KB until 5.17, whose
-  // messages are only in development, about 0.7 KB).
-  'dist/production/index.js': { gzip: 15.25 * 1024 },
+  // messages are only in development, about 0.7 KB; 15.25 KB until a light-DOM component without
+  // slots kept the page's children in a fragment of its own, beside the slot router a component
+  // with slots now imports, about 170 B here: this entry has both, an app with no slotted
+  // component ships about 1.2 KB less).
+  'dist/production/index.js': { gzip: 15.5 * 1024 },
   // An app that only uses Signals and effects.
   'src/effect.js': { gzip: 4 * 1024 },
   // `animate`'s leave() and glide(), loaded only by components that animate.

@@ -210,6 +210,8 @@ export declare function $define(tag: string, definition: Definition & { abi: num
 export declare function $element(tag: string, definition: Definition & { abi: number }): ZubraElementClass;
 /** @internal The binders interface 4 parts name (`binder: $each`): compiled code imports them. */
 export declare const $when: unknown, $await: unknown, $each: unknown, $slot: unknown;
+/** @internal A light-DOM component's slots: interface 4 output with slots imports it (`slotting: $slotted`). */
+export declare const $slotted: unknown;
 /** The compiled-code interface version this runtime implements. */
 export declare const ABI: number;
 

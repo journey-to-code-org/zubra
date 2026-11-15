@@ -946,6 +946,16 @@ fn slots_compile_to_regions_in_light_dom_and_native_slots_in_shadow_dom() {
         shadow.contains(r#"{ path: [0, 0, 0], text: () => $t($p.title) }"#),
         "{shadow}"
     );
+    // Light DOM with slots imports what places content in them; shadow DOM has native slots.
+    assert!(light.contains("\n  slotting: $slotted,\n"), "{light}");
+    assert!(
+        light.contains("$slot, $slotted } from \"@zubra/runtime\";"),
+        "{light}"
+    );
+    assert!(
+        !shadow.contains("slotting") && !shadow.contains("$slotted"),
+        "{shadow}"
+    );
 }
 
 #[test]

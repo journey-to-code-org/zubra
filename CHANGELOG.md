@@ -4,6 +4,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Changed
+
+- **A light-DOM component imports the slot router only if it has slots.** What places a framework's or the page's children in a light-DOM component's slots (named slots, page order, stand-ins, frameworks that move content through its parent) was in every component. A component compiled now with light-DOM slots imports it (`slotting: $slotted` in its definition, `$slotted` beside the binders); one without slots, whose host shows none of what a framework adds to it, keeps that content in a fragment of its own instead, where the framework still finds it (`firstChild`, `parentNode`), and in development says it isn't shown, as before. So an app with no slotted component ships about 1.2 KB less: the comparison's server page's four components with the production runtime 13.99 to 12.80 KB compressed. An app with both kinds has both, about 0.17 KB more (the comparison's six, which include a dialog with a slot: 15.08 to 15.25 KB). Modules compiled by earlier releases get the slot router through `$define`, as before.
+
 ## 5.17.0 — 2026-11-14
 
 ### Added
