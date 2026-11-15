@@ -1338,3 +1338,18 @@ fn a_listener_with_modifiers_names_its_binder_and_a_plain_one_does_not() {
     let plain = js(r#"<zb-x><button onclick={() => 2}>b</button></zb-x>"#);
     assert!(!plain.contains("$modified"), "{plain}");
 }
+
+#[test]
+fn a_form_associated_component_imports_the_form_controls_api_and_others_do_not() {
+    let control = js(r#"<zb-x form-associated value:model=""><input value={value}></zb-x>"#);
+    assert!(
+        control.contains("  form: true,\n  forming: $form,\n"),
+        "{control}"
+    );
+    assert!(
+        control.contains("import { $element as $define, $r, $t, $form } from \"@zubra/runtime\";"),
+        "{control}"
+    );
+    let plain = js(r#"<zb-x value=""><input value={value}></zb-x>"#);
+    assert!(!plain.contains("$form"), "{plain}");
+}

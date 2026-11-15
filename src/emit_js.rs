@@ -289,9 +289,15 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     let list =
         |names: &mut dyn Iterator<Item = &str>| names.map(json).collect::<Vec<_>>().join(", ");
     out.push_str(&format!(
-        "  }},\n  abi: 4,\n  shadow: {},\n  form: {},\n  slots: [{}],\n{}  events: [{}],\n{}{}{}  template: {},\n  setup($p, $emit{}) {{\n",
+        "  }},\n  abi: 4,\n  shadow: {},\n  form: {},\n{}  slots: [{}],\n{}  events: [{}],\n{}{}{}  template: {},\n  setup($p, $emit{}) {{\n",
         component.shadow,
         component.form_associated,
+        // A form-associated component imports the form controls' API and callbacks.
+        if component.form_associated {
+            "  forming: $form,\n"
+        } else {
+            ""
+        },
         list(&mut slots.iter().map(String::as_str)),
         // A light-DOM component with slots imports what places content in them; one without
         // keeps the page's children out of sight with what the runtime always has.
@@ -438,6 +444,9 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     if out.contains("\n  slotting: $slotted,\n") {
         binders.push("$slotted");
     }
+    if out.contains("\n  forming: $form,\n") {
+        binders.push("$form");
+    }
     if options.binder_entries {
         // One import per entry, in a fixed order: `$slot` and `$slotted` are both slots.js's.
         let header_end = out.find('\n').map_or(0, |at| at + 1);
@@ -448,6 +457,7 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
             ("each", &["$each"]),
             ("slots", &["$slot", "$slotted"]),
             ("modifiers", &["$modified"]),
+            ("form", &["$form"]),
         ] {
             let used: Vec<&str> = names
                 .iter()

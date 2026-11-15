@@ -119,8 +119,11 @@ for (const [entry, budget] of Object.entries(ADAPTERS)) {
 // is, each module its own file, compressed one by one, from the core it maps `@zubra/runtime` to;
 // a page adds the binders its components import. 38.4 KB before the production build was
 // minified (5.14); 17.9 KB after; 17.2 KB once zb-await's binder, the slot router and $define
-// were files of their own, which a page loads only if its components use them (5.18).
-const SERVED = 17.5 * 1024;
+// were files of their own, which a page loads only if its components use them (5.18); 18.2 KB
+// once event modifiers and form controls were modules of their own too (so a bundler leaves them
+// out), two more files in the core's graph. @zubra/server sends the core as one file in
+// production (dist/bundled/zubra.js), so this is for a server without a bundler that doesn't.
+const SERVED = 18.75 * 1024;
 
 test('dist/production as served fits its budget', (t) => {
   const dir = join(here, '../../dist/production');

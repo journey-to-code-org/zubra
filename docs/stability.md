@@ -57,6 +57,7 @@ Every npm package entry and command below has a tier; `docs/test/stability.test.
 | `@zubra/runtime/await` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`) | The compiled-code interface: `zb-await`'s binder, for modules compiled with `--binder-entries` (what `@zubra/server` asks for) |
 | `@zubra/runtime/slots` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`) | The compiled-code interface: light-DOM slots and the slot router's binder, for modules compiled with `--binder-entries` (what `@zubra/server` asks for) |
 | `@zubra/runtime/modifiers` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`) | The compiled-code interface: a listener with modifiers (`.prevent`, `.self`, a key)'s binder, for modules compiled with `--binder-entries` (what `@zubra/server` asks for) |
+| `@zubra/runtime/form` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`) | The compiled-code interface: a form-associated component's API and callbacks (`forming: $form`), for modules compiled with `--binder-entries` (what `@zubra/server` asks for) |
 | `@zubra/runtime/zag` | Stable | Runtime; registry | Registry `combo-box` |
 | `@zubra/runtime/primitives` | Stable | Runtime; registry | Registry menus, tabs |
 | `@zubra/runtime/motion` | Supported | Runtime (both outputs) | Zubra UI motion components |
