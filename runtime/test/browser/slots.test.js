@@ -73,7 +73,7 @@ test('slotted content inside an zb-if comes back when the branch does', async ()
 
 test('content for a slot that does not exist is reported', async () => {
   const { page, messages } = await open('<zb-card><p slot="nope">?</p></zb-card>', { modules: ['card'] });
-  assert.ok(messages.some((message) => message.startsWith('warning:') && message.includes('no slot named "nope"')));
+  if (!production) assert.ok(messages.some((message) => message.startsWith('warning:') && message.includes('no slot named "nope"')));
   assert.equal((await readCard(page)).section, '<p>No content</p>');
   await page.close();
 });
@@ -239,7 +239,7 @@ test('content for a slot that does not exist is reported, not shown', async () =
     el.appendChild(stray);
   });
   assert.equal(card.section, '<p>No content</p>');
-  assert.ok(messages.some((message) => message.includes('has no slot named "nope"')), messages.join('\n'));
+  if (!production) assert.ok(messages.some((message) => message.includes('has no slot named "nope"')), messages.join('\n'));
   await page.close();
 });
 

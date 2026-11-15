@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { useBrowser, open, here, emitElement } from './harness.js';
+import { useBrowser, open, here, emitElement, production } from './harness.js';
 
 useBrowser({ 'case-meter': join(here, 'fixtures/case-meter.zb') });
 
@@ -17,10 +17,12 @@ test('a camelCase prop written in the page warns once, naming the attribute to w
   assert.equal(await page.$eval('#camel p', (el) => el.textContent), 'Stars: 5', 'the lowercased attribute is still ignored');
   assert.equal(await page.$eval('#right p', (el) => el.textContent), 'Stars: 7');
   const warnings = messages.filter((message) => message.includes('lowercases'));
-  assert.equal(warnings.length, 1, `only the element without max-value warns: ${JSON.stringify(messages)}`);
-  assert.match(warnings[0], /<case-meter> ignores the attribute "maxvalue".*prop maxValue is the attribute "max-value"/);
+  if (!production) {
+    assert.equal(warnings.length, 1, `only the element without max-value warns: ${JSON.stringify(messages)}`);
+    assert.match(warnings[0], /<case-meter> ignores the attribute "maxvalue".*prop maxValue is the attribute "max-value"/);
+  }
   // Moving the element doesn't warn again.
   await page.evaluate(() => document.body.append(document.getElementById('camel')));
-  assert.equal(messages.filter((message) => message.includes('lowercases')).length, 1);
+  if (!production) assert.equal(messages.filter((message) => message.includes('lowercases')).length, 1);
   await page.close();
 });
