@@ -787,6 +787,46 @@ mod tests {
     }
 
     #[test]
+    fn a_templates_names_are_resolved_once_and_an_unknown_one_is_still_an_error_every_time() {
+        let render = |source: &str, props: Value, slots: Value| {
+            call(
+                json!({ "path": "/app/x-names.zb", "files": { "/app/x-names.zb": source }, "emit": "html", "props": props, "slots": slots }),
+            )
+        };
+        let good = "<script>\n  let count = 2\n</script>\n<x-names label=\"a\"><p>{label} {count}</p><zb-if test={count > 5}><b>{label}</b></zb-if><slot></slot></x-names>";
+        // The same parsed component, render after render, whatever the props are.
+        for label in ["one", "two", "three"] {
+            let response = render(good, json!({ "label": label }), json!({}));
+            assert!(
+                response["output"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains(&format!("<p>{label} 2</p>")),
+                "{response}"
+            );
+        }
+        // A name that doesn't resolve is the error on the first render and on every one after,
+        // in a branch that isn't rendered too.
+        let bad = good.replace("<b>{label}</b>", "<b>{lable}</b>");
+        let first = render(&bad, json!({}), json!({}));
+        assert_eq!(first["ok"], false);
+        assert!(
+            first["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("lable"),
+            "{first}"
+        );
+        assert_eq!(
+            render(&bad, json!({ "label": "x" }), json!({})),
+            render(&bad, json!({ "label": "x" }), json!({}))
+        );
+        assert_eq!(render(&bad, json!({}), json!({}))["error"], first["error"]);
+        // And the edit that fixes it renders.
+        assert_eq!(render(good, json!({}), json!({}))["ok"], true);
+    }
+
+    #[test]
     fn join_answers_with_one_module_or_says_the_set_stays_apart() {
         let joined = call(json!({ "command": "join", "at": "b/x.js", "modules": [
             { "path": "components/a.js", "code": "import './b.js';\nimport { emit } from '@zubra/runtime';\nemit('a');\n" },
