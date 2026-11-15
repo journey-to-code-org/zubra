@@ -372,6 +372,41 @@ fn rejects_unsafe_literal_urls_and_leaves_out_unsafe_values() {
     .unwrap_err()
     .message
     .contains("unsafe URL"));
+    // A backslash is a slash to a browser: `/\host` and `\\host` are other sites (audit Z12).
+    for url in [r"/\evil.example", r"\\evil.example", r"\/evil.example"] {
+        let html = compile(
+            "<zb-link url=\"\"><a href={url}>Open</a></zb-link>",
+            &serde_json::json!({ "url": url }).to_string(),
+        )
+        .unwrap();
+        assert!(html.contains("<a>Open</a>"), "{url}: {html}");
+    }
+    assert_error(
+        "<zb-link><a href=\"/\\evil.example\">Open</a></zb-link>",
+        "{}",
+        "unsafe URL",
+    );
+    // SVG animations can set an attribute to a URL no URL check sees (audit Z13).
+    for attribute in ["to", "from", "by", "values"] {
+        for tag in ["set", "animate"] {
+            assert_error(
+                &format!("<zb-svg u=\"\"><svg><a><{tag} attributeName=\"href\" {attribute}={{u}}></{tag}><text>x</text></a></svg></zb-svg>"),
+                "{}",
+                "is not supported",
+            );
+        }
+    }
+    assert_error(
+        "<zb-svg><svg><a><set attributeName=\"href\" to=\"javascript:alert(7)\"></set></a></svg></zb-svg>",
+        "{}",
+        "unsafe URL",
+    );
+    assert_error(
+        "<zb-svg><svg><a><animate attributeName=\"href\" values=\"/a;javascript:alert(7)\"></animate></a></svg></zb-svg>",
+        "{}",
+        "unsafe URL",
+    );
+    assert!(compile("<zb-svg><svg><a><set attributeName=\"href\" to=\"/next\"></set><animate attributeName=\"opacity\" values=\"0;1\"></animate></a></svg></zb-svg>", "{}").is_ok());
     // An ordinary URL with a fragment or a query that has `&#` in it is still fine.
     assert!(compile("<zb-link><a href=\"/faq#q&#38;a\">FAQ</a></zb-link>", "{}").is_ok());
     assert!(compile(
