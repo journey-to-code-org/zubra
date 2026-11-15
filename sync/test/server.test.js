@@ -190,6 +190,35 @@ test(`${backend.name}: a signal reaches its peer only if that peer's scope has t
   }
 });
 
+test(`${backend.name}: a push carries at most 1000 changes`, async () => {
+  const sync = await backend.start();
+  try {
+    const push = (count) => sync.fetch(new Request('http://localhost/_zb/sync/push', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ changes: Array.from({ length: count }, (_, i) => ({ collection: 'notes', key: `n${i}`, field: 'x', value: 1, clock: `${String(Date.now() - 5000).padStart(15, '0')}-${String(i % 99999).padStart(5, '0')}-dev1` })) }) })).then((r) => r.status);
+    assert.equal(await push(1001), 413);
+    assert.equal(await push(1000), 200);
+  } finally {
+    sync.close();
+  }
+});
+
+test(`${backend.name}: a page hears nothing of writes outside its scope, not even an empty event`, { timeout: 5000 }, async () => {
+  const sync = await backend.start();
+  const open = [];
+  try {
+    const b = events(await sync.fetch(new Request(`http://localhost/_zb/sync/live?since=0&peer=bpage&scope=${encodeURIComponent(JSON.stringify({ orders: 'biz-b/' }))}`)));
+    open.push(b);
+    await soon(b); // the backlog
+    const push = (key, n) => sync.fetch(new Request('http://localhost/_zb/sync/push', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ changes: [{ collection: 'orders', key, field: 'total', value: n, clock: `${String(Date.now() - 1000 + n).padStart(15, '0')}-00000-dev1` }] }) }));
+    for (let n = 1; n <= 3; n++) assert.equal((await push(`biz-a/${n}`, n)).status, 200);
+    assert.equal((await push('biz-b/1', 9)).status, 200);
+    const next = (await soon(b)).value;
+    assert.deepEqual(next.data.changes.map((change) => change.key), ['biz-b/1'], "biz-a's three writes sent it nothing at all");
+  } finally {
+    for (const stream of open) await stream.return().catch(() => {});
+    sync.close();
+  }
+});
+
 test(`${backend.name}: presence: malformed messages are refused`, async () => {
   const sync = await backend.start();
   assert.equal((await say(sync, { room: 'nocollection', peer: 'p1', state: {} })).status, 400);

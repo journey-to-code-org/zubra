@@ -46,7 +46,8 @@ export function $t(value) {
 
 /** The same rule the compiler applies at build time (src/validate.rs `is_safe_url`). */
 export function isSafeUrl(value) {
-  const url = String(value).trim();
+  // A browser reads `\` as `/` in an http(s) URL, so `/\evil.example` is `//evil.example`.
+  const url = String(value).trim().replaceAll('\\', '/');
   if (!url || /[\u0000-\u001f\u007f-\u009f]/.test(url) || url.startsWith('//')) return false;
   const beforePath = url.split(/[/?#]/)[0];
   const colon = beforePath.indexOf(':');

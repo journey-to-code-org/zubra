@@ -38,12 +38,24 @@ export function typecheckModule(path) {
   return null;
 }
 
+/** Whether `dir` is a zubra checkout: its Cargo.toml is the `zubra` package's. */
+function isZubraCheckout(dir) {
+  try {
+    return /^\s*name\s*=\s*"zubra"\s*$/m.test(readFileSync(join(dir, 'Cargo.toml'), 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * A CLI that `cargo build` made in a zubra checkout at or above `root` (target/debug or
  * target/release, the newer of the two), as @zubra/server finds it. Null when there's none.
+ * Only in a zubra checkout: any repository can hold a `target/release/zubra`, and opening one of
+ * its files mustn't run it (security audit Z14).
  */
 export function checkoutCompiler(root, { exe = process.platform === 'win32' ? '.exe' : '' } = {}) {
   for (let dir = root && resolve(root); dir; dir = parent(dir)) {
+    if (!isZubraCheckout(dir)) continue;
     const built = ['debug', 'release'].map((profile) => join(dir, 'target', profile, `zubra${exe}`)).filter((cli) => existsSync(cli));
     if (built.length) return built.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
   }

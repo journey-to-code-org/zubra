@@ -386,7 +386,8 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   }
   const cacheControl = cache ? 'public, max-age=3600' : 'no-cache';
   /** The `cache-control` for what `serve` answered: a URL with its content's hash in it is for good. */
-  const cacheControlOf = (served) => (cache && served.immutable && served.status === 200 ? 'public, max-age=31536000, immutable' : cacheControl);
+  // Only a 200 is cached: a 404 cached before a deploy would outlast it by an hour.
+  const cacheControlOf = (served) => (served.status !== 200 ? 'no-cache' : cache && served.immutable ? 'public, max-age=31536000, immutable' : cacheControl);
 
   /** Fetch-style servers: a Response for our paths, or null. */
   async function fetchHandler(request) {
@@ -535,7 +536,9 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
       const info = describe(name);
       if (info.shadow || lightDom) shadowTags.set(info.tag, { name, info });
     }
-    const pattern = shadowTags.size ? new RegExp(`<(${[...shadowTags.keys()].map((tag) => tag.replace(/[-]/g, '\\-')).join('|')})(\\s[^>]*)?>`, 'g') : null;
+    // A quoted attribute value may hold `>` (Svelte and Solid leave it unescaped): the start tag
+    // ends at the first `>` outside quotes.
+    const pattern = shadowTags.size ? new RegExp(`<(${[...shadowTags.keys()].map((tag) => tag.replace(/[-]/g, '\\-')).join('|')})(\\s(?:[^>"']|"[^"]*"|'[^']*')*)?>`, 'g') : null;
     return { shadowTags, pattern };
   }
 

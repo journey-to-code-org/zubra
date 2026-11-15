@@ -124,5 +124,11 @@
   "homepage": "https://journey-to-code-org.github.io/zubra/",
   "bugs": {
     "url": "https://github.com/journey-to-code-org/zubra/issues"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Zubra runs the compiler a workspace installs (node_modules/@zubra/compiler) to check and format .zb files, so it waits until you trust the workspace."
+    }
   }
 }

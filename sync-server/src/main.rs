@@ -344,6 +344,15 @@ fn handle(state: &State, mut request: Request) {
                     json!({ "error": "Expected { changes: [{ collection, key, field, value, clock }] }; a field can't be named key or $clocks" }),
                 );
             };
+            // As @zubra/sync/server's default `maxChanges`: connect() sends batches under it.
+            if changes.len() > MAX_CHANGES {
+                return respond_json(
+                    request,
+                    extra,
+                    413,
+                    json!({ "error": format!("A push carries at most {MAX_CHANGES} changes; send them in smaller batches") }),
+                );
+            }
             if changes.iter().any(clock_ahead) {
                 return respond_json(
                     request,
@@ -643,6 +652,9 @@ fn after(state: &State, since: i64) -> rusqlite::Result<(Vec<Value>, i64)> {
     Ok((changes, cursor))
 }
 
+/// The most changes one push may carry.
+const MAX_CHANGES: usize = 1000;
+
 const NOT_YOUR_PEER: &str = "That peer id is another viewer's";
 
 /// Whether a request carrying `key` speaks for `peer`: the key of the stream holding it, or any
@@ -674,12 +686,18 @@ fn event(name: &str, data: &Value) -> String {
     format!("event: {name}\ndata: {data}\n\n")
 }
 
-/// Changes to every live page, each getting what its scope lets through (an empty batch still
-/// moves its cursor on). A page whose stream is gone is dropped.
+/// Changes to every live page, each getting what its scope lets through. A page that may see
+/// none of them hears nothing: an empty event (and its cursor) would tell it that another
+/// business on the log just wrote. A page whose stream is gone is dropped (the heartbeat finds
+/// one that only ever hears nothing).
 fn broadcast_changes(state: &State, changes: &[Value], cursor: i64) {
     let mut listeners = state.listeners.lock().expect("listeners");
     listeners.retain(|listener| {
-        let data = json!({ "changes": scoped(&listener.scope, changes), "cursor": cursor });
+        let visible = scoped(&listener.scope, changes);
+        if visible.is_empty() {
+            return true;
+        }
+        let data = json!({ "changes": visible, "cursor": cursor });
         listener.events.send(event("changes", &data)).is_ok()
     });
 }
