@@ -177,6 +177,7 @@ test("bundle: a page's components are one module, named for the set and the hash
   // Not under another hash, in another order, for a set that isn't whole, or without `bundle`.
   for (const other of [url.replace(/\.[0-9a-z]{11}\.js$/, '.00000000000.js'), url.replace('count-stepper+order-form', 'order-form+count-stepper'), url.replace('count-stepper+order-form', 'order-form'), url.replace('count-stepper+order-form', 'count-stepper+nothing')]) {
     assert.equal(get(zubra, other).status, 404, other);
+    assert.equal(get(zubra, other).cache, 'no-cache', 'a 404 is never cached: a deploy must not wait an hour for it');
   }
   assert.equal(get(createZubra({ components, production: true }), url).status, 404);
   // A component module is still served by its own name, and cached as before.
