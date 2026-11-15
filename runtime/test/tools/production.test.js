@@ -52,9 +52,10 @@ test('dist/bundled: the entry and what it imports are one module, and every othe
   assert.deepEqual(Object.keys(entry).sort(), Object.keys(prod).sort());
   for (const name of Object.keys(core)) assert.equal(entry[name], one[name], name);
   // zb-if's and zb-each's binders are the core's (@zubra/server maps their entries to it);
-  // zb-await's, the slots' and $define are files of their own, which a page loads if it uses them.
+  // zb-await's, the slots', event modifiers' and $define are files of their own, which a page
+  // loads if it uses them.
   for (const name of ['$when', '$each']) assert.equal(one[name], entry[name], name);
-  for (const [name, file] of [['$define', 'legacy.js'], ['$await', 'await.js'], ['$slot', 'slots.js'], ['$slotted', 'slots.js']]) {
+  for (const [name, file] of [['$define', 'legacy.js'], ['$await', 'await.js'], ['$slot', 'slots.js'], ['$slotted', 'slots.js'], ['$modified', 'modifiers.js']]) {
     assert.equal(one[name], undefined, `${name} isn't in ${BUNDLE}`);
     assert.equal(typeof entry[name], name === '$slotted' ? 'object' : 'function', name);
     assert.equal(entry[name], (await import(`../../dist/bundled/${file}`))[name], name);

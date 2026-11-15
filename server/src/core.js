@@ -232,12 +232,12 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   // say), so a page never mixes two copies of it. (The modules import them by address: js().)
   const runtimeUrl = imports['@zubra/runtime'] ?? `${base}/runtime/${bundle ? 'zubra.js' : 'core.js'}`;
   // zb-if's and zb-each's binders are the core's own, so they come from `@zubra/runtime` like the
-  // rest of it. zb-await's and the slots' are files of their own, beside the core: by a path
+  // rest of it. zb-await's, the slots' and event modifiers' are files of their own, beside the core: by a path
   // relative to the component's module, so they move with the folder (a static site that serves
   // `/_zubra/` from somewhere else, rewriting only its pages), or by the address `imports` gave.
   const bindersFor = (name) => {
     const beside = (file) => (imports['@zubra/runtime'] ? runtimeUrl.replace(/[^/]*$/, file) : `${'../'.repeat(name.split('/').length)}runtime/${file}`);
-    return { '@zubra/runtime/when': '@zubra/runtime', '@zubra/runtime/each': '@zubra/runtime', '@zubra/runtime/await': beside('await.js'), '@zubra/runtime/slots': beside('slots.js') };
+    return { '@zubra/runtime/when': '@zubra/runtime', '@zubra/runtime/each': '@zubra/runtime', '@zubra/runtime/await': beside('await.js'), '@zubra/runtime/slots': beside('slots.js'), '@zubra/runtime/modifiers': beside('modifiers.js') };
   };
   const mapping = () => ({ '@zubra/runtime': runtimeUrl, '@zubra/runtime/spread': `${base}/runtime/spread.js`, '@zubra/runtime/primitives': `${base}/runtime/primitives.js`, '@zubra/runtime/motion': `${base}/runtime/motion.js`, '@zubra/runtime/track': `${base}/runtime/track.js`, ...syncImports, ...imports });
   /**

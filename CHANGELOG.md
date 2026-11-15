@@ -6,6 +6,8 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ### Changed
 
+- **A component imports event modifiers only if it uses one.** What `.prevent`, `.stop`, `.self`, `.once`, `.capture`, `.passive`, `.submit`, the held keys and a key filter (`onkeydown.shift.enter`) do was in every component's runtime. Now a listener with modifiers names its binder (`binder: $modified`, from `@zubra/runtime`, or `@zubra/runtime/modifiers` in what `@zubra/server` sends) and a plain listener is just the handler; modules compiled by earlier releases get the binder through `$define`. The comparison's six components, none of which use a modifier, with the production runtime: 15.25 to 14.91 KB compressed; with the entry above, its hosts are about 0.9 KB smaller than 5.18.0's (Svelte 14.2 to 13.3 KB, React 15.9 to 15.0).
+
 - **A component built by `@zubra/unplugin` carries its CSS once.** A light-DOM component's stylesheet went into the page through Vite's CSS pipeline and into its module again as text (`?inline`), for an element inside someone else's shadow root, where page CSS doesn't reach. Now the page's copy is the only one: the module names `stylesFromPage: $pageStyles`, and for an element in a shadow root the runtime copies that component's rules (its `@scope (tag)` blocks, in the `@layer`, `@media` and `@supports` they're in) from the page's stylesheets into one sheet, once. A stylesheet the page can't read (another origin's, without CORS) is skipped. The comparison's hosts are each about 0.55 KB smaller: React 15.9 to 15.3 KB, Vue 15.2 to 14.6, Svelte 14.2 to 13.6, Angular 14.3 to 13.8. Shadow-DOM components, and the server's modules, are as before.
 
 ## 5.18.0 — 2026-11-15

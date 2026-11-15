@@ -40,6 +40,11 @@
       "production": "./dist/production/slots.js",
       "default": "./src/slots.js"
     },
+    "./modifiers": {
+      "types": "./types/binders.d.ts",
+      "production": "./dist/production/modifiers.js",
+      "default": "./src/modifiers.js"
+    },
     "./signal": {
       "types": "./types/signal.d.ts",
       "production": "./dist/production/signal.js",
