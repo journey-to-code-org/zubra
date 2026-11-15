@@ -68,6 +68,7 @@ Every npm package entry and command below has a tier; `docs/test/stability.test.
 | `@zubra/runtime/server` | Stable | Runtime; meta-framework examples | Next.js, Nuxt, SvelteKit, SolidStart |
 | `@zubra/runtime/bridge` | Supported | Runtime (React 19, 18, Vue 3) | Nothing outside its tests yet |
 | `@zubra/runtime/context` | Supported | Runtime (plain HTML, React 19, 18, Vue 3) | Nothing outside its tests yet |
+| `@zubra/runtime/hydrate` | Supported | Runtime (`client-only.test.js`, every hydration test); Server (`preload.test.js`) | The compiled-code interface: taking over server markup (`hydrating: $hydrate`), which every component compiled without `--client-only` imports; its own entry for modules compiled with `--binder-entries` |
 | `@zubra/runtime/forms` | Supported | Runtime (four form libraries) | Nothing outside its tests yet |
 | `@zubra/runtime/navigation` | Supported | Runtime (React Router, Vue Router) | Nothing outside its tests yet |
 | `@zubra/runtime/testing` | Supported | WebAssembly compiler (`examples/testing-vitest`) | `examples/testing-vitest` |

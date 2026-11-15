@@ -50,6 +50,11 @@
       "production": "./dist/production/form.js",
       "default": "./src/form.js"
     },
+    "./hydrate": {
+      "types": "./types/binders.d.ts",
+      "production": "./dist/production/hydrate.js",
+      "default": "./src/hydrate.js"
+    },
     "./signal": {
       "types": "./types/signal.d.ts",
       "production": "./dist/production/signal.js",

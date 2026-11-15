@@ -404,6 +404,8 @@ fn answer(request: &Map<String, Value>, path: &str, set: &crate::loaded::Set) ->
                     devtools: flag("devtools"),
                     // `binderEntries`: each binder from its own entry (`@zubra/server`).
                     binder_entries: flag("binderEntries"),
+                    // `clientOnly`: no hydration (@zubra/unplugin's `hydrate: false`).
+                    client_only: flag("clientOnly"),
                 },
                 &loader,
             )

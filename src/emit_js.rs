@@ -59,6 +59,11 @@ pub struct Options<'a> {
     /// place of the runtime's main one: for a server that maps `@zubra/runtime` to the core and
     /// sends a page only the binders its components use (`@zubra/server`).
     pub binder_entries: bool,
+    /// For an app that never renders on a server (`--client-only`; @zubra/unplugin's
+    /// `hydrate: false`): leave out what takes over server markup (`hydrating: $hydrate`), so a
+    /// bundler leaves the runtime's `hydrate.js` out too. Such an element renders fresh over any
+    /// children it starts with, treating them as the page's own.
+    pub client_only: bool,
 }
 
 /// Module specifiers for a component's stylesheet, as the bundler serves it.
@@ -289,14 +294,20 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     let list =
         |names: &mut dyn Iterator<Item = &str>| names.map(json).collect::<Vec<_>>().join(", ");
     out.push_str(&format!(
-        "  }},\n  abi: 4,\n  shadow: {},\n  form: {},\n{}  slots: [{}],\n{}  events: [{}],\n{}{}{}  template: {},\n  setup($p, $emit{}) {{\n",
+        "  }},\n  abi: 4,\n  shadow: {},\n  form: {},\n{}{}  slots: [{}],\n{}  events: [{}],\n{}{}{}  template: {},\n  setup($p, $emit{}) {{\n",
         component.shadow,
         component.form_associated,
-        // A form-associated component imports the form controls' API and callbacks.
+        // A form-associated component imports the form controls' API and callbacks; every
+        // component, what takes over server markup, unless its app never renders on a server.
         if component.form_associated {
             "  forming: $form,\n"
         } else {
             ""
+        },
+        if options.client_only {
+            ""
+        } else {
+            "  hydrating: $hydrate,\n"
         },
         list(&mut slots.iter().map(String::as_str)),
         // A light-DOM component with slots imports what places content in them; one without
@@ -447,6 +458,9 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     if out.contains("\n  forming: $form,\n") {
         binders.push("$form");
     }
+    if out.contains("\n  hydrating: $hydrate,\n") {
+        binders.push("$hydrate");
+    }
     if options.binder_entries {
         // One import per entry, in a fixed order: `$slot` and `$slotted` are both slots.js's.
         let header_end = out.find('\n').map_or(0, |at| at + 1);
@@ -458,6 +472,7 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
             ("slots", &["$slot", "$slotted"]),
             ("modifiers", &["$modified"]),
             ("form", &["$form"]),
+            ("hydrate", &["$hydrate"]),
         ] {
             let used: Vec<&str> = names
                 .iter()

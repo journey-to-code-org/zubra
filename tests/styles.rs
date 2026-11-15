@@ -113,7 +113,7 @@ fn javascript_inlines_the_stylesheet_or_imports_it_through_the_bundler() {
     assert!(
         !light.contains("&inline")
             && light.contains("  styled: true,\n  stylesFromPage: $pageStyles,\n  inPage: true,\n  template")
-            && light.contains("import { $element as $define, $r, $t, $pageStyles, $slot, $slotted } from \"@zubra/runtime\";"),
+            && light.contains("import { $element as $define, $r, $t, $pageStyles, $slot, $slotted, $hydrate } from \"@zubra/runtime\";"),
         "the bundler adds the CSS to the page, its only copy; a shadow root gets the rules from there: {light}"
     );
     let shadow = compile_js_for_bundler(

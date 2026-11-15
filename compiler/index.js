@@ -227,7 +227,7 @@ function exported(exports, subpath) {
 
 /**
  * Compile the component at `path`. Options mirror the CLI's: `emit` (`html` | `js` | `css` |
- * `dts` | `manifest`), `command: 'check'`, `runtime`, `keepImports`, `devtools`, `noImports`, `cssImport` +
+ * `dts` | `manifest`), `command: 'check'`, `runtime`, `keepImports`, `devtools`, `clientOnly`, `noImports`, `cssImport` +
  * `cssImportInline`, `framework`, `modulePath`, `props`, `slots`.
  */
 export function compileFile(path, options = {}) {

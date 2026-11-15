@@ -566,6 +566,7 @@ pub fn compile_js(source: &str, runtime: &str, source_name: &str) -> Result<Stri
                 styles_href: None,
                 devtools: None,
                 binder_entries: false,
+                client_only: false,
             },
         )
     })
@@ -604,6 +605,7 @@ pub fn compile_js_with(
             styles_href: None,
             devtools: false,
             binder_entries: false,
+            client_only: false,
         },
         loader,
     )
@@ -626,6 +628,8 @@ pub struct JsOptions<'a> {
     pub devtools: bool,
     /// Import each binder from its own runtime entry (see `emit_js::Options`): `@zubra/server`.
     pub binder_entries: bool,
+    /// See `emit_js::JsOptions::client_only`.
+    pub client_only: bool,
 }
 
 /// The JavaScript module for the component at `path`, with every option.
@@ -651,6 +655,7 @@ pub fn compile_js_options(
                 styles_href: options.styles_href,
                 devtools: options.devtools.then_some(path),
                 binder_entries: options.binder_entries,
+                client_only: options.client_only,
             },
         )
     })
@@ -714,6 +719,7 @@ pub fn compile_js_for_bundler(
             styles_href: None,
             devtools: false,
             binder_entries: false,
+            client_only: false,
         },
         loader,
     )

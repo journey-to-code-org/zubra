@@ -20,3 +20,6 @@ export { $when } from './when.js';
 export { $each } from './each.js';
 export { $modified } from './modifiers.js';
 export { $form } from './form.js';
+// Taking over server markup: what compiled components import unless their app never renders on
+// a server (@zubra/unplugin's `hydrate: false`).
+export { $hydrate } from './hydrate.js';
