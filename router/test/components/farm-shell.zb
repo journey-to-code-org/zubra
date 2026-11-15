@@ -1,0 +1,17 @@
+<script>
+  'use layout /farm root'
+  import { show } from '@zubra/router'
+  export async function load({ url, context }) {
+    const farmer = url.searchParams.get('as') ?? context.person ?? 'Ada'
+    if (farmer === 'nobody') return show('farmers-only', { wanted: url.pathname }, { status: 403 })
+    return { farmer, hidden: 'stays on the server' }
+  }
+</script>
+<farm-shell route={{}} farmer="">
+  <nav class="farm">
+    <a href="/farm" aria-current={route.path === '/farm' ? 'page' : null}>Today</a>
+    <a href="/farm/stock" aria-current={route.path === '/farm/stock' ? 'page' : null}>Stock</a>
+  </nav>
+  <p class="farmer">{farmer}</p>
+  <section><zb-slot></zb-slot></section>
+</farm-shell>

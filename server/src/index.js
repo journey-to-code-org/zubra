@@ -77,9 +77,24 @@ export function createZubra({ components = 'components', packages = [], prefix =
     }
     return null;
   })();
+  // @zubra/router, for components that start with 'use route' or 'use layout': nothing in the
+  // browser needs it, but without it such a component is a page nothing serves, so say so.
+  const routerInstalled = (() => {
+    for (const from of [join(root, 'noop.js'), join(process.cwd(), 'noop.js')]) {
+      try {
+        createRequire(pathToFileURL(from)).resolve('@zubra/router');
+        return true;
+      } catch {}
+    }
+    return false;
+  })();
   const needs = (name, code) => {
     if (!syncDir && code.includes('from "@zubra/sync"')) {
       throw new Error(`@zubra/server: ${relative(process.cwd(), core.pathOf(name))} starts with 'use collection', which needs @zubra/sync. Install it: npm install @zubra/sync`);
+    }
+    const route = !routerInstalled && core.describe(name).route;
+    if (route) {
+      throw new Error(`@zubra/server: ${relative(process.cwd(), core.pathOf(name))} starts with 'use ${route.kind === 'layout' ? 'layout' : 'route'}${route.pattern ? ` ${route.pattern}` : ''}', which needs @zubra/router. Install it: npm install @zubra/router`);
     }
     return code;
   };

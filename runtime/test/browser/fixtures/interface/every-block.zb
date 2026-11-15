@@ -1,0 +1,15 @@
+<!-- Every part that names a binder at interface 4: zb-if, zb-each, zb-await and slots. The
+     same component is checked in compiled for interface 3 (every-block-3.js), and
+     interface.test.js renders both side by side. -->
+<every-block items={[]} open={false} value={null}>
+  <zb-slot name="title"><h2>No title</h2></zb-slot>
+  <zb-if test={open}><p>open</p><zb-else><p>closed</p></zb-else></zb-if>
+  <ul>
+    <zb-each items={items} as="item" key={item}><li>{item}</li></zb-each>
+  </ul>
+  <zb-await value={value}>
+    <i>waiting</i>
+    <zb-then as="v"><b>{v}</b></zb-then>
+  </zb-await>
+  <div class="body"><zb-slot></zb-slot></div>
+</every-block>

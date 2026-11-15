@@ -34,7 +34,7 @@ Every npm package entry and command below has a tier; `docs/test/stability.test.
 | Contract | Tier | Notes |
 |---|---|---|
 | The `.zb` format and `.zb.jsx` / `.zb.tsx` front ends | Stable | The README's rules are the reference |
-| The compiled ABI (`abi: 3`) | Stable | The runtime still runs `abi: 2` output |
+| The compiled ABI (`abi: 4`) | Stable | The runtime still runs `abi: 2` and `abi: 3` output (through `$define`) |
 | CLI commands, flags and exit codes | Stable | Except the commands marked below |
 | The Custom Elements Manifest and typings the compiler writes | Stable | |
 | Hydration markers (processing instructions) | Stable | The runtime still reads 4.x comment markers |
@@ -133,6 +133,15 @@ A sibling: needed only for `'use collection'` state.
 | `@zubra/sync/server` | Supported | Same | Same |
 | `@zubra/sync/sqlite` | Supported | Same | Standup |
 | `@zubra/sync/durable` | Supported | Sync and Actions on a Cloudflare Worker | Standup worker, Tailgate's Worker deploy |
+
+### `@zubra/router`
+
+A sibling: needed only for `'use route'` and `'use layout'` components, in an app with no host framework. New in this release, so its options may still move in a minor.
+
+| Entry | Tier | Tested by | Used by |
+|---|---|---|---|
+| `@zubra/router` | Supported | Plugin job (`router/`, with and without JavaScript in Chromium) | Its tests |
+| `@zubra/router/table` | Experimental | Same | The router itself: the table's rules without files or a compiler |
 
 ### Tooling packages
 

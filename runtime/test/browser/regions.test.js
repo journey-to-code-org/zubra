@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { useBrowser, open, compiler, here, site, runtimeOnly } from './harness.js';
+import { useBrowser, open, compiler, here, site, runtimeOnly, reported, production } from './harness.js';
 
 useBrowser({
   list: join(here, 'fixtures/list.zb'),
@@ -164,6 +164,6 @@ test('a server list that does not match its items is re-rendered with a warning'
     modules: ['list'],
   });
   assert.deepEqual((await readList(page)).items, ['0:only one']);
-  assert.ok(messages.some((message) => message.startsWith('warning:') && message.includes('does not match its items')));
+  assert.ok(reported(messages, (message) => message.startsWith('warning:') && message.includes('does not match its items')));
   await page.close();
 });

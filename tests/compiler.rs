@@ -760,7 +760,7 @@ function go() {}
   <a href={href} class="link {label}" hidden={off} onclick={go}>{count}</a>
 </zb-x>"#);
     assert!(module.contains(
-        "import { $define, $r, $t } from \"@zubra/runtime\";\nimport { state } from '@zubra/runtime';"
+        "import { $element as $define, $r, $t } from \"@zubra/runtime\";\nimport { state } from '@zubra/runtime';"
     ));
     assert!(module.contains(r#"template: "\n  <p>Hi <b>there</b><!----></p>\n  <a></a>\n","#));
     for part in [
@@ -863,7 +863,16 @@ fn js_output_compiles_regions_to_nested_blocks() {
         module.contains(r#"template: "\n<section><!--[--><!--]--><footer></footer></section>\n","#)
     );
     assert!(module.contains(r#"{ path: [0, 1], text: () => $t($p.items.length) }"#));
-    assert!(module.contains(r#"{ path: [0, 0], when: () => $p.show, blocks: [{ template: "<ul><!--[--><!--]--></ul>", parts: () => [{ path: [0, 0], each: () => $p.items, block: { template: "<li></li>", parts: (item, i) => [{ path: [0], attribute: "data-i", value: () => $r(i) }, { path: [0], text: () => $t($r(item)) }] } }] }, { template: "<p>none</p>", parts: () => [] }] }"#), "{module}");
+    assert!(module.contains(r#"{ path: [0, 0], binder: $when, when: () => $p.show, blocks: [{ template: "<ul><!--[--><!--]--></ul>", parts: () => [{ path: [0, 0], binder: $each, each: () => $p.items, block: { template: "<li></li>", parts: (item, i) => [{ path: [0], attribute: "data-i", value: () => $r(i) }, { path: [0], text: () => $t($r(item)) }] } }] }, { template: "<p>none</p>", parts: () => [] }] }"#), "{module}");
+    // Interface 4: the module imports the binders its parts name, and only those.
+    assert!(
+        module.contains(
+            "import { $element as $define, $r, $t, $when, $each } from \"@zubra/runtime\";"
+        ),
+        "{module}"
+    );
+    assert!(module.contains("export default $define(tag, {"), "{module}");
+    assert!(module.contains("  abi: 4,\n"), "{module}");
 }
 
 #[test]
@@ -922,9 +931,9 @@ fn slots_compile_to_regions_in_light_dom_and_native_slots_in_shadow_dom() {
         light.contains(r#"slots: ["default", "heading"],"#),
         "{light}"
     );
-    assert!(light.contains(r#"{ path: [0, 0], slot: "heading", fallback: { template: "<h1></h1>", parts: () => [{ path: [0], text: () => $t($p.title) }] } }"#), "{light}");
+    assert!(light.contains(r#"{ path: [0, 0], binder: $slot, slot: "heading", fallback: { template: "<h1></h1>", parts: () => [{ path: [0], text: () => $t($p.title) }] } }"#), "{light}");
     assert!(
-        light.contains(r#"{ path: [0, 1], slot: "default", fallback: null }"#),
+        light.contains(r#"{ path: [0, 1], binder: $slot, slot: "default", fallback: null }"#),
         "{light}"
     );
 

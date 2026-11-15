@@ -166,8 +166,9 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
             .collect(),
         ..Script::default()
     };
-    let (collection, unknown) = directive(&parsed.program.directives, &at)?;
+    let (collection, route, unknown) = directive(&parsed.program.directives, &at)?;
     script.collection = collection;
+    script.route = route;
     script.unknown_directives = unknown;
     let mut import_ranges = Vec::new();
     // `'use server'` functions: where they are, and every name they reference.
@@ -397,6 +398,42 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
                         .collect::<Vec<_>>(),
                 );
             }
+            // A route's or layout's `load`: server-only, but not an action.
+            Statement::ExportDeclaration(export) if exported_load(export).is_some() => {
+                let function = exported_load(export).expect("checked by the guard");
+                if script.route.is_none() {
+                    return Err(Diagnostic::new(
+                        at(function.span.start),
+                        "only a route or a layout can export `load`",
+                    )
+                    .with_help("start the script with 'use route <path>' (or 'use layout <prefix>'): `load` runs on the server before it renders, and @zubra/router serves it"));
+                }
+                if server_function(export).is_some() {
+                    return Err(Diagnostic::new(
+                        at(function.span.start),
+                        "`load` already runs on the server only; 'use server' would also make it an action anyone can post to",
+                    )
+                    .with_help("remove 'use server' from `load`"));
+                }
+                if script.load.is_some() {
+                    return Err(Diagnostic::new(
+                        at(function.span.start),
+                        "`load` is exported twice",
+                    ));
+                }
+                let mut references = References::default();
+                references.visit_function(function, oxc_syntax::scope::ScopeFlags::empty());
+                server_references.extend(references.names);
+                let range = export.span.start as usize..export.span.end as usize;
+                script.load = Some(crate::ast::Load {
+                    text: source[function.span.start as usize..function.span.end as usize]
+                        .to_owned(),
+                    reads: load_reads(function),
+                    returns: load_returns(function, &at),
+                    span: at(function.span.start),
+                });
+                server_ranges.push(range);
+            }
             Statement::ExportDeclaration(export) if server_function(export).is_some() => {
                 let function = server_function(export).expect("checked by the guard");
                 let name = function
@@ -498,7 +535,7 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
     }
     // Imports the server functions use go to the server module; an import that nothing else in
     // the script uses leaves the browser module (`import { db } from './db.js'` must not ship).
-    if !script.server_exports.is_empty() {
+    if !script.server_exports.is_empty() || script.load.is_some() {
         let mut elsewhere = References::default();
         for statement in &parsed.program.body {
             let range = statement.span().start as usize..statement.span().end as usize;
@@ -506,6 +543,17 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
                 && !server_ranges.contains(&range)
             {
                 elsewhere.visit_statement(statement);
+            }
+        }
+        if let Some(load) = &script.load {
+            if elsewhere.names.contains("load") {
+                return Err(Diagnostic::new(
+                    load.span,
+                    "`load` runs on the server only, so the rest of the script can't call it",
+                )
+                .with_help(
+                    "what it returns arrives as props: declare them on the host tag and read those",
+                ));
             }
         }
         let mut kept = Vec::new();
@@ -924,7 +972,7 @@ pub fn union(types: impl IntoIterator<Item = String>) -> String {
 /// What to say about a directive Zubra doesn't know: what it probably meant, or why it isn't
 /// needed, and the two it does know.
 fn unknown_directive(text: &str, span: Span) -> Diagnostic {
-    const KNOWN: &str = "Zubra knows two directives: 'use collection <name>' first in a script, to keep its state on the device (@zubra/sync), and 'use server' first in an exported function, to run it on the server (@zubra/actions)";
+    const KNOWN: &str = "Zubra knows four directives: 'use collection <name>' first in a script, to keep its state on the device (@zubra/sync); 'use route <path>' or 'use layout <prefix>' first in a script, to serve it as a page or a layout (@zubra/router); and 'use server' first in an exported function, to run it on the server (@zubra/actions)";
     let word = text
         .strip_prefix("use ")
         .unwrap_or(text)
@@ -941,6 +989,18 @@ fn unknown_directive(text: &str, span: Span) -> Diagnostic {
             format!("did you mean 'use collection {name}'?")
         }
         _ if close_to(word, "server") => format!("did you mean 'use server'? {SERVER}"),
+        "routes" | "page" | "path" => {
+            let path = if rest.is_empty() { "<path>".to_owned() } else { rest.join(" ") };
+            format!("did you mean 'use route {path}'?")
+        }
+        _ if close_to(word, "route") => {
+            let path = if rest.is_empty() { "<path>".to_owned() } else { rest.join(" ") };
+            format!("did you mean 'use route {path}'?")
+        }
+        _ if close_to(word, "layout") => {
+            let path = if rest.is_empty() { "<prefix>".to_owned() } else { rest.join(" ") };
+            format!("did you mean 'use layout {path}'?")
+        }
         _ => KNOWN.to_owned(),
     };
     Diagnostic::new(span, format!("unknown directive '{text}'")).with_help(help)
@@ -975,13 +1035,46 @@ fn close_to(word: &str, known: &str) -> bool {
 fn directive(
     directives: &[oxc_ast::ast::Directive<'_>],
     at: &dyn Fn(u32) -> Span,
-) -> Result<(Option<crate::ast::Collection>, Vec<Diagnostic>), Diagnostic> {
+) -> Result<
+    (
+        Option<crate::ast::Collection>,
+        Option<crate::ast::Route>,
+        Vec<Diagnostic>,
+    ),
+    Diagnostic,
+> {
     let mut found = None;
+    let mut route: Option<crate::ast::Route> = None;
     let mut unknown = Vec::new();
     for directive in directives {
         let text = directive.directive.as_str().trim();
         let span = at(directive.span.start);
         if text == "use strict" {
+            continue;
+        }
+        let kind = if word_after(text, "use route") {
+            Some(crate::ast::RouteKind::Page)
+        } else if word_after(text, "use layout") {
+            Some(crate::ast::RouteKind::Layout)
+        } else {
+            None
+        };
+        if let Some(kind) = kind {
+            if let Some(existing) = &route {
+                return Err(Diagnostic::new(
+                    span,
+                    format!(
+                        "a component is one route or one layout; this one already has 'use {}{}'",
+                        existing.kind.word(),
+                        existing
+                            .pattern
+                            .as_ref()
+                            .map(|pattern| format!(" {pattern}"))
+                            .unwrap_or_default()
+                    ),
+                ));
+            }
+            route = Some(route_directive(text, kind, span)?);
             continue;
         }
         let Some(rest) = text.strip_prefix("use collection") else {
@@ -1028,7 +1121,115 @@ fn directive(
             span,
         });
     }
-    Ok((found, unknown))
+    Ok((found, route, unknown))
+}
+
+/// `text` is `prefix`, alone or followed by whitespace.
+fn word_after(text: &str, prefix: &str) -> bool {
+    text.strip_prefix(prefix)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+}
+
+/// `'use route /farms/:id'`, `'use layout /farm'`, `'use layout /farm root'`.
+fn route_directive(
+    text: &str,
+    kind: crate::ast::RouteKind,
+    span: Span,
+) -> Result<crate::ast::Route, Diagnostic> {
+    let word = kind.word();
+    let mut words = text.split_whitespace().skip(2);
+    let example = match kind {
+        crate::ast::RouteKind::Page => "'use route /farms/:id'",
+        crate::ast::RouteKind::Layout => "'use layout /farm'",
+    };
+    // Bare: the path is the file's place in a `routes/` folder.
+    let Some(pattern) = words.next() else {
+        return Ok(crate::ast::Route {
+            kind,
+            pattern: None,
+            params: Vec::new(),
+            root: false,
+            span,
+        });
+    };
+    if pattern == "root" && kind == crate::ast::RouteKind::Layout {
+        return Ok(crate::ast::Route {
+            kind,
+            pattern: None,
+            params: Vec::new(),
+            root: true,
+            span,
+        });
+    }
+    if !pattern.starts_with('/') {
+        return Err(Diagnostic::new(
+            span,
+            format!("a {word}'s path starts with `/`: {example}"),
+        ));
+    }
+    let root = match (kind, words.next(), words.next()) {
+        (_, None, _) => false,
+        (crate::ast::RouteKind::Layout, Some("root"), None) => true,
+        (crate::ast::RouteKind::Layout, Some(_), _) => {
+            return Err(Diagnostic::new(
+                span,
+                "after a layout's prefix, only `root` can follow: 'use layout /farm root' replaces app.zb for /farm",
+            ));
+        }
+        (crate::ast::RouteKind::Page, Some(_), _) => {
+            return Err(Diagnostic::new(
+                span,
+                "a route is one path with no spaces: 'use route /farms/:id'",
+            ));
+        }
+    };
+    let params = route_params(pattern).map_err(|message| Diagnostic::new(span, message))?;
+    Ok(crate::ast::Route {
+        kind,
+        pattern: Some(pattern.to_owned()),
+        params,
+        root,
+        span,
+    })
+}
+
+/// The named parameters of a URLPattern pathname, in order: `:id`, `:path*`, `:tab?`.
+pub(crate) fn route_params(pattern: &str) -> Result<Vec<String>, String> {
+    let mut params: Vec<String> = Vec::new();
+    let mut chars = pattern.char_indices().peekable();
+    while let Some((_, c)) = chars.next() {
+        if c == '\\' {
+            chars.next();
+            continue;
+        }
+        if c != ':' {
+            continue;
+        }
+        let mut name = String::new();
+        while let Some(&(_, next)) = chars.peek() {
+            let first = name.is_empty();
+            if next.is_ascii_alphabetic()
+                || next == '_'
+                || next == '$'
+                || (!first && next.is_ascii_digit())
+            {
+                name.push(next);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        if name.is_empty() {
+            return Err(format!(
+                "`:` in '{pattern}' names a parameter: `/farms/:id`"
+            ));
+        }
+        if params.contains(&name) {
+            return Err(format!("'{pattern}' names the parameter `{name}` twice"));
+        }
+        params.push(name);
+    }
+    Ok(params)
 }
 
 #[cfg(test)]
@@ -1125,6 +1326,183 @@ pub(crate) fn server_function<'a>(
         .iter()
         .any(|directive| directive.directive.as_str() == "use server")
         .then_some(&**function)
+}
+
+/// `export function load` / `export async function load`.
+fn exported_load<'a>(
+    export: &'a oxc_ast::ast::ExportDeclaration<'a>,
+) -> Option<&'a oxc_ast::ast::Function<'a>> {
+    let oxc_ast::ast::Declaration::FunctionDeclaration(function) = &export.declaration else {
+        return None;
+    };
+    (function.id.as_ref()?.name.as_str() == "load").then_some(&**function)
+}
+
+/// The route parameters `load` reads, where the compiler can see them: `{ params }` then
+/// `params.id`, or `{ params: { id } }`. `None` when it can't tell (the argument kept whole,
+/// `params` passed on or indexed, a rest element).
+fn load_reads(function: &oxc_ast::ast::Function<'_>) -> Option<Vec<String>> {
+    use oxc_ast::ast::BindingPattern;
+    let Some(parameter) = function.params.items.first() else {
+        return Some(Vec::new());
+    };
+    let mut pattern = &parameter.pattern;
+    if let BindingPattern::AssignmentPattern(assignment) = pattern {
+        pattern = &assignment.left;
+    }
+    let BindingPattern::ObjectPattern(object) = pattern else {
+        return None;
+    };
+    let property = object.properties.iter().find(|property| {
+        !property.computed
+            && property
+                .key
+                .static_name()
+                .is_some_and(|name| name.as_str() == Some("params"))
+    });
+    let Some(property) = property else {
+        return if object.rest.is_some() {
+            None
+        } else {
+            Some(Vec::new())
+        };
+    };
+    let mut value = &property.value;
+    if let BindingPattern::AssignmentPattern(assignment) = value {
+        value = &assignment.left;
+    }
+    match value {
+        BindingPattern::ObjectPattern(inner) => {
+            if inner.rest.is_some() {
+                return None;
+            }
+            inner
+                .properties
+                .iter()
+                .map(|property| {
+                    (!property.computed)
+                        .then(|| {
+                            property
+                                .key
+                                .static_name()
+                                .and_then(|name| name.as_str().map(str::to_owned))
+                        })
+                        .flatten()
+                })
+                .collect()
+        }
+        BindingPattern::BindingIdentifier(identifier) => {
+            let mut finder = ParamReads {
+                name: identifier.name.as_str(),
+                reads: Vec::new(),
+                opaque: false,
+            };
+            if let Some(body) = &function.body {
+                finder.visit_function_body(body);
+            }
+            (!finder.opaque).then_some(finder.reads)
+        }
+        _ => None,
+    }
+}
+
+/// The keys of the object literals `load` itself returns (not those of a function inside it).
+fn load_returns(
+    function: &oxc_ast::ast::Function<'_>,
+    at: &dyn Fn(u32) -> Span,
+) -> Vec<(String, Span)> {
+    let mut finder = Returns { keys: Vec::new() };
+    if let Some(body) = &function.body {
+        finder.visit_function_body(body);
+    }
+    finder
+        .keys
+        .into_iter()
+        .map(|(key, start)| (key, at(start)))
+        .collect()
+}
+
+struct Returns {
+    keys: Vec<(String, u32)>,
+}
+
+impl<'a> Visit<'a> for Returns {
+    fn visit_return_statement(&mut self, statement: &oxc_ast::ast::ReturnStatement<'a>) {
+        let Some(Expression::ObjectExpression(object)) = &statement.argument else {
+            return;
+        };
+        use oxc_ast::ast::ObjectPropertyKind;
+        // With a spread the compiler can't say what the object holds.
+        if object
+            .properties
+            .iter()
+            .any(|property| matches!(property, ObjectPropertyKind::SpreadProperty(_)))
+        {
+            return;
+        }
+        for property in &object.properties {
+            let ObjectPropertyKind::ObjectProperty(property) = property else {
+                continue;
+            };
+            if property.computed {
+                continue;
+            }
+            if let Some(name) = property
+                .key
+                .static_name()
+                .and_then(|name| name.as_str().map(str::to_owned))
+            {
+                if !self.keys.iter().any(|(key, _)| key == &name) {
+                    self.keys.push((name, property.span.start));
+                }
+            }
+        }
+    }
+
+    // A function inside `load` returns to its own caller.
+    fn visit_function(
+        &mut self,
+        _function: &oxc_ast::ast::Function<'a>,
+        _flags: oxc_syntax::scope::ScopeFlags,
+    ) {
+    }
+
+    fn visit_arrow_function_expression(
+        &mut self,
+        _arrow: &oxc_ast::ast::ArrowFunctionExpression<'a>,
+    ) {
+    }
+}
+
+/// `params.id` reads of one name; any other use of it makes the reads unknowable.
+struct ParamReads<'n> {
+    name: &'n str,
+    reads: Vec<String>,
+    opaque: bool,
+}
+
+impl<'a> Visit<'a> for ParamReads<'_> {
+    fn visit_static_member_expression(
+        &mut self,
+        member: &oxc_ast::ast::StaticMemberExpression<'a>,
+    ) {
+        if let Expression::Identifier(object) = &member.object {
+            if object.name.as_str() == self.name {
+                let property = member.property.name.to_string();
+                if !self.reads.contains(&property) {
+                    self.reads.push(property);
+                }
+                return;
+            }
+        }
+        walk::walk_static_member_expression(self, member);
+    }
+
+    fn visit_identifier_reference(&mut self, identifier: &IdentifierReference<'a>) {
+        if identifier.name.as_str() == self.name {
+            self.opaque = true;
+        }
+    }
 }
 
 /// Every identifier a piece of the script reads.

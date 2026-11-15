@@ -1,0 +1,14 @@
+<script>
+  'use route /farms/:id'
+  import { notFound } from '@zubra/router'
+  import { farms, SECRET } from './farms.js'
+  export async function load({ params, url }) {
+    const farm = farms[params.id]
+    if (!farm) return notFound()
+    return { title: `${farm.name} <Tailgate>`, name: farm.name, query: url.searchParams.get('q') ?? '', secret: SECRET, extra: 'dropped' }
+  }
+</script>
+<farm-page name="" query="">
+  <h1>{name}</h1>
+  <p class="query">{query}</p>
+</farm-page>

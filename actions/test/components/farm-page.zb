@@ -1,0 +1,8 @@
+<script>
+  'use route /farms/:id'
+  import { boom } from './boom.js'
+  export async function load({ params }) {
+    return { name: boom(params.id) }
+  }
+</script>
+<farm-page name=""><h1>{name}</h1></farm-page>

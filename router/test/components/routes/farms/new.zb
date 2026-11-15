@@ -1,0 +1,4 @@
+<script>
+  'use route'
+</script>
+<new-farm><h1>New farm</h1></new-farm>

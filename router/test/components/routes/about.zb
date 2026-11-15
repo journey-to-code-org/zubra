@@ -1,0 +1,4 @@
+<script>
+  'use route'
+</script>
+<about-page><h1>About</h1></about-page>

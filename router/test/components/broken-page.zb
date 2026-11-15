@@ -1,0 +1,7 @@
+<script>
+  'use route /broken'
+  export async function load() {
+    throw new Error('the database is down')
+  }
+</script>
+<broken-page><p>never</p></broken-page>

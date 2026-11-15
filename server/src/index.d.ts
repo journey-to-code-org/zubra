@@ -1,5 +1,5 @@
 export interface PropInfo { name: string; attribute: string; type: string; default: unknown; model: boolean; required: boolean }
-export interface ComponentInfo { tag: string; shadow: boolean; form: boolean; props: PropInfo[]; events: string[] }
+export interface ComponentInfo { tag: string; shadow: boolean; form: boolean; props: PropInfo[]; events: string[]; slots: string[] }
 
 export interface PageOptions {
   /**

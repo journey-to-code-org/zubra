@@ -23,6 +23,13 @@ test('every component\'s server functions are routed, and only those', () => {
   ]);
 });
 
+test("a route's load is not an action, and its module isn't imported", async () => {
+  // createActions above would have thrown if boom.js (imported only by load) had been imported.
+  assert.ok(!actions.routes().some((route) => route.includes('farm-page')));
+  const response = await post('http://localhost/_zb/action/farm-page/load', {}, { accept: 'application/json' });
+  assert.equal(response.status, 404);
+});
+
 test('the enhanced path gets the return value as JSON', async () => {
   const response = await post(URL_LOGIN, { email: 'a@example.com' }, { accept: 'application/json' });
   assert.equal(response.status, 200);
