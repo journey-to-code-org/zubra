@@ -541,44 +541,6 @@ function blueprint(source, parent = null) {
   return content;
 }
 
-// Markup whose comments were stripped is put back by `remark.js`, loaded only when an element
-// meets such markup (see connectedCallback).
-let remarker = null; // the module, once loaded
-let remarking = null; // its import
-const loadRemark = () => (remarking ??= import('./remark.js').then(
-  (module) => (remarker = module),
-  () => (remarker = { remark: () => false }),
-));
-/**
- * Whether `root`'s server markup lost the comments `template` has (its top-level elements are
- * there). A template that is only regions has none of its own: `roots`, from the compiler, names
- * the elements its regions' blocks start with, and markup with none of them is the page's own
- * content (text a framework gave it, say), which needs no check, so the element renders now.
- */
-function lostComments(root, template, roots) {
-  if (!root || !hasContent(root) || !hasComment(template) || hasComment(root)) return false;
-  // The page's own children for a slot aren't server markup: the template's top-level elements
-  // must be there, in order.
-  const children = [...root.children];
-  let at = 0;
-  let elements = 0;
-  for (const node of positions(template.firstChild, null)) {
-    if (node.nodeType !== 1) continue;
-    while (at < children.length && children[at].localName !== node.localName) at++;
-    if (at++ >= children.length) return false;
-    elements++;
-  }
-  return elements || !roots ? true : children.some((child) => roots.includes(child.localName));
-}
-
-/** A range's shape: its top-level positions as tag names and region markers. */
-const hasComment = (root) =>
-  !!document.createTreeWalker(root, NodeFilter.SHOW_COMMENT | NodeFilter.SHOW_PROCESSING_INSTRUCTION).nextNode();
-const signature = (range) =>
-  [...positions(range.first, range.stop)]
-    .map((node) => (node.nodeType === 1 ? node.localName : isOpen(node) ? '[' : '#'))
-    .join(' ');
-
 // ---- binding parts -------------------------------------------------------------------------
 
 // ---- event helpers: the modifiers, as functions (for JSX, and for handlers built in scripts) --
@@ -632,38 +594,14 @@ let apple;
 const APPLE = () => (apple ??= /mac|iphone|ipad|ipod/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? ''));
 
 /**
- * An event part's listener and its options: the handler, read when the event fires, behind the
- * modifiers' checks (`.self`, key filters) and effects (`.prevent`, `.stop`).
+ * An event part's listener: the handler, read when the event fires, so swapping it never
+ * re-subscribes. A listener with modifiers (`.prevent`, `.self`, a key) names a binder of its
+ * own (`binder: $modified`, modifiers.js), so a component without them doesn't load that code.
  */
-function listen(part, node) {
-  const m = part.modifiers;
-  // `.mod` is ⌘ on Apple platforms and Ctrl elsewhere.
-  const ctrl = m && (m.ctrl || (m.mod && !APPLE()));
-  const meta = m && (m.meta || (m.mod && APPLE()));
-  const listener = (event) => {
-    if (m) {
-      if (m.self && event.target !== node) return;
-      if (m.keys) {
-        const key = event.key ?? '';
-        if (!m.keys.some((wanted) => (wanted.length === 1 ? key.toLowerCase() === wanted : key === wanted))) return;
-        // With a key, the named modifier keys must be held and the others not.
-        if (!!m.shift !== event.shiftKey || !!ctrl !== event.ctrlKey || !!m.alt !== event.altKey || !!meta !== event.metaKey) return;
-      } else if ((m.shift && !event.shiftKey) || (ctrl && !event.ctrlKey) || (m.alt && !event.altKey) || (meta && !event.metaKey)) {
-        return;
-      }
-      if (m.prevent) event.preventDefault();
-      if (m.stop) event.stopPropagation();
-    }
-    const handler = $r(part.handler());
-    if (typeof handler === 'function') handler.call(node, event);
-    // `.submit`: the form the element belongs to (or, in a shadow root, the host's form).
-    if (m?.submit) formOf(node)?.requestSubmit();
-  };
-  const options = m && (m.once || m.capture || m.passive)
-    ? { once: !!m.once, capture: !!m.capture, passive: !!m.passive }
-    : undefined;
-  return [listener, options];
-}
+const listen = (part, node) => (event) => {
+  const handler = $r(part.handler());
+  if (typeof handler === 'function') handler.call(node, event);
+};
 
 // Interface 2 and 3 parts name no binder: $define fills one in from their keys (`legacyBinder`),
 // and is the only code that names every binder, so an app of interface 4 components drops it.
@@ -679,7 +617,12 @@ function bind(part, node, hydrating, context) {
   devEffects.label = { part, node };
   if (part.on && !part.global) devListened(part, node);
   // @dev-end
-  if (part.text) {
+  if (part.binder) {
+    // A block (`zb-if`, `zb-await`, `zb-each`), a slot or a listener with modifiers: interface 4
+    // output imports the binder for each kind it has, so a bundler leaves out the ones an app
+    // doesn't use.
+    part.binder(part, node, hydrating, context);
+  } else if (part.text) {
     effect(() => {
       const text = part.text();
       // A lone Text child is compared and written in place (`.data`): reading `textContent`
@@ -703,14 +646,12 @@ function bind(part, node, hydrating, context) {
     // <zb-window>/<zb-document>: listening while this part of the template is rendered.
     const target = part.global === 'window' ? window : document;
     effect(() => {
-      const [listener, options] = listen(part, target);
-      target.addEventListener(part.on, listener, options);
-      return () => target.removeEventListener(part.on, listener, options);
+      const listener = listen(part, target);
+      target.addEventListener(part.on, listener);
+      return () => target.removeEventListener(part.on, listener);
     });
   } else if (part.on) {
-    // The handler is read when the event fires, so swapping it never re-subscribes.
-    const [listener, options] = listen(part, node);
-    node.addEventListener(part.on, listener, options);
+    node.addEventListener(part.on, listen(part, node));
   } else if (part.bind) {
     // A part whose code lives in its own entry (`{...spread}`: @zubra/runtime/spread), so
     // components that don't use it don't load it.
@@ -749,10 +690,6 @@ function bind(part, node, hydrating, context) {
     });
   } else if (part.attribute) {
     bindAttribute(part, node, hydrating);
-  } else if (part.binder) {
-    // A block (`zb-if`, `zb-await`, `zb-each`) or a slot: interface 4 output imports the binder
-    // for each kind it has, so a bundler leaves out the ones an app doesn't use.
-    part.binder(part, node, hydrating, context);
   }
   // @dev
   devEffects.label = outerLabel;
@@ -1116,10 +1053,15 @@ const compiledAs = ({ template = '', styles = null, props = {}, shadow = false, 
 // @dev-end
 
 function defineElement(tag, definition) {
-  const { props = {}, shadow = false, form = false, events = [], styled = false, inPage = false, stylesHref = null } = definition;
+  const { props = {}, shadow = false, form = false, events = [], styled = false, inPage = false, stylesHref = null, stylesFromPage = null } = definition;
   // Light-DOM slots, when the component has some: imported by its module (`$slotted`), filled in by $define.
   const slottingOf = (next) => (!shadow && next.slots?.length ? next.slotting ?? null : null);
   let slotting = slottingOf(definition);
+  // A form-associated component's API and callbacks: imported by its module (`$form`), filled in by $define.
+  const forming = form ? definition.forming ?? null : null;
+  // Taking over server markup (hydrate.js): what compiled output imports, unless built for an app
+  // that never renders on a server.
+  const hydrating = definition.hydrating ?? null;
   let { roots, template = '', slots = [], styles = null, setup } = definition;
   // On a server (no DOM), a stand-in with the same `zubra` description, so a module that imports a
   // component loads there: adapters render the host tag, and `@zubra/runtime/server` renders it.
@@ -1130,9 +1072,10 @@ function defineElement(tag, definition) {
   // b-tag"`. On a page that doesn't name this one (a fragment swapped into another page, a
   // page built without the server's head), the document gets the fetched sheet like any root.
   let carried;
-  const pageHasStyles = () => styles != null || (carried ??= document.querySelector(`[data-zb-components~="${tag}"]`) !== null);
+  const pageHasStyles = () => styles != null || stylesFromPage != null || (carried ??= document.querySelector(`[data-zb-components~="${tag}"]`) !== null);
   // (`stylesHref`: the page has the CSS and the module only its address; see `fetchedSheet`.)
-  const ownSheets = () => (styles == null ? (stylesHref ? [(sheet ??= fetchedSheet(stylesHref))] : []) : [(sheet ??= toSheet(styles))]);
+  // (`stylesFromPage`: the bundler put the CSS in the page, and the module has neither; see page-styles.js.)
+  const ownSheets = () => (styles != null ? [(sheet ??= toSheet(styles))] : stylesHref ? [(sheet ??= fetchedSheet(stylesHref))] : stylesFromPage && (sheet ??= stylesFromPage(tag)) ? [sheet] : []);
   const existing = customElements.get(tag);
   if (existing) {
     // @hot (left out of the production build: scripts/build-production.js)
@@ -1156,7 +1099,6 @@ function defineElement(tag, definition) {
     return existing;
   }
   const componentTemplate = { content: blueprint({ template }) };
-  let templateSignature = signature(childRange(componentTemplate.content));
   // Whether children that have the template's shape but no markers can be the server's markup
   // with its markers stripped. In light DOM they can just as well be the page's own content for
   // a slot (`<status-badge><span>3</span></status-badge>`, where the badge's root is a <span>),
@@ -1184,11 +1126,15 @@ function defineElement(tag, definition) {
   // @dev-end
 
   let internals; // (element) => its ElementInternals; set in the static block below
+  let hooksOf; // (element) => its hooks, for form.js; likewise
   class ZubraElement extends HTMLElement {
     static observedAttributes = Object.keys(byAttribute);
     static zubra = describe(tag, { props, shadow, form, slots, events, styled });
     static formAssociated = form;
-    static { internals = (element) => element.#internals; }
+    static {
+      internals = (element) => element.#internals;
+      hooksOf = (element) => element.#hooks;
+    }
     // @hot
     /** Swap in a new version of the component (see above); false if its interface changed. */
     static [HOT](next) {
@@ -1196,7 +1142,6 @@ function defineElement(tag, definition) {
       ({ roots, template = '', slots = [], setup } = next);
       slotting = slottingOf(next);
       componentTemplate.content = blueprint({ template });
-      templateSignature = signature(childRange(componentTemplate.content));
       const nextStyles = next.styles ?? null;
       if (nextStyles !== styles) {
         styles = nextStyles;
@@ -1219,7 +1164,6 @@ function defineElement(tag, definition) {
     #cleanups = [];
     #internals = null; // form-associated only
     #states = null; // the custom states (CustomStateSet), for :state(hydrated)
-    #disabled = false;
 
     static {
       for (const name of Object.keys(props)) {
@@ -1265,7 +1209,7 @@ function defineElement(tag, definition) {
 
     connectedCallback() {
       // A light-DOM component's styles go where it is: the document, or a shadow root.
-      if (!shadow && (styles != null || stylesHref)) {
+      if (!shadow && (styles != null || stylesHref || stylesFromPage)) {
         // A light-DOM component's sheet goes to the root it's in, unless the bundler already put
         // it in the page (`inPage`) and that root is the document.
         // (A callback can run after the element was moved out again: then the root is a detached
@@ -1273,10 +1217,11 @@ function defineElement(tag, definition) {
         const root = this.getRootNode();
         if (root.adoptedStyleSheets && !(inPage && root === document && pageHasStyles())) adopt(root, ownSheets());
       }
+      let waits;
       if (this.#scope) this.#scope.resume();
-      else if (!remarker && claimed(this) && lostComments(shadow ? this.shadowRoot : this, componentTemplate.content, roots)) {
+      else if ((waits = hydrating?.waits(shadow ? this.shadowRoot : this, componentTemplate.content, roots, claimed(this)))) {
         // Server markup without its comments: start once the code that puts them back is here.
-        this.#starting ??= loadRemark().then(() => {
+        this.#starting ??= waits.then(() => {
           this.#starting = null;
           if (this.isConnected && !this.#scope) this.connectedCallback();
         });
@@ -1326,18 +1271,6 @@ function defineElement(tag, definition) {
       return this.#starting ? this.#starting.then(tick) : tick();
     }
 
-    // Form-associated lifecycle (only called by the browser when `formAssociated` is true).
-    formResetCallback() {
-      for (const fn of this.#hooks?.formReset ?? []) fn();
-    }
-    formStateRestoreCallback(state, mode) {
-      for (const fn of this.#hooks?.formRestore ?? []) fn(state, mode);
-    }
-    formDisabledCallback(disabled) {
-      this.#disabled = disabled;
-      for (const fn of this.#hooks?.formDisabled ?? []) fn(disabled);
-    }
-
     // @hot
     /** Re-run the (new) script and template, keeping props, state and slotted content. */
     #reload() {
@@ -1371,9 +1304,7 @@ function defineElement(tag, definition) {
       let given;
       if (!reloading) try { given = JSON.parse(this.getAttribute('zb-props')); } catch {}
       for (const name in given) if (Object.hasOwn(props, name) && !this.#given.has(name)) this[name] = given[name];
-      // The server's stand-in for this control's value, for submitting before JavaScript
-      // (@zubra/server's injectShadowRoots): the element's own form value takes over now.
-      if (form) for (const child of this.querySelectorAll(':scope>input[data-zb-fallback]')) child.remove();
+      forming?.begin(this);
       // @hot (left out of the production build: scripts/build-production.js)
       if (globalThis.__ZUBRA_HOT__ && !reloading) live.add(new WeakRef(this));
       // @hot-end
@@ -1431,35 +1362,16 @@ function defineElement(tag, definition) {
             // @dev-end
           ) : [];
         } finally { current = previous; }
-        // A form control with one two-way prop: that's what it submits, and what a form reset
-        // restores, unless the script says otherwise.
-        const models = Object.keys(props).filter((name) => props[name].model);
-        if (form && models.length === 1) {
-          const [name] = models;
-          if (!this.#hooks.formValued) {
-            effect(() => {
-              const value = $p[name];
-              this.#internals.setFormValue(value == null || value === false || value === ''
-                ? null
-                : value === true ? 'on' : typeof value === 'object' ? JSON.stringify(value) : String(value));
-            });
-          }
-          if (!this.#hooks.formReset.length) {
-            const initialValue = untrack(() => $p[name]);
-            this.#hooks.formReset.push(() => { $p[name] = initialValue; });
-          }
-        }
+        forming?.model(this.#hooks, $p, props, this.#internals);
 
         const context = { slots: new Map(), slotted: styled && !shadow ? tag : null, filled: this.#hooks.filled, states: this.#states };
         this.#context = context;
         const server = hasContent(root);
-        // Server markup whose comments were stripped: put them back, where the template says.
-        const stripped = server && !reloading && claimed(this) && hasComment(componentTemplate.content) && !hasComment(root);
-        const restored = stripped && !!remarker?.remark(root, componentTemplate.content, parts, { blueprint, isOpen, isClose, read: $r, untrack, State: Signal.State, filled: shadow ? [] : (this.getAttribute('data-zb-filled') ?? '').split(' ') });
-        // Server markup has the template's shape; anything else is the page's own children.
-        const nodes = server && !reloading && signature(childRange(root)) === templateSignature
-          ? locate(childRange(root), parts, true)
-          : null;
+        // Server markup has the template's shape (its stripped comments put back first); anything
+        // else is the page's own children. (Without `hydrating`, it's all the page's.)
+        const [nodes, lost] = server && !reloading && hydrating
+          ? hydrating.adopt(root, componentTemplate.content, parts, claimed(this), shadow ? [] : (this.getAttribute('data-zb-filled') ?? '').split(' '))
+          : [];
         if (nodes) {
           parts.forEach((part, index) => bind(part, nodes[index], true, context));
         } else {
@@ -1473,7 +1385,7 @@ function defineElement(tag, definition) {
             // No comments at all where the template has markers: something stripped them, and
             // they couldn't be put back for sure.
             // @dev
-            console.warn(stripped && !restored
+            console.warn(lost
               ? `zubra: <${tag}>'s hydration markers (<?zb [?>, <?zb ]?>, …) are missing, so it's rendered fresh. A sanitizer or a fragment parser removed them; keep processing instructions (and comments, for markup from a 4.x server)${see('hydration-markers')}`
               : `zubra: <${tag}>'s markup doesn't match its template; rendering it fresh${see('server-rendering-and-hydration')}`);
             // @dev-end
@@ -1508,38 +1420,15 @@ function defineElement(tag, definition) {
           });
         }
       });
-      // Disabled (e.g. inside a disabled <fieldset>) before setup registered its hooks. Chromium
-      // always calls formDisabledCallback after connectedCallback, so this never runs there (the
-      // browser tests confirm the behaviour without it); it guards engines that order the
-      // callbacks the other way, which the test suite can't currently exercise.
       // @dev
       devRegister(this, { tag, definition, props: this.#signals, named, scope: this.#scope });
       // @dev-end
-      if (this.#disabled) for (const fn of this.#hooks.formDisabled) fn(true);
+      forming?.end(this, this.#hooks);
     }
   }
 
-  if (form) {
-    // The API native form controls have, backed by ElementInternals.
-    const api = {
-      form: { get() { return internals(this).form; } },
-      validity: { get() { return internals(this).validity; } },
-      validationMessage: { get() { return internals(this).validationMessage; } },
-      willValidate: { get() { return internals(this).willValidate; } },
-      labels: { get() { return internals(this).labels; } },
-      checkValidity: { value() { return internals(this).checkValidity(); } },
-      reportValidity: { value() { return internals(this).reportValidity(); } },
-    };
-    if (!('name' in props)) {
-      api.name = {
-        get() { return this.getAttribute('name'); },
-        set(value) { this.setAttribute('name', value); },
-      };
-    }
-    for (const [key, descriptor] of Object.entries(api)) {
-      Object.defineProperty(ZubraElement.prototype, key, { ...descriptor, configurable: true });
-    }
-  }
+  forming?.define(ZubraElement, { internals, hooksOf, props });
+
 
   // @dev
   definedAs.set(tag, compiledAs(definition));
@@ -1549,4 +1438,4 @@ function defineElement(tag, definition) {
 }
 
 /** @internal What the runtime's feature modules (blocks, when, each, await, slots) take from here. */
-export { COMMENT, PI, READS, TEXT, bind, blueprint, childRange, current, defineElement, isContent, isOpen, locate, mark, marker, matchingClose, positions, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, unmark, untrack };
+export { APPLE, bind, blueprint, childRange, COMMENT, current, defineElement, formOf, hasContent, isClose, isContent, isOpen, locate, mark, marker, matchingClose, PI, positions, READS, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, TEXT, unmark, untrack };

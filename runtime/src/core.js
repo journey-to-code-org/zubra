@@ -12,7 +12,14 @@ export {
   prevent, stop, selfOnly, submit, keys, model, hasSlot, hydrated, signal, from, raw,
   isSafeUrl, isSafeSrcset, $r, $t,
 } from './element.js';
-// zb-if and zb-each are in most components (and the block helpers with them): in the core.
-// zb-await, the slot router and $define, which fewer pages need, are files of their own.
+// zb-if, zb-each, event modifiers and form controls are on most pages (and the block helpers
+// with them): in the core, so a page loads them with it, not as more requests. zb-await, the slot
+// router and $define, which fewer pages need, are files of their own. (Each is still a module of
+// its own, so a bundler leaves out what an app's components don't import.)
 export { $when } from './when.js';
 export { $each } from './each.js';
+export { $modified } from './modifiers.js';
+export { $form } from './form.js';
+// Taking over server markup: what compiled components import unless their app never renders on
+// a server (@zubra/unplugin's `hydrate: false`).
+export { $hydrate } from './hydrate.js';

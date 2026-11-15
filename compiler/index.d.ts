@@ -26,6 +26,8 @@ export interface Options {
   keepImports?: boolean;
   /** For development builds (`emit: 'js'`): what the browser DevTools panel reads. */
   devtools?: boolean;
+  /** For apps that never render on a server (`emit: 'js'`): no hydration in the output. */
+  clientOnly?: boolean;
   noImports?: boolean;
   cssImport?: string;
   cssImportInline?: string;

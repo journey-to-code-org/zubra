@@ -50,9 +50,11 @@ test('bundle: a production page maps and preloads the runtime as one module, and
   const served = get(zubra, '/_zubra/runtime/zubra.js');
   assert.equal(served.status, 200);
   assert.doesNotMatch(String(served.body), /(?:\bfrom|\bimport)\s*["']/, 'it imports nothing');
-  // Without it, as before: the entry and its modules.
-  const plain = runtime(preloaded(pageOf(createZubra({ components, production: true }))));
-  assert.ok(plain.includes('/_zubra/runtime/core.js') && plain.length > 5 && !plain.includes('/_zubra/runtime/zubra.js'));
+  // Without it the runtime is the same one file (only the components aren't joined), and file by
+  // file in development, where it's read and edited.
+  assert.deepEqual(runtime(preloaded(pageOf(createZubra({ components, production: true })))), ['/_zubra/runtime/zubra.js']);
+  const development = runtime(preloaded(pageOf(createZubra({ components }))));
+  assert.ok(development.includes('/_zubra/runtime/core.js') && development.length > 5 && !development.includes('/_zubra/runtime/zubra.js'));
 });
 
 test('bundle: no effect in development or with the DevTools, which read the runtime file by file', () => {

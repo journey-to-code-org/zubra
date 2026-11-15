@@ -28,7 +28,10 @@ export default {
     "resource.js",
     "element.js",
     "when.js",
-    "each.js"
+    "each.js",
+    "modifiers.js",
+    "form.js",
+    "hydrate.js"
   ],
   "deep.js": [
     "signal.js"
@@ -47,23 +50,40 @@ export default {
     "deep.js",
     "effect.js"
   ],
+  "form.js": [
+    "effect.js",
+    "element.js"
+  ],
   "forms.js": [],
+  "hydrate.js": [
+    "element.js",
+    "signal.js"
+  ],
   "index.js": [
     "core.js",
     "legacy.js",
     "await.js",
-    "slots.js"
+    "slots.js",
+    "page-styles.js"
   ],
   "legacy.js": [
     "await.js",
     "each.js",
     "element.js",
     "slots.js",
-    "when.js"
+    "when.js",
+    "modifiers.js",
+    "form.js",
+    "hydrate.js"
+  ],
+  "modifiers.js": [
+    "effect.js",
+    "element.js"
   ],
   "motion.js": [],
   "navigation.js": [],
   "outlet.js": [],
+  "page-styles.js": [],
   "primitives.js": [],
   "react.js": [
     "outlet.js",
@@ -143,21 +163,32 @@ export const bundled = {
   "element.js": [
     "zubra.js"
   ],
+  "form.js": [
+    "zubra.js"
+  ],
   "forms.js": [],
+  "hydrate.js": [
+    "zubra.js"
+  ],
   "index.js": [
     "zubra.js",
     "legacy.js",
     "await.js",
-    "slots.js"
+    "slots.js",
+    "page-styles.js"
   ],
   "legacy.js": [
     "await.js",
     "zubra.js",
     "slots.js"
   ],
+  "modifiers.js": [
+    "zubra.js"
+  ],
   "motion.js": [],
   "navigation.js": [],
   "outlet.js": [],
+  "page-styles.js": [],
   "primitives.js": [],
   "react.js": [
     "outlet.js",

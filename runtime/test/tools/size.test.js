@@ -33,8 +33,12 @@ const BUDGETS = {
   // run of siblings a framework removes takes those elements with it, and `host.firstChild` —
   // about 450 B, to 17 KB. Interface 4's $element and binders beside $define, which fills in
   // binders for interface 2 and 3 parts, about 100 B, to 17.25 KB: this entry has both, an app
-  // only one, since interface 4 output doesn't import $define.)
-  'src/index.js': { gzip: 17.25 * 1024 },
+  // only one, since interface 4 output doesn't import $define. $pageStyles, about 190 B, to 17.5 KB:
+  // what @zubra/unplugin's light-DOM components import in place of their CSS as text, which
+  // takes 0.55 KB off each of the comparison's hosts. Event modifiers in a module of their own,
+  // modifiers.js, about 90 B here, to 17.75 KB: a component whose listeners have none no longer
+  // carries them, 0.34 KB off the comparison's six.)
+  'src/index.js': { gzip: 17.75 * 1024 },
   // The production build (the `production` export condition): the same, without hot reloading
   // (12.5 KB until 3.2, 13 KB until 4.2, 13.5 KB until `animate`, 14 KB until the list work,
   // 14.25 KB until the faster Signals core, 14.75 KB until rows without markers, 15 KB until
@@ -42,8 +46,10 @@ const BUDGETS = {
   // messages are only in development, about 0.7 KB; 15.25 KB until a light-DOM component without
   // slots kept the page's children in a fragment of its own, beside the slot router a component
   // with slots now imports, about 170 B here: this entry has both, an app with no slotted
-  // component ships about 1.2 KB less).
-  'dist/production/index.js': { gzip: 15.5 * 1024 },
+  // component ships about 1.2 KB less; 15.5 KB until $pageStyles and modifiers.js, optional modules
+  // in this entry, about 0.25 KB together, which take 0.55 and 0.34 KB off the apps that don't use
+  // what they replace).
+  'dist/production/index.js': { gzip: 15.75 * 1024 },
   // An app that only uses Signals and effects.
   'src/effect.js': { gzip: 4 * 1024 },
   // `animate`'s leave() and glide(), loaded only by components that animate.
@@ -115,8 +121,11 @@ for (const [entry, budget] of Object.entries(ADAPTERS)) {
 // is, each module its own file, compressed one by one, from the core it maps `@zubra/runtime` to;
 // a page adds the binders its components import. 38.4 KB before the production build was
 // minified (5.14); 17.9 KB after; 17.2 KB once zb-await's binder, the slot router and $define
-// were files of their own, which a page loads only if its components use them (5.18).
-const SERVED = 17.5 * 1024;
+// were files of their own, which a page loads only if its components use them (5.18); 18.2 KB
+// once event modifiers and form controls were modules of their own too (so a bundler leaves them
+// out), two more files in the core's graph. @zubra/server sends the core as one file in
+// production (dist/bundled/zubra.js), so this is for a server without a bundler that doesn't.
+const SERVED = 18.75 * 1024;
 
 test('dist/production as served fits its budget', (t) => {
   const dir = join(here, '../../dist/production');

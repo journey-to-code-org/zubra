@@ -815,7 +815,7 @@ function go() {}
   <a href={href} class="link {label}" hidden={off} onclick={go}>{count}</a>
 </zb-x>"#);
     assert!(module.contains(
-        "import { $element as $define, $r, $t } from \"@zubra/runtime\";\nimport { state } from '@zubra/runtime';"
+        "import { $element as $define, $r, $t, $hydrate } from \"@zubra/runtime\";\nimport { state } from '@zubra/runtime';"
     ));
     assert!(module.contains(r#"template: "\n  <p>Hi <b>there</b><!----></p>\n  <a></a>\n","#));
     for part in [
@@ -922,7 +922,7 @@ fn js_output_compiles_regions_to_nested_blocks() {
     // Interface 4: the module imports the binders its parts name, and only those.
     assert!(
         module.contains(
-            "import { $element as $define, $r, $t, $when, $each } from \"@zubra/runtime\";"
+            "import { $element as $define, $r, $t, $when, $each, $hydrate } from \"@zubra/runtime\";"
         ),
         "{module}"
     );
@@ -1004,7 +1004,7 @@ fn slots_compile_to_regions_in_light_dom_and_native_slots_in_shadow_dom() {
     // Light DOM with slots imports what places content in them; shadow DOM has native slots.
     assert!(light.contains("\n  slotting: $slotted,\n"), "{light}");
     assert!(
-        light.contains("$slot, $slotted } from \"@zubra/runtime\";"),
+        light.contains("$slot, $slotted, $hydrate } from \"@zubra/runtime\";"),
         "{light}"
     );
     assert!(
@@ -1331,6 +1331,7 @@ fn binder_entries_import_each_binder_from_its_own_runtime_entry() {
                 styles_href: None,
                 devtools: false,
                 binder_entries,
+                client_only: false,
             },
             &zubra::filesystem,
         )
@@ -1343,7 +1344,8 @@ fn binder_entries_import_each_binder_from_its_own_runtime_entry() {
             "import { $element as $define, $r, $t } from \"@zubra/runtime\";\n\
              import { $when } from \"@zubra/runtime/when\";\n\
              import { $each } from \"@zubra/runtime/each\";\n\
-             import { $slot, $slotted } from \"@zubra/runtime/slots\";\n"
+             import { $slot, $slotted } from \"@zubra/runtime/slots\";\n\
+             import { $hydrate } from \"@zubra/runtime/hydrate\";\n"
         ),
         "{split}"
     );
@@ -1358,11 +1360,100 @@ fn binder_entries_import_each_binder_from_its_own_runtime_entry() {
     let together = module(false, "@zubra/runtime");
     assert!(
         together.contains(
-            "import { $element as $define, $r, $t, $when, $each, $slot, $slotted } from \"@zubra/runtime\";\n"
+            "import { $element as $define, $r, $t, $when, $each, $slot, $slotted, $hydrate } from \"@zubra/runtime\";\n"
         ),
         "{together}"
     );
     // The parts are the same either way.
     let parts = |module: &str| module[module.find("setup(").unwrap()..].to_owned();
     assert_eq!(parts(&split), parts(&together));
+}
+
+#[test]
+fn a_listener_with_modifiers_names_its_binder_and_a_plain_one_does_not() {
+    let module = js(
+        r#"<zb-x><input onkeydown.enter.prevent={() => 1}><button onclick={() => 2}>b</button><zb-window onkeydown.esc={() => 3}></zb-window></zb-x>"#,
+    );
+    assert!(
+        module.contains("{ path: [0], binder: $modified, on: \"keydown\","),
+        "{module}"
+    );
+    assert!(
+        module.contains("{ path: [1], on: \"click\", handler: () => (() => 2) }"),
+        "{module}"
+    );
+    assert!(
+        module.contains("global: \"window\", binder: $modified, on: \"keydown\""),
+        "{module}"
+    );
+    assert!(
+        module.contains(
+            "import { $element as $define, $r, $t, $modified, $hydrate } from \"@zubra/runtime\";"
+        ),
+        "{module}"
+    );
+    // Without a modifier anywhere, no binder and no import.
+    let plain = js(r#"<zb-x><button onclick={() => 2}>b</button></zb-x>"#);
+    assert!(!plain.contains("$modified"), "{plain}");
+}
+
+#[test]
+fn a_form_associated_component_imports_the_form_controls_api_and_others_do_not() {
+    let control = js(r#"<zb-x form-associated value:model=""><input value={value}></zb-x>"#);
+    assert!(
+        control.contains("  form: true,\n  forming: $form,\n"),
+        "{control}"
+    );
+    assert!(
+        control.contains(
+            "import { $element as $define, $r, $t, $form, $hydrate } from \"@zubra/runtime\";"
+        ),
+        "{control}"
+    );
+    let plain = js(r#"<zb-x value=""><input value={value}></zb-x>"#);
+    assert!(!plain.contains("$form"), "{plain}");
+}
+
+#[test]
+fn client_only_output_leaves_hydration_out() {
+    let source = r#"<zb-x items={[]}><ul><zb-each items={items} as="item"><li>{item}</li></zb-each></ul></zb-x>"#;
+    let module = |client_only: bool| {
+        zubra::compile_js_options(
+            source,
+            "test.zb",
+            &zubra::JsOptions {
+                runtime: "@zubra/runtime",
+                component_extension: Some(".js"),
+                style_imports: None,
+                styles_href: None,
+                devtools: false,
+                binder_entries: false,
+                client_only,
+            },
+            &zubra::filesystem,
+        )
+        .unwrap()
+    };
+    // By default every component takes over server markup.
+    let hydrating = module(false);
+    assert!(
+        hydrating.contains("\n  hydrating: $hydrate,\n"),
+        "{hydrating}"
+    );
+    assert!(
+        hydrating.contains(
+            "import { $element as $define, $r, $t, $each, $hydrate } from \"@zubra/runtime\";"
+        ),
+        "{hydrating}"
+    );
+    // For an app that never renders on a server (`hydrate: false` in the plugin): neither.
+    let client = module(true);
+    assert!(!client.contains("hydrat"), "{client}");
+    assert!(
+        client.contains("import { $element as $define, $r, $t, $each } from \"@zubra/runtime\";"),
+        "{client}"
+    );
+    // The parts are the same either way.
+    let parts = |module: &str| module[module.find("setup(").unwrap()..].to_owned();
+    assert_eq!(parts(&hydrating), parts(&client));
 }

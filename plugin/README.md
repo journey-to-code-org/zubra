@@ -73,7 +73,7 @@ Props go to the component, other attributes to its host, children to its slots (
 
 ## Styles
 
-With Vite, a component's `<style>` is a CSS module in Vite's pipeline, so PostCSS, Tailwind (`@reference "tailwindcss"`, `@apply`) and preprocessors (`<style lang="scss">`) process it. Light-DOM components' CSS lands in the page's CSS bundle; shadow components get theirs as a string (`?inline`) for their shadow roots. With other bundlers, plain CSS is inlined in the module. See the main README's Styles section.
+With Vite, a component's `<style>` is a CSS module in Vite's pipeline, so PostCSS, Tailwind (`@reference "tailwindcss"`, `@apply`) and preprocessors (`<style lang="scss">`) process it. Light-DOM components' CSS lands in the page's CSS bundle, and only there: a light-DOM element inside another shadow root (a Lit or FAST app's) gets its component's rules copied from the page's stylesheets. Shadow components get theirs as a string (`?inline`) for their shadow roots. With other bundlers, plain CSS is inlined in the module. See the main README's Styles section.
 
 ## Options
 
@@ -85,6 +85,8 @@ zubra({
                                // in the app instead (see Types), false writes none
   runtime: '@zubra/runtime',     // the runtime module compiled code imports
   ssr: true,                   // server builds register a renderer (needs @zubra/compiler at run time)
+  hydrate: true,               // false: the app's pages are never rendered on a server, so components
+                               // leave out taking over server markup (about 1 KB smaller with the runtime)
   root: process.cwd(),         // where your own components are (default: Vite's root, or the current folder):
                                // a package's component with one of their tags gets yours (docs/guide/04-composition.md)
 })

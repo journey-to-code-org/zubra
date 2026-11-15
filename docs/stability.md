@@ -56,6 +56,8 @@ Every npm package entry and command below has a tier; `docs/test/stability.test.
 | `@zubra/runtime/each` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`) | The compiled-code interface: `zb-each`'s binder, for modules compiled with `--binder-entries` (what `@zubra/server` asks for) |
 | `@zubra/runtime/await` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`) | The compiled-code interface: `zb-await`'s binder, for modules compiled with `--binder-entries` (what `@zubra/server` asks for) |
 | `@zubra/runtime/slots` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`) | The compiled-code interface: light-DOM slots and the slot router's binder, for modules compiled with `--binder-entries` (what `@zubra/server` asks for) |
+| `@zubra/runtime/modifiers` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`) | The compiled-code interface: a listener with modifiers (`.prevent`, `.self`, a key)'s binder, for modules compiled with `--binder-entries` (what `@zubra/server` asks for) |
+| `@zubra/runtime/form` | Supported | Runtime (`production.test.js`); Server (`preload.test.js`) | The compiled-code interface: a form-associated component's API and callbacks (`forming: $form`), for modules compiled with `--binder-entries` (what `@zubra/server` asks for) |
 | `@zubra/runtime/zag` | Stable | Runtime; registry | Registry `combo-box` |
 | `@zubra/runtime/primitives` | Stable | Runtime; registry | Registry menus, tabs |
 | `@zubra/runtime/motion` | Supported | Runtime (both outputs) | Zubra UI motion components |
@@ -66,6 +68,7 @@ Every npm package entry and command below has a tier; `docs/test/stability.test.
 | `@zubra/runtime/server` | Stable | Runtime; meta-framework examples | Next.js, Nuxt, SvelteKit, SolidStart |
 | `@zubra/runtime/bridge` | Supported | Runtime (React 19, 18, Vue 3) | Nothing outside its tests yet |
 | `@zubra/runtime/context` | Supported | Runtime (plain HTML, React 19, 18, Vue 3) | Nothing outside its tests yet |
+| `@zubra/runtime/hydrate` | Supported | Runtime (`client-only.test.js`, every hydration test); Server (`preload.test.js`) | The compiled-code interface: taking over server markup (`hydrating: $hydrate`), which every component compiled without `--client-only` imports; its own entry for modules compiled with `--binder-entries` |
 | `@zubra/runtime/forms` | Supported | Runtime (four form libraries) | Nothing outside its tests yet |
 | `@zubra/runtime/navigation` | Supported | Runtime (React Router, Vue Router) | Nothing outside its tests yet |
 | `@zubra/runtime/testing` | Supported | WebAssembly compiler (`examples/testing-vitest`) | `examples/testing-vitest` |
