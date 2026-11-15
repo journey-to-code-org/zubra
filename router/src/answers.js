@@ -5,11 +5,17 @@ export const ANSWER = Symbol.for('@zubra/router.answer');
 /** `return notFound()`: the path has nothing behind it (no such farm). The response is a 404. */
 export const notFound = () => ({ [ANSWER]: 'notFound' });
 
-/** `return redirect('/cart')`: send the browser elsewhere (303 unless `status` says otherwise). */
-export const redirect = (location, status = 303) => {
+/**
+ * `return redirect('/cart')`: send the browser elsewhere (303 unless `status` says otherwise).
+ * Only on this site: another site needs `redirect(url, { external: true })` (or
+ * `redirect(url, 302, { external: true })`), so a `next` taken from the query string can't send
+ * a visitor off it.
+ */
+export const redirect = (location, status = 303, { external = false } = {}) => {
+  if (status && typeof status === 'object') ({ status = 303, external = false } = status);
   if (typeof location !== 'string' || !location) throw new TypeError("@zubra/router: redirect() needs where to go: redirect('/cart')");
   if (![301, 302, 303, 307, 308].includes(status)) throw new TypeError(`@zubra/router: redirect()'s status is 301, 302, 303, 307 or 308, not ${status}`);
-  return { [ANSWER]: 'redirect', location, status };
+  return { [ANSWER]: 'redirect', location, status, external: Boolean(external) };
 };
 
 /**

@@ -150,10 +150,18 @@ function compareSpecificity(a, b) {
   return right.length - left.length || (a < b ? -1 : a > b ? 1 : 0);
 }
 
+/**
+ * A pathname the router answers: one leading slash. The URLPattern polyfill (Node 22 has no
+ * global one) reads a leading `//host` as an authority, so `//evil/staff` would match `/staff`
+ * and pass any guard the app or a proxy keeps on the raw path.
+ */
+const routable = (pathname) => typeof pathname === 'string' && pathname.startsWith('/') && !pathname.startsWith('//');
+
 /** A matcher over the pages: `match(pathname)` → `{ page, params }` or null. */
 export function matcher(pages, URLPatternClass) {
   const compiled = pages.map((page) => ({ page, pattern: new URLPatternClass({ pathname: page.pattern }) }));
   return (pathname) => {
+    if (!routable(pathname)) return null;
     for (const { page, pattern } of compiled) {
       const found = pattern.exec({ pathname });
       if (found) {
@@ -163,5 +171,32 @@ export function matcher(pages, URLPatternClass) {
       }
     }
     return null;
+  };
+}
+
+/**
+ * The layouts over a requested path, outermost first: every layout whose prefix matches the
+ * start of the path itself. Matched against the path, not compared with the page's pattern
+ * text, so a page written `/org/:id(\\d+)/x`, `/org/:orgId/x` or `/docs/:path*` is still inside
+ * the layouts of `/org/:org` and `/docs/private` whenever the path is under them: a layout's
+ * check guards every page under its prefix, however that page's pattern is spelled.
+ * `match(pathname)` → `[{ layout, params }]`.
+ */
+export function layoutMatcher(layouts, URLPatternClass) {
+  const compiled = layouts.map((layout) => ({
+    layout,
+    pattern: new URLPatternClass({ pathname: layout.pattern === '/' ? '/*' : `${layout.pattern}{/*}?` }),
+  }));
+  return (pathname) => {
+    if (!routable(pathname)) return [];
+    const found = [];
+    for (const { layout, pattern } of compiled) {
+      const matched = pattern.exec({ pathname });
+      if (!matched) continue;
+      const params = {};
+      for (const [key, value] of Object.entries(matched.pathname.groups)) if (value !== undefined && !/^\d+$/.test(key)) params[key] = value;
+      found.push({ layout, params });
+    }
+    return found.sort((a, b) => segmentsOf(a.layout.pattern).length - segmentsOf(b.layout.pattern).length);
   };
 }

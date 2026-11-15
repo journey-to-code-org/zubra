@@ -29,7 +29,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { findCompiler } from '@zubra/server';
 import { ANSWER } from './answers.js';
-import { APP, buildTable, fromRoot, matcher, RouteError } from './table.js';
+import { APP, buildTable, fromRoot, layoutMatcher, matcher, RouteError } from './table.js';
 
 export { notFound, redirect, show } from './answers.js';
 
@@ -114,14 +114,17 @@ export async function createRouter({
   for (const [name, path] of halves) {
     const response = compile({ emit: 'server', path, files: read(path) });
     if (!response.ok) throw new Error(response.error);
-    const module = join(cacheDir, `${name.split('/').join('__')}.route.mjs`);
+    // One file name per component name, with no two names sharing one (`a/b` and `a__b` did).
+    const module = join(cacheDir, `${name.replace(/_/g, '_u').replace(/\//g, '_s')}.route.mjs`);
     const writing = `${module}.${process.pid}.${randomUUID()}.tmp`;
     writeFileSync(writing, rewriteImports(response.output, (specifier) => pathToFileURL(resolve(dirname(path), specifier)).href));
     renameSync(writing, module);
     loads.set(name, (await import(`${pathToFileURL(module).href}?t=${Date.now()}`)).load);
   }
 
-  const match = matcher(pages, await urlPattern());
+  const URLPatternClass = await urlPattern();
+  const match = matcher(pages, URLPatternClass);
+  const layoutsOver = layoutMatcher(layouts, URLPatternClass);
 
   /** A Response for a GET or HEAD to a route, or null. `extra` (`{ req }`, `{ c }`) goes to `context`. */
   async function respond(request, extra = {}, { unknown = false } = {}) {
@@ -129,7 +132,11 @@ export async function createRouter({
     const url = new URL(request.url);
     const found = unknown ? null : match(url.pathname);
     if (!found && !unknown) return null;
-    const { page = null, params = {} } = found ?? {};
+    const { page = null, params: pageParams = {} } = found ?? {};
+    // The layouts over this path, matched against the path itself (`layoutMatcher`), and their
+    // parameters, so a layout's `load` reads its own (`params.org`) whatever the page calls it.
+    const over = page ? layoutsOver(url.pathname) : [];
+    const params = Object.assign({}, ...over.map((each) => each.params), pageParams);
     const route = { path: url.pathname, pattern: page?.pattern ?? null, params };
     const headers = new Headers();
     const fail = (error) => {
@@ -177,7 +184,9 @@ export async function createRouter({
     let given;
     const loadArguments = async () => {
       if (!given) {
-        const result = actions ? actions.result(extra.req ?? request, (name, value) => headers.append(name, value)) : null;
+        // A HEAD (a prefetch, a link checker) doesn't use up an action's one-use answer: the
+        // GET that follows still shows it.
+        const result = actions && request.method !== 'HEAD' ? actions.result(extra.req ?? request, (name, value) => headers.append(name, value)) : null;
         given = { params, url, request, route, context: (context ? await context({ request, ...extra }) : null) ?? {}, result };
       }
       return given;
@@ -201,7 +210,13 @@ export async function createRouter({
     // ones outside returned reaches the ones inside as props they declare. A `show()` puts
     // another component in the place of the one that answered, and the walk starts again with
     // it (the loads that already ran aren't run twice).
-    let chain = page.layouts;
+    //
+    // Every layout over the path runs its `load`, a `root` layout's outer ones and `app.zb`'s
+    // included, so an outer check guards a root section too; only those from the innermost
+    // `root` one are rendered.
+    const around = over.map(({ layout }) => layout.name);
+    let rendered = new Set(fromRoot(over.map(({ layout }) => layout)).map((layout) => layout.name));
+    let chain = around;
     let leaf = { name: page.name };
     let status = 200;
     let parts;
@@ -209,7 +224,7 @@ export async function createRouter({
     try {
       walk: for (let walks = 0; ; walks++) {
         // Each show() from a layout leaves fewer layouts, so this can't go round for long.
-        if (walks > page.around.length + 2) throw new RouteError(`${route.pattern}: show() kept being answered with another show()`);
+        if (walks > around.length + 2) throw new RouteError(`${route.pattern}: show() kept being answered with another show()`);
         parts = [];
         title = undefined;
         const data = {};
@@ -222,12 +237,15 @@ export async function createRouter({
             case 'notFound':
               return errorPage(404);
             case 'redirect':
-              headers.set('location', answer.location);
+              headers.set('location', checkedLocation(answer, url));
               return new Response(null, { status: answer.status, headers });
             case 'show':
               // In place of a layout: inside the layouts over it, as if it weren't there (so a
               // `root` layout that turns someone away shows its notice in the app's shell).
-              if (!last) chain = fromRoot(page.around.slice(0, page.around.indexOf(name)).map((each) => ({ name: each, root: isRoot.get(each) }))).map((each) => each.name);
+              if (!last) {
+                chain = around.slice(0, around.indexOf(name));
+                rendered = new Set(fromRoot(chain.map((each) => ({ name: each, root: isRoot.get(each) }))).map((each) => each.name));
+              }
               leaf = { name: answer.name, props: { ...answer.props } };
               status = answer.status;
               continue walk;
@@ -240,7 +258,7 @@ export async function createRouter({
           for (const [key, value] of Object.entries(params)) if (declared.has(key)) props[key] = value;
           // Props the component declares; anything else the loads return doesn't reach it.
           for (const [key, value] of Object.entries(data)) if (declared.has(key)) props[key] = value;
-          parts.push({ name, props, last });
+          if (last || rendered.has(name)) parts.push({ name, props, last });
         }
         break;
       }
@@ -261,6 +279,9 @@ export async function createRouter({
       return fail(error);
     }
     headers.set('content-type', 'text/html; charset=utf-8');
+    // A page whose loads read the request (the session, an action's answer) is that visitor's:
+    // no shared cache keeps it for the next one. The app can say otherwise in its own handler.
+    if (given) headers.set('cache-control', 'private, no-store');
     return new Response(request.method === 'HEAD' ? null : html, { status, headers });
   }
 
@@ -334,9 +355,38 @@ function rewriteImports(code, to) {
   return code.replace(/(\bfrom\s*|\bimport\s*\(?\s*)(['"])(\.{1,2}\/[^'"]+)\2/g, (_, keyword, quote, specifier) => `${keyword}${quote}${to(specifier)}${quote}`);
 }
 
-/** A Node GET or HEAD request as a fetch Request. */
+/**
+ * Where a `redirect()` sends the browser: on this site unless it says `{ external: true }`.
+ * A path starting `//` or `/\` is another site to a browser, so it's written with one slash;
+ * an absolute URL elsewhere (a `next` from the query string) is refused, and so is any scheme
+ * that isn't http(s). `redirect(next)` after a sign-in can't send anyone off the site.
+ */
+function checkedLocation({ location, external }, url) {
+  if (/^[/\\]/.test(location)) return '/' + location.replace(/^[/\\]+/, '');
+  let target;
+  try {
+    target = new URL(location, url);
+  } catch {
+    throw new RouteError(`redirect() to ${JSON.stringify(location)}: not a URL`);
+  }
+  if (!['http:', 'https:'].includes(target.protocol)) throw new RouteError(`redirect() to a ${target.protocol} URL is refused`);
+  if (target.origin !== url.origin && !external) throw new RouteError(`redirect() to ${target.origin}, another site: say redirect(to, { external: true }) if that's meant`);
+  return target.origin === url.origin ? target.pathname + target.search + target.hash : target.href;
+}
+
+/** A Host header that is only a host: a name, IPv4 or [IPv6], and a port. */
+const HOST = /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$/;
+
+/**
+ * A Node GET or HEAD request as a fetch Request. The path routed is `req.url`'s, and nothing
+ * else: a `Host` that isn't a host (`localhost/staff`) or a target that isn't a path
+ * (`http://evil/staff`, `//evil/staff`) would make the URL's path differ from `req.url`, past
+ * any guard the app keeps on `req.url`. Those throw, and `handle()` answers 400.
+ */
 function toRequest(req) {
   const host = req.headers.host ?? 'localhost';
+  if (!HOST.test(host)) throw new RouteError('a Host header that is not a host');
+  if (typeof req.url !== 'string' || !req.url.startsWith('/') || req.url.startsWith('//')) throw new RouteError('a request target that is not a path');
   const protocol = req.socket?.encrypted ? 'https' : 'http';
   const headers = new Headers();
   for (const [name, value] of Object.entries(req.headers)) {
