@@ -34,7 +34,7 @@ Every npm package entry and command below has a tier; `docs/test/stability.test.
 | Contract | Tier | Notes |
 |---|---|---|
 | The `.zb` format and `.zb.jsx` / `.zb.tsx` front ends | Stable | The README's rules are the reference |
-| The compiled ABI (`abi: 3`) | Stable | The runtime still runs `abi: 2` output |
+| The compiled ABI (`abi: 4`) | Stable | The runtime still runs `abi: 2` and `abi: 3` output (through `$define`) |
 | CLI commands, flags and exit codes | Stable | Except the commands marked below |
 | The Custom Elements Manifest and typings the compiler writes | Stable | |
 | Hydration markers (processing instructions) | Stable | The runtime still reads 4.x comment markers |
