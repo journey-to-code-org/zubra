@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { connect } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { createActions } from '../src/index.js';
+import { createActionsCore, routesFrom } from '../src/core.js';
 
 const components = fileURLToPath(new URL('./components', import.meta.url));
 const actions = await createActions({ components, onError: () => {} });
@@ -188,6 +189,11 @@ test('the result cookie is __Host- and Secure on HTTPS, and only the page the fo
   const planted = `__zb_result=${encodeURIComponent(JSON.stringify({ action: '/_zb/action/login-form/login', value: { error: 'Your account is locked: call +1-555-0100' }, page: '/account' }))}`;
   assert.equal(actions.result(new Request('https://shop.example/account', { headers: { cookie: planted } })), null);
   assert.ok(actions.result(new Request('http://localhost/account', { headers: { cookie: planted } })), 'over plain HTTP it is the only one there is');
+  // Behind a proxy that ends TLS, requests arrive as http: `secure: true` says the site is HTTPS.
+  const proxied = createActionsCore({ routes: routesFrom({ '/_zb/action/login-form/login': () => ({ ok: true }) }), secure: true });
+  const behind = await proxied.fetch(new Request('http://shop.example/_zb/action/login-form/login', { method: 'POST', headers: { origin: 'http://shop.example', referer: 'http://shop.example/account' }, body: new URLSearchParams({ email: 'a@b.c' }) }));
+  assert.match(behind.headers.get('set-cookie'), /^__Host-zb_result=.*; Secure/);
+  assert.equal(proxied.result(new Request('http://shop.example/account', { headers: { cookie: planted } })), null, 'and a planted plain cookie is not read');
   // Plain HTTP (local development) keeps the plain name: browsers refuse __Host- without Secure.
   const plain = await post(URL_LOGIN, { email: 'b@example.com' }, { referer: 'http://localhost/account' });
   assert.match(plain.headers.get('set-cookie'), /^__zb_result=/);

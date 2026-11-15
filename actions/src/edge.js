@@ -18,7 +18,7 @@ export { MOUNT, SCRIPT_PATH, COOKIE, SECURE_COOKIE } from './core.js';
  * `{ request, ...extra }`, where `extra` is fetch's second argument (`{ env, ctx }` in a Worker).
  * `origins`, `onError` as the Node entry's.
  */
-export function createActions({ actions, client = null, origins = [], onError = (error) => console.error(error), context = () => ({}), maxBytes } = {}) {
+export function createActions({ actions, client = null, origins = [], onError = (error) => console.error(error), context = () => ({}), maxBytes, secure } = {}) {
   if (!actions || typeof actions !== 'object') throw new TypeError("createActions({ actions }): pass `actions` from `zubra-actions build`'s index.js");
-  return createActionsCore({ routes: routesFrom(actions), client, origins, onError, context, maxBytes });
+  return createActionsCore({ routes: routesFrom(actions), client, origins, onError, context, maxBytes, secure });
 }

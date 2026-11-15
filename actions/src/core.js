@@ -20,7 +20,10 @@ export const TOO_LARGE = Object.freeze({ error: 'Too large' });
  * `routes`: a Map of URL → function. `client`: the enhancing script's source, served at
  * SCRIPT_PATH, or null when the host serves it as a static file.
  */
-export function createActionsCore({ routes, client = null, origins = [], onError = (error) => console.error(error), context = () => ({}), maxBytes = MAX_BYTES }) {
+export function createActionsCore({ routes, client = null, origins = [], onError = (error) => console.error(error), context = () => ({}), maxBytes = MAX_BYTES, secure }) {
+  // Whether a request is over HTTPS, for the result cookie: what the app says (`secure`, for one
+  // behind a proxy that ends TLS, whose requests reach it as http), else the request's own URL.
+  const overHttps = (request) => secure ?? (/^https:/i.test(request.url ?? '') || request.socket?.encrypted === true);
   if (!(maxBytes > 0)) throw new TypeError('@zubra/actions: `maxBytes` is the largest post to read, in bytes (Infinity for no limit)');
   const over = Symbol('too large');
   /** The post's fields and files, or `over` when it's bigger than maxBytes (counted as it's read). */
@@ -121,7 +124,7 @@ export function createActionsCore({ routes, client = null, origins = [], onError
     const cookie = encodeURIComponent(JSON.stringify({ action: url.pathname, page: location.split('?')[0], value: value ?? null }));
     // A cookie holds about 4 KB; a bigger result reaches only the enhanced path.
     if (cookie.length < 3800) {
-      headers.append('set-cookie', url.protocol === 'https:' ? `${SECURE_COOKIE}=${cookie}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=60` : `${COOKIE}=${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=60`);
+      headers.append('set-cookie', overHttps(request) ? `${SECURE_COOKIE}=${cookie}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=60` : `${COOKIE}=${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=60`);
     }
     return new Response(null, { status: 303, headers });
   }
@@ -135,8 +138,7 @@ export function createActionsCore({ routes, client = null, origins = [], onError
     const parts = header.split(/;\s*/);
     // Over https only the __Host- cookie is ours: the plain one can be planted by a sibling
     // subdomain or over plain http, and would show its text as this site's answer.
-    const secure = /^https:/i.test(request.url ?? '') || request.socket?.encrypted === true;
-    const name = secure || parts.some((part) => part.startsWith(`${SECURE_COOKIE}=`)) ? SECURE_COOKIE : COOKIE;
+    const name = overHttps(request) || parts.some((part) => part.startsWith(`${SECURE_COOKIE}=`)) ? SECURE_COOKIE : COOKIE;
     const match = parts.find((part) => part.startsWith(`${name}=`));
     if (!match) return null;
     let found;
