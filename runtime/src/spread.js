@@ -20,9 +20,7 @@ const SPREAD_REFUSED = new Set(['innerhtml', 'outerhtml', 'innertext', 'textcont
 // An animation's values and target (`<set attributeName="href" to="javascript:…">` is a link to a
 // URL nothing checks) and a <meta>'s http-equiv (a refresh redirects anywhere): the template's
 // text only, never a spread's, as on the server.
-const ANIMATIONS = new Set(['set', 'animate', 'animatemotion', 'animatetransform']);
-const ANIMATED = new Set(['to', 'from', 'by', 'values', 'attributename']);
-const neverSpread = (tag, name) => (ANIMATIONS.has(tag.toLowerCase()) && ANIMATED.has(name)) || (tag.toLowerCase() === 'meta' && name === 'http-equiv');
+const neverSpread = (tag, name) => /^(set|animate(motion|transform)?)\u0001(to|from|by|values|attributename)$|^meta\u0001http-equiv$/i.test(`${tag}\u0001${name}`);
 const SPREAD_PROPERTIES = new Set(['value', 'checked', 'selected', 'indeterminate']);
 const SPREAD_NAMES = { classname: 'class', htmlfor: 'for' };
 const kebab = (key) => (key.startsWith('--') ? key : key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`));
