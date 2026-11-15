@@ -98,6 +98,7 @@ fn the_output_is_a_standard_custom_element() {
     }
     for runtime in [
         "$define",
+        "$element",
         "$p",
         "$r(",
         "$t(",
