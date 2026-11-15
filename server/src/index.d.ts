@@ -114,11 +114,10 @@ export interface ZubraOptions {
    */
   preload?: boolean;
   /**
-   * `true`: in production the runtime is served as one file (`runtime/zubra.js`, from
-   * `@zubra/runtime`'s `dist/bundled`) where a page loaded its entry and the six modules that
-   * imports. No effect in development or with the DevTools. Off by default in 5.x.
-   * A page's components are one module too (`<prefix>/b/<names>.<hash>.js`), unless the compiler
-   * says the set must stay apart (the reason goes to `warn`).
+   * `true`: in production a page's components are one module (`<prefix>/b/<names>.<hash>.js`),
+   * unless the compiler says the set must stay apart (the reason goes to `warn`). No effect in
+   * development or with the DevTools. Off by default in 5.x. (The runtime's core is one file,
+   * `runtime/zubra.js` from `@zubra/runtime`'s `dist/bundled`, in production either way.)
    */
   bundle?: boolean;
 }
