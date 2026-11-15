@@ -1,6 +1,6 @@
 {
   "name": "create-zubra",
-  "version": "5.15.0",
+  "version": "5.16.0",
   "description": "Start an app with Zubra web components: `npm create zubra`",
   "license": "ISC",
   "repository": {
