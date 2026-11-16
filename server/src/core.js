@@ -25,7 +25,7 @@ const RENDER_LARGEST = 512 * 1024;
  * host serves under `<base>/` beyond the components' modules (`{ status, type, body }` or null).
  * `needs(name, code)`: the host's check on a compiled module (a package it needs being installed).
  */
-export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}` }) {
+export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}` }) {
   if (gaps !== 'warn' && gaps !== 'ignore') throw new Error(`@zubra/server: gaps is "warn" or "ignore", not ${JSON.stringify(gaps)}`);
   if (clientModules !== 'all' && clientModules !== 'needed') throw new Error(`@zubra/server: clientModules is "all" or "needed", not ${JSON.stringify(clientModules)}`);
   if (typeof inline !== 'boolean') throw new Error(`@zubra/server: inline is true or false, not ${JSON.stringify(inline)}`);
@@ -504,11 +504,36 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
       scripts: () => scripts(used, false, options),
       /** A whole page with the head and scripts put in (before `</head>` and `</body>`). */
       finish(html) {
+        strangers(html);
         return insertBefore(insertBefore(html, '</head>', head(used, options)), '</body>', scripts(used, false, options));
       },
     };
 
+    /**
+     * `checkPages` (development): a component's tag in the page that this page object didn't
+     * render, and that none it rendered imports. What `finish()` adds is for the components this
+     * object rendered, so that one gets no CSS and no module: it shows the server's HTML and
+     * never starts, with nothing in the console. The usual cause is a second `zubra.page()`
+     * (one to render, another to finish), so the warning says which tag and what to do. A page
+     * that loads the module itself (its URL is in the HTML) is left alone. Said once per tag.
+     */
+    function strangers(html) {
+      if (!checkPages) return;
+      const tags = byTag();
+      let known = null;
+      for (const { tag } of hostTags(html, tags)) {
+        const name = tags.get(tag);
+        known ??= new Set(componentSet(used));
+        if (known.has(name) || html.includes(componentUrl(name))) continue;
+        const message = `@zubra/server: the page has <${tag}>, but the page object that finished it didn't render it, so its CSS and module aren't in the page and the element won't start in the browser. Render and finish with one object per request: const page = zubra.page(); page.render('${tag}', props); page.finish(html). (A second zubra.page(), or zubra.render(), doesn't tell this one what the page uses.)`;
+        if (warned.has(message)) continue;
+        warned.add(message);
+        warn(message);
+      }
+    }
+
     async function* chunks(html) {
+      strangers(html);
       // The shell: as the ordinary page, but with the module script `async`, so the elements
       // start as soon as it has loaded instead of when the stream ends (a module script is
       // deferred until the document is complete). A region that arrives after an element has

@@ -856,3 +856,41 @@ test("injectShadowRoots: a quoted '>' in a host's attribute doesn't end its star
   assert.match(injected, /<count-stepper name='q2' value="1" label='a>b'><template shadowrootmode="open">/);
   assert.equal((injected.match(/shadowrootmode/g) ?? []).length, 2);
 });
+
+test('finishing a page with a different page object than rendered it says so, once, in development', () => {
+  const warned = [];
+  const zubra = createZubra({ components, production: false, warn: (message) => warned.push(message) });
+  // The mistake: one page object renders, another finishes, so the second knows of no component.
+  const body = zubra.page().render('hello-there', { name: 'Ada' });
+  const html = zubra.page().finish(layout(body));
+  assert.doesNotMatch(html, /components\/hello-there\.js/, 'the module is missing, which is the problem');
+  assert.equal(warned.length, 1);
+  assert.match(warned[0], /the page has <hello-there>, but the page object that finished it didn't render it/);
+  assert.match(warned[0], /page\.render\('hello-there', props\); page\.finish\(html\)/);
+  zubra.page().finish(layout(body));
+  assert.equal(warned.length, 1, 'said once per tag');
+  // The same through zubra.render(), which no page hears of.
+  zubra.page().finish(layout(zubra.render('count-stepper')));
+  assert.equal(warned.length, 2);
+  assert.match(warned[1], /<count-stepper>/);
+});
+
+test('a page finished by the object that rendered it, a child its component imports, and a tag in a comment or a script get no warning', () => {
+  const warned = [];
+  const zubra = createZubra({ components, production: false, warn: (message) => warned.push(message) });
+  const page = zubra.page();
+  // <order-form> imports <count-stepper>, whose tag is in its markup: the form's module loads it.
+  const body = page.render('order-form');
+  assert.match(body, /<count-stepper/);
+  page.finish(layout(`${body}<!-- <hello-there> --><script>const tag = '<hello-there>';</script>`));
+  // A tag the page wrote for an element whose module it loads itself.
+  zubra.page().finish(layout('<hello-there name="Bo"></hello-there><script type="module" src="/_zubra/components/hello-there.js"></script>'));
+  assert.deepEqual(warned.filter((message) => message.includes('page object')), []);
+});
+
+test('in production a finished page is not read for strangers', () => {
+  const warned = [];
+  const zubra = createZubra({ components, production: true, warn: (message) => warned.push(message) });
+  zubra.page().finish(layout(zubra.page().render('hello-there', { name: 'Ada' })));
+  assert.deepEqual(warned, []);
+});

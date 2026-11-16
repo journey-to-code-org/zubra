@@ -167,6 +167,8 @@ export function createZubra({ components = 'components', packages = [], prefix =
     inline,
     preload,
     bundle: bundling,
+    // Development only: it reads every tag of every finished page.
+    checkPages: !production,
     runtimeFile: oneFile ? 'zubra.js' : 'core.js',
     runtimeModules: oneFile ? bundledModules : runtimeModules,
     // The compiler keys a context by its module's path, joined to the importing component's.

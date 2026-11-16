@@ -4,6 +4,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Added
+
+- **`@zubra/server` says when a page was finished by a different page object than rendered it.** `zubra.page()` collects the components it renders, and `finish()` adds the CSS and modules of those. Rendering with one object and finishing with another (`zubra.page().render(…)` in one helper, `zubra.page().finish(…)` in the next), or rendering with `zubra.render()`, left the second object knowing of none: the page showed the server's HTML and no element ever started, with nothing said on the server or in the console. In development `finish()`, `stream()` and `streamResponse()` now name each such tag, once, with what to do (one `zubra.page()` per request). A tag one of the page's own components imports, a tag whose module the page loads itself, and a tag in a comment or a script are left alone; nothing is read in production, and no page's HTML changes. Found on Potomac Solutions' comparison slice.
+
 ### Changed
 
 - **`@zubra/sync/connect` loads `webrtc.js` only for a page that asks for it** (`connect({ webrtc })`). It was imported by every connected page, peer-to-peer or not: 2.2 KB gzipped on a page that only reads. A page with `webrtc` loads it while its first pull runs, and its live stream (which brings the peers and their signals) opens once it's there, so peers connect as before.
