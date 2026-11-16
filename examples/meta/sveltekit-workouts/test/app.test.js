@@ -54,6 +54,8 @@ test('the stats and the list: zubra elements with Svelte props, including an obj
   // warning, and the grid shows the logged days.
   const html = await (await fetch(`${base}/`)).text();
   assert.match(html, /<streak-grid zb-props="\{&quot;log&quot;:\{&quot;20\d\d-[^"]*" log="\[object Object\]"/);
+  // The grid starts on its own, after the rows waited for above: wait for its sixth logged day.
+  await page.locator('streak-grid button[aria-pressed=true]').nth(5).waitFor({ timeout: 5000 }).catch(() => {});
   assert.ok(await page.locator('streak-grid button[aria-pressed=true]').count() >= 6);
   assert.match(await page.getByRole('img', { name: /^Days trained this week: \d+%$/ }).getAttribute('aria-label'), /%$/);
   assert.deepEqual(messages, []);
