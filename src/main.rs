@@ -6,6 +6,9 @@ use std::{
     process::ExitCode,
 };
 
+/// What `--framework` takes (`--emit dts`).
+const FRAMEWORKS: &str = "react, vue, svelte, solid, solid2 or none";
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -110,10 +113,11 @@ fn run() -> Result<(), String> {
                     Some("vue") => zubra::Framework::Vue,
                     Some("svelte") => zubra::Framework::Svelte,
                     Some("solid") => zubra::Framework::Solid,
+                    Some("solid2") => zubra::Framework::Solid2,
                     Some("none") => zubra::Framework::None,
                     other => {
                         return Err(format!(
-                            "unknown --framework `{}`; expected react, vue, svelte, solid or none",
+                            "unknown --framework `{}`; expected {FRAMEWORKS}",
                             other.unwrap_or_default()
                         ))
                     }

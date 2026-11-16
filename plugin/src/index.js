@@ -26,6 +26,7 @@ import { createUnplugin } from 'unplugin';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 import { addProps, zubraImports } from './props.js';
+import { solidOf } from './solid.js';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createRequire } from 'node:module';
 
@@ -302,7 +303,8 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
     return target;
   }
   function writeTypings(context, path) {
-    const framework = ['react', 'vue', 'svelte', 'solid'].includes(project) ? project : 'none';
+    // Solid 1 or 2 by the version the app has (solid.js): their JSX lives in different modules.
+    const framework = project === 'solid' ? solidOf(root ?? process.cwd()) : ['react', 'vue', 'svelte'].includes(project) ? project : 'none';
     const beside = resolve(dirname(path), `${basename(path, '.zb')}.d.zb.ts`);
     const target = (typingsDir && typingsTarget(path)) || beside;
     if (target !== beside && existsSync(beside) && !warnedBeside.has(beside)) {

@@ -21,7 +21,8 @@ Every framework uses the element the same way underneath: **properties in, DOM e
 | React 18/19 (`.jsx`/`.tsx`) | A React component (`import Rating from './rating.zb'`) | `<Rating value={3} items={list} />` | `onValueChange={(e) => e.detail}` | `value={v} onValueChange={…}` | JSX children; `slot="name"` on an element for named slots |
 | Vue 3 (`.vue`) | A Vue component | `:items="list"` | `@valuechange="…"` | `v-model:value` (or `v-model` for `value`) | default and `<template #name>` slots |
 | Svelte 5 | The element (typings written) | `<star-rating {value} items={list}>` | `onvaluechange={…}` | `bind:value` | children; `slot="name"` |
-| Solid | The element (typings written) | `prop:items={list}` for objects; plain attributes for primitives | `on:valuechange={…}` | `prop:value` + `on:valuechange` | children; `slot="name"` |
+| Solid 1 | The element (typings written) | `prop:items={list}` for objects; plain attributes for primitives | `on:valuechange={…}` | `prop:value` + `on:valuechange` | children; `slot="name"` |
+| Solid 2 | The element (typings written for 2 when solid-js 2 is installed) | as Solid 1 | `onvaluechange={…}` (Solid 2 compiles `on:valuechange` to a listener for ":valuechange", which never fires) | `prop:value` + `onvaluechange` | children; `slot="name"` |
 | Angular | The element; `CUSTOM_ELEMENTS_SCHEMA` on the component | `[items]="list"` | `(valuechange)="…"` | `zubraModel [(ngModel)]="x"` from `@zubra/runtime/angular` | content projection; `slot="name"` |
 | Lit, Preact | The element | `.items=${list}` (Lit), `items={list}` (Preact) | `@valuechange=${…}`, `onvaluechange={…}` | the pair by hand | children |
 | Astro (`@zubra/unplugin/astro`) | A server-rendered component (`<Rating value={3} client:load />`) | props as values in the frontmatter's JSX | a `<script>` on the page: `addEventListener('valuechange', …)` | the pair in a script | children; `slot="name"` |
