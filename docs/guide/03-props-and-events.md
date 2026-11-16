@@ -58,6 +58,53 @@ Now, whenever the component assigns `checked`, the element fires `checkedchange`
 | Svelte | `<toggle-switch checked={enabled} oncheckedchange={(event) => (enabled = event.detail)}>` |
 | Angular | `<toggle-switch zubraModel="checked" [(ngModel)]="enabled">` with `ZubraModel` |
 
+## Setting a prop from outside
+
+A prop has one name and three spellings, and each place uses its own:
+
+```html
+<!-- stock-line.zb -->
+<script>
+  const words = leftNow > 0 ? `${leftNow} left` : 'Sold out'
+</script>
+<stock-line item="" left-now={0}>
+  <p>{words}</p>
+</stock-line>
+```
+
+| Where | Spelling |
+|---|---|
+| The host tag, in the `.zb` file and in a page's HTML | the attribute, kebab-case: `left-now="5"` |
+| The component's script and template | the prop, camelCase: `leftNow` |
+| `page.render()` on the server, and a framework's props | the prop: `page.render('stock-line', { leftNow: 5 })` |
+| A script on the page | the property: `el.leftNow = 3` (or the attribute: `el.setAttribute('left-now', '3')`) |
+
+The compiler and the server check the names they see: `page.render('stock-line', { 'left-now': 5 })` is an error that suggests `leftNow`. The browser can't: `el.leftnow = 3` is an ordinary property on the element that nothing reads, and nothing says so. When an update from a script does nothing, check the spelling first.
+
+Anything on the page can keep a server-rendered component up to date that way, with no framework and no `@zubra/sync`. Here a page script follows the server's event stream:
+
+```js
+// live.js, loaded by the page with <script type="module" src="/live.js">
+new EventSource('/live').onmessage = (event) => {
+  for (const [key, left] of JSON.parse(event.data)) {
+    const line = document.querySelector(`stock-line[item="${key}"]`);
+    if (line) line.leftNow = left;
+  }
+};
+```
+
+A value set before the component's module has loaded is taken over when the element starts, with one exception today: if the server wrote that prop as an attribute on the tag (it does whenever the value isn't the default), the attribute is applied afterwards and wins ([#326](https://github.com/journey-to-code-org/zubra/issues/326)). A script that may run that early can wait: `await customElements.whenDefined('stock-line')` before its first update.
+
+What follows the new value depends on how the script read the prop:
+
+| In the script | When the prop is set from outside |
+|---|---|
+| `{leftNow}` in the template, or a `const` computed from it (`words` above) | Follows it. A component that only shows what it's given needs nothing else. |
+| `let left = leftNow` | Doesn't. `left` is state now: it read the prop once, when the element started. |
+| `let left = from(leftNow)` | Follows it, until the component assigns `left`; the next new `leftNow` starts it over. |
+
+So `from()` is for state the component changes itself and that should still start over from the prop, which is the next section.
+
 ## State that starts from a prop
 
 `let left = seconds` reads the prop once: if the app later sets a new `seconds`, `left` keeps counting from the old one. For state that should start over when a prop changes, use `from()`:
