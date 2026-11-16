@@ -1264,7 +1264,8 @@ fn evaluate_props(
         if !props.iter().any(|prop| &prop.name == name) {
             let names: Vec<&str> = props.iter().map(|prop| prop.name.as_str()).collect();
             return Err(with_suggestion(
-                Diagnostic::new(Span::new(1, 1), format!("unknown prop `{name}`")),
+                // At the host tag, where the props are declared (the file may start with a comment).
+                Diagnostic::new(component.tag_span, format!("unknown prop `{name}`")),
                 name,
                 &names,
             ));

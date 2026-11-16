@@ -194,6 +194,16 @@ fn rejects_missing_unknown_and_mistyped_props() {
     let unknown = error(GREETING, r#"{"name":"Mikey","url":"/","nmae":1}"#);
     assert!(unknown.message.contains("unknown prop `nmae`"));
     assert_eq!(unknown.help.as_deref(), Some("did you mean `name`?"));
+    // It points at the host tag, where the props are, whatever comes before it in the file.
+    let after_a_comment = error(
+        "<!--\n  A greeting.\n-->\n<script>\n  const loud = name\n</script>\n<zb-x name=\"you\"><p>{loud}</p></zb-x>",
+        r#"{"nmae":1}"#,
+    );
+    assert!(after_a_comment.message.contains("unknown prop `nmae`"));
+    assert_eq!(
+        (after_a_comment.span.line, after_a_comment.span.column),
+        (7, 1)
+    );
     assert_error(
         "<zb-x count={0}><p>{count}</p></zb-x>",
         r#"{"count":"3"}"#,

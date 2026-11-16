@@ -25,6 +25,17 @@ const RENDER_LARGEST = 512 * 1024;
  * host serves under `<base>/` beyond the components' modules (`{ status, type, body }` or null).
  * `needs(name, code)`: the host's check on a compiled module (a package it needs being installed).
  */
+/** How many single-character edits turn `a` into `b`. */
+function distance(a, b) {
+  let row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length];
+}
+
 export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}` }) {
   if (gaps !== 'warn' && gaps !== 'ignore') throw new Error(`@zubra/server: gaps is "warn" or "ignore", not ${JSON.stringify(gaps)}`);
   if (clientModules !== 'all' && clientModules !== 'needed') throw new Error(`@zubra/server: clientModules is "all" or "needed", not ${JSON.stringify(clientModules)}`);
@@ -37,7 +48,11 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   };
   const pathOf = (name) => {
     const path = files.get(name) ?? files.get(byTag().get(name));
-    if (!path) throw new Error(`@zubra/server: no component "${name}" in ${where} (have: ${[...files.keys()].join(', ')})`);
+    if (!path) {
+      // The nearest name, if one is a slip away (a letter or two).
+      const near = [...files.keys()].map((have) => [distance(name, have), have]).filter(([far]) => far <= 2).sort(([a], [b]) => a - b)[0]?.[1];
+      throw new Error(`@zubra/server: no component "${name}" in ${where}${near ? `: did you mean "${near}"?` : ''} (have: ${[...files.keys()].join(', ')})`);
+    }
     return path;
   };
   const sourcesOf = (path) => once(`sources:${path}`, () => readSources(path));
