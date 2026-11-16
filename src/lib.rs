@@ -539,9 +539,19 @@ fn html(
         );
     }
     let component = if PARTIAL_HTML.with(std::cell::Cell::get) {
-        validate::validate_partial(component, props, &slot_nodes)?
+        validate::validate_partial(
+            component,
+            props,
+            &slot_nodes,
+            slot_source == SlotSource::Html,
+        )?
     } else {
-        validate::validate(component, props, &slot_nodes)?
+        validate::validate(
+            component,
+            props,
+            &slot_nodes,
+            slot_source == SlotSource::Html,
+        )?
     };
     Ok(render::render(&component))
 }
