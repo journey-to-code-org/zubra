@@ -57,8 +57,10 @@ async function urlPattern() {
 /**
  * `zubra`: the app's `createZubra()`, which renders the pages. `components`: the same folder
  * (default `components`). `cacheDir`: where the routes' server halves are written (bare imports
- * resolve from there, so keep it inside the project). `onError(error, request)`: called when a
- * `load` throws; the browser gets a plain 500, never the message. `lang`: the document's
+ * resolve from there, so keep it inside the project). `onError(error, request, about)`: called when a
+ * `load` throws or a page fails to render; the browser gets a 500, never the message. `about` is
+ * `{ route, component, file }`: the route answered, and the component whose `load` threw with its
+ * file (both null when it was the render). By default it is logged, with the request and the file. `lang`: the document's
  * language (default `en`). `head`: HTML for every page's `<head>` (fonts, a stylesheet), or a
  * function of `{ url, request, route }` returning it; written as given, so it is the app's own
  * markup, never a visitor's text. `context({ request, req })`: what each `load` gets as
@@ -70,7 +72,12 @@ export async function createRouter({
   zubra,
   components = 'components',
   cacheDir = join(process.cwd(), 'node_modules', '.cache', 'zubra-router'),
-  onError = (error) => console.error(error),
+  onError = (error, request, about) => {
+    // Which request and which file, before the error: its own stack names only the generated
+    // server half in the cache (`boom-page.route.mjs`), not the component it was written in.
+    console.error(`@zubra/router: ${request.method} ${about.route.path}: ${about.file ? `the load in ${about.file} threw` : 'the page failed to render'} (the browser got a 500 without the message):`);
+    console.error(error);
+  },
   lang = 'en',
   head = '',
   context,
@@ -96,6 +103,7 @@ export async function createRouter({
     if (info.route?.load) halves.set(name, path);
   }
   const { pages, layouts } = buildTable(entries);
+  const fileOf = new Map(entries.map((entry) => [entry.name, entry.file]));
   // The props a component declares: only those are taken from what the loads return.
   const declaredBy = new Map(entries.map((entry) => [entry.name, new Set(entry.props)]));
   const propsOf = (name) => {
@@ -139,8 +147,12 @@ export async function createRouter({
     const params = Object.assign({}, ...over.map((each) => each.params), pageParams);
     const route = { path: url.pathname, pattern: page?.pattern ?? null, params };
     const headers = new Headers();
+    // `about`: what was being answered (`route`), and, when a `load` threw, whose it was
+    // (`component`, and its `file` from where the server runs); both null for a render.
+    let thrower = null;
+    const about = () => ({ route, component: thrower, file: thrower === null ? null : fileOf.get(thrower) ?? null });
     const fail = (error) => {
-      onError(error, request);
+      onError(error, request, about());
       return errorPage(500);
     };
     const document = async (body, title) => {
@@ -174,7 +186,7 @@ export async function createRouter({
         headers.set('content-type', 'text/html; charset=utf-8');
         return new Response(request.method === 'HEAD' ? null : html, { status, headers });
       } catch (failure) {
-        onError(failure, request);
+        onError(failure, request, about());
         return plain();
       }
     };
@@ -199,6 +211,7 @@ export async function createRouter({
           loaded.set(name, (await loads.get(name)(await loadArguments())) ?? {});
         } catch (error) {
           threw.add(name);
+          thrower = name;
           throw error;
         }
       }

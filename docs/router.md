@@ -103,7 +103,7 @@ Live data needs nothing more: return the current value as a prop and let the com
 
 ## Errors
 
-An unknown path, `notFound()`, and a `load` that throws are rendered inside `app.zb`, with status 404 or 500. If the app has `error.zb`, it goes in the shell's slot with a `status` prop; otherwise a heading does. A shell that declares an `error` prop is given `{ status }`. The error's message never reaches the browser: `createRouter({ onError(error, request) })` is told. With no shell, or when the shell itself can't render, the response is plain text.
+An unknown path, `notFound()`, and a `load` that throws are rendered inside `app.zb`, with status 404 or 500. If the app has `error.zb`, it goes in the shell's slot with a `status` prop; otherwise a heading does. A shell that declares an `error` prop is given `{ status }`. The error's message never reaches the browser: `createRouter({ onError(error, request, about) })` is told, with `about` saying what was being answered: `{ route, component, file }`, the route, and for a `load` that threw the component it's in and that component's file (both `null` when the page failed to render). Without `onError`, the server logs one line with the request and the file (`@zubra/router: GET /farms/7: the load in components/farm-page.zb threw`), then the error. The error's own stack names the generated server half in the cache (`node_modules/.cache/zubra-router/farm-page.route.mjs`), whose line numbers aren't the `.zb` file's. With no shell, or when the shell itself can't render, the response is plain text.
 
 ## What it doesn't do
 

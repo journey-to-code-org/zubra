@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createZubra } from '@zubra/server';
 import { createRouter } from '../src/index.js';
@@ -388,5 +388,49 @@ test("a Host header that isn't a host is refused, not read as part of the path",
   for (const headers of [{ host: 'localhost:3000' }, { host: 'my_app:8080' }, { host: '[::1]:3000' }, {}]) {
     const answer = await handle('/about', headers);
     assert.equal(answer.status, 200, JSON.stringify(headers));
+  }
+});
+
+test("a load that throws: onError is told the route, the component and its file, and the default logs them before the error", async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-router-about-'));
+  const files = {
+    'app.zb': '<app-shell><zb-slot></zb-slot></app-shell>\n',
+    'boom-page.zb': "<script>'use route /boom/:id'\nexport function load({ params }) { throw new Error(`no row ${params.id}`) }</script>\n<boom-page></boom-page>\n",
+    // Its load is fine; it can't render (a required prop the load doesn't return).
+    'bare-page.zb': "<script>'use route /bare'\nexport function load() { return {} }</script>\n<bare-page name><p>{name}</p></bare-page>\n",
+  };
+  for (const [path, source] of Object.entries(files)) writeFileSync(join(dir, path), source);
+  const logged = [];
+  const error = console.error;
+  try {
+    const zubra = createZubra({ components: dir });
+    const told = [];
+    const asked = await createRouter({ zubra, components: dir, cacheDir: join(dir, '.cache-a'), onError: (...args) => told.push(args) });
+    assert.equal((await asked.fetch(new Request('http://localhost/boom/7'))).status, 500);
+    assert.equal(told.length, 1);
+    const [thrown, request, about] = told[0];
+    assert.equal(thrown.message, 'no row 7');
+    assert.equal(new URL(request.url).pathname, '/boom/7');
+    assert.deepEqual(about.route, { path: '/boom/7', pattern: '/boom/:id', params: { id: '7' } });
+    assert.equal(about.component, 'boom-page');
+    assert.equal(about.file, relative(process.cwd(), join(dir, 'boom-page.zb')));
+    // A page that fails to render, its load having run: no component's load to name.
+    assert.equal((await asked.fetch(new Request('http://localhost/bare'))).status, 500);
+    assert.deepEqual([told[1][2].component, told[1][2].file, told[1][2].route.path], [null, null, '/bare']);
+
+    // The default: one line saying which request and which file, then the error itself.
+    console.error = (...args) => logged.push(args);
+    const quiet = await createRouter({ zubra, components: dir, cacheDir: join(dir, '.cache-b') });
+    const response = await quiet.fetch(new Request('http://localhost/boom/7'));
+    assert.doesNotMatch(await response.text(), /no row/);
+    assert.equal(logged.length, 2);
+    assert.equal(logged[0][0], `@zubra/router: GET /boom/7: the load in ${relative(process.cwd(), join(dir, 'boom-page.zb'))} threw (the browser got a 500 without the message):`);
+    assert.equal(logged[1][0].message, 'no row 7');
+    logged.length = 0;
+    await quiet.fetch(new Request('http://localhost/bare'));
+    assert.match(logged[0][0], /^@zubra\/router: GET \/bare: the page failed to render /);
+  } finally {
+    console.error = error;
+    rmSync(dir, { recursive: true, force: true });
   }
 });
