@@ -45,6 +45,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+          # setup-node 5+ caches npm by itself once a package.json names npm as its
+          # packageManager; this job deploys or publishes, so it never restores a cache.
+          package-manager-cache: false
       - run: npm run build
         working-directory: compiler
       - run: npm ci

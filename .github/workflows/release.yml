@@ -136,6 +136,9 @@ jobs:
         if: steps.version.outputs.new == 'true'
         with:
           node-version: 22
+          # setup-node 5+ caches npm by itself once a package.json names npm as its
+          # packageManager; this job deploys or publishes, so it never restores a cache.
+          package-manager-cache: false
       # Trusted publishing needs npm 11.5.1 or later; Node 22 comes with npm 10. Pinned, as it runs
       # with the job's publishing identity.
       - run: npm install -g npm@11.21.2
