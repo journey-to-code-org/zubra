@@ -101,7 +101,9 @@ export const BUNDLE = 'zubra.js';
  * …) are the production ones with their imports of those modules pointed at `zubra.js`, so there
  * is one copy of the signal graph whichever of them a page loads; and each module that went into
  * `zubra.js` is still there by name, re-exporting from it, for anything that imports it directly.
- * `zubra.js` exports what `index.js` does and what those others need from inside.
+ * `zubra.js` exports what the entry (`core.js`) does and what those others need from inside; what
+ * `index.js` adds to the core (`$define` and `$element` from `legacy.js`, `$await`, the slots) stays in
+ * those modules' own files.
  */
 export function bundle(sources, ENTRY = 'core.js') {
   const graph = graphOf(sources);
