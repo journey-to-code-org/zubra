@@ -9,7 +9,7 @@ Two binaries share the name. The **Rust CLI** (`zubra`, built with `cargo build 
 
 | | |
 |---|---|
-| `zubra check <file>... [--format json] [--server] [--client]` | Errors and warnings with carets and suggested fixes; exit 1 on an error. `--server` also reports every part the server can't render (an error for `checked`, `selected`, `value` and `disabled`). `--client` says whether each component needs its module in the browser, and why. `--format json` for tooling. |
+| `zubra check <file \| dir>... [--format json] [--server] [--client]` | Errors and warnings with carets and suggested fixes; exit 1 on an error. `--server` also reports every part the server can't render (an error for `checked`, `selected`, `value` and `disabled`). `--client` says whether each component needs its module in the browser, and why. `--format json` for tooling. |
 | `npx zubra check --types <file \| dir>... [--format json]` | The project's own TypeScript checks each `<script lang="ts">` component: the script, every template expression, child props and event handlers; errors on `.zb` lines (`TS2322` and the like); exit 1 on an error. Needs `typescript` in the project. Run it in CI, and after changing a TypeScript component's types. |
 | `npx zubra types [file \| dir]... [--dir .zubra/types] [--framework react\|vue\|svelte\|solid\|none]` | Writes each component's typings (`x.d.zb.ts`) into a folder of the app that mirrors it, as `@zubra/unplugin`'s `dts: { dir }` does during a build, so `tsc` can check a fresh checkout before one. Run it in the app's folder; the framework is the one in its `package.json`. |
 | `zubra fmt <file \| dir>... [--check]` | Lays `.zb` files out (indentation, tidy tags) without changing what they compile to; `--check` fails if a file would change. Run it after editing a component. |
@@ -24,7 +24,7 @@ Two binaries share the name. The **Rust CLI** (`zubra`, built with `cargo build 
 
 ## Steps for common jobs
 
-**Check a component**: `zubra check src/components/x.zb` → read each error's caret line and `help:` → fix → re-run until `no errors`.
+**Check a component**: `zubra check src/components/x.zb` (or a folder, for every component under it: `zubra check src`) → read each error's caret line and `help:` → fix → re-run until `no errors`.
 
 **Server HTML for a page in a non-Node server**: start one `zubra serve` per process (the packages in `clients/` keep one behind a lock: Python with Jinja and Django tags, Ruby with Rails helpers, PHP with Laravel's Blade directives; use one of them when the server is in one of those languages). Per render, write one JSON line:
 

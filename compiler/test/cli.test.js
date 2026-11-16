@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -72,6 +72,20 @@ test('zubra build --lib and zubra check, from the command line', () => {
 
   run = zubra(['check', 'src/components/quantity-stepper.zb'], dir);
   assert.match(run.stdout, /checked 1 file: no errors/);
+  // A folder is every component under it (and not node_modules, or a file that isn't one).
+  mkdirSync(join(dir, 'src/components/node_modules/pkg'), { recursive: true });
+  writeFileSync(join(dir, 'src/components/node_modules/pkg/theirs.zb'), '<x-theirs><p>{nope(</p></x-theirs>');
+  writeFileSync(join(dir, 'src/components/notes.js'), 'export const notes = [];');
+  writeFileSync(join(dir, 'src/components/x-framed.zb.jsx'), "export default function XFramed({ label = 'x' }) {\n  return <p>{label}</p>;\n}\n");
+  run = zubra(['check', 'src'], dir);
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /checked 3 files: no errors/);
+  rmSync(join(dir, 'src/components/x-framed.zb.jsx'));
+  rmSync(join(dir, 'src/components/node_modules'), { recursive: true });
+  mkdirSync(join(dir, 'empty'));
+  run = zubra(['check', 'empty'], dir);
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /empty: no components \(\.zb, \.zb\.jsx, \.zb\.tsx\) in this folder/);
   writeFileSync(join(dir, 'src/components/broken.zb'), '<x-broken><p>{nope(</p></x-broken>');
   run = zubra(['build', '--lib', 'src/components'], dir);
   assert.equal(run.status, 1);
