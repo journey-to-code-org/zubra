@@ -54,6 +54,48 @@ export function freshCopy(block, parent) {
   return copy === null ? document.importNode(content, true) : copy.cloneNode(true);
 }
 
+// Where a block's parts are in a fresh copy, as child indexes from the copy down: worked out on
+// the first copy, by the walk that reads markers, and followed in each copy after. Only for copies
+// made with cloneNode: nothing in one upgrades, so each has the template's nodes exactly.
+// `lone` is the template's one element, when that is all it has: a row is then a copy of it, with
+// no fragment around it.
+const places = new WeakMap();
+
+/**
+ * A fresh copy of `block`'s template with the nodes of `parts` found in it: `[top, nodes]`, where
+ * `top` is a fragment, or the copy itself when the template is one element.
+ */
+export function freshParts(block, parent, parts) {
+  const content = blueprint(block, parent);
+  const known = places.get(content);
+  if (!known) {
+    const fragment = freshCopy(block, parent);
+    fragmentParents.set(fragment, parent);
+    const nodes = locate(childRange(fragment), parts);
+    if (known === undefined) {
+      const copy = imported.get(content);
+      const found = nodes && copy && nodes.map((node) => {
+        const place = [];
+        for (; node !== fragment; node = node.parentNode) place.unshift([...node.parentNode.childNodes].indexOf(node));
+        return place;
+      });
+      if (found && copy.childNodes.length === 1 && copy.firstChild.nodeType === 1) found.lone = copy.firstChild;
+      places.set(content, found || null);
+    }
+    return [fragment, nodes];
+  }
+  const top = (known.lone ?? imported.get(content)).cloneNode(true);
+  if (!known.lone) fragmentParents.set(top, parent);
+  return [top, known.map((place) => {
+    let node = top;
+    for (let step = known.lone ? 1 : 0; step < place.length; step++) {
+      node = node.firstChild;
+      for (let skip = place[step]; skip--;) node = node.nextSibling;
+    }
+    return node;
+  })];
+}
+
 export function clearBetween(open, close) {
   while (open.nextSibling && open.nextSibling !== close) open.nextSibling.remove();
 }
@@ -118,11 +160,9 @@ export function mountBlock(block, args, open, close, hydrating, context) {
   // Find and bind the parts in the fragment, then insert it: child components inside see
   // their props from the start, and can't move slotted nodes before they're found.
   const parent = parentOf(close);
-  const fragment = freshCopy(block, parent);
-  fragmentParents.set(fragment, parent);
-  const fresh = locate(childRange(fragment), parts);
+  const [top, fresh] = freshParts(block, parent, parts);
   parts.forEach((part, index) => bind(part, fresh[index], false, context));
-  close.before(fragment);
+  close.before(top);
 }
 
 // The native methods: a light-DOM host routes its own insertBefore to its slots (for content a

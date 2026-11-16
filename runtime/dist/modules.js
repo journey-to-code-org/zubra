@@ -42,6 +42,7 @@ export default {
     "blocks.js",
     "effect.js",
     "element.js",
+    "deep.js",
     "signal.js"
   ],
   "effect.js": [

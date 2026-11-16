@@ -15,6 +15,8 @@ import { Signal } from './signal.js';
 
 const RAW = Symbol('zubra.raw');
 const ITERATE = Symbol('zubra.iterate'); // "the set of keys" (ownKeys, `in`, array length)
+const ITEMS = Symbol('zubra.items'); // "an array's items": any index, or its length
+const { currentComputed } = Signal.subtle;
 const proxies = new WeakMap(); // raw → proxy
 const signals = new WeakMap(); // raw → Map<key, Signal.State<number>>
 
@@ -37,6 +39,9 @@ export const dev = { propertyOf: new WeakMap(), wrote: null };
 // @dev-end
 
 function track(target, key) {
+  // A read nothing is tracking (an event handler, an untracked loop) needs no signal: making one
+  // per property read would be most of the cost of a long list.
+  if (currentComputed && !currentComputed()) return;
   let map = signals.get(target);
   if (!map) signals.set(target, (map = new Map()));
   let signal = map.get(key);
@@ -78,9 +83,11 @@ const handler = {
     const length = Array.isArray(target) ? target.length : -1;
     const ok = Reflect.set(target, key, value, receiver);
     if (!had) trigger(target, ITERATE);
-    if (!had || !Object.is(before, value)) trigger(target, key);
+    const changed = !had || !Object.is(before, value);
+    if (changed) trigger(target, key);
     // Setting an index past the end grows the array without a `length` write.
     if (length >= 0 && target.length !== length && key !== 'length') trigger(target, 'length');
+    if (length >= 0 && changed && typeof key !== 'symbol') trigger(target, ITEMS);
     return ok;
   },
   deleteProperty(target, key) {
@@ -89,6 +96,7 @@ const handler = {
     if (had) {
       trigger(target, ITERATE);
       trigger(target, key);
+      if (Array.isArray(target)) trigger(target, ITEMS);
     }
     return ok;
   },
@@ -100,4 +108,13 @@ export function wrap(value) {
   let proxy = proxies.get(value);
   if (!proxy) proxies.set(value, (proxy = new Proxy(value, handler)));
   return proxy;
+}
+
+/**
+ * Track every item of `list` at once, for a reader that uses them all (`zb-each`): one signal that
+ * any index or the length changing bumps, in place of a signal per index.
+ */
+export function trackItems(list) {
+  const target = raw(list);
+  if (target !== list) track(target, ITEMS);
 }

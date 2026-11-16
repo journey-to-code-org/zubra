@@ -40,8 +40,11 @@ const BUDGETS = {
   // carries them, 0.34 KB off the comparison's six. Window listeners, class lists and toggles,
   // style properties and URL checks (parts.js) and the shadow path (shadow.js) named by the output
   // that has them, about 90 B here, to 18 KB: this entry has them all, and each of the
-  // comparison's hosts is 0.42 to 0.46 KB smaller.)
-  'src/index.js': { gzip: 18 * 1024 },
+  // comparison's hosts is 0.42 to 0.46 KB smaller. A list's rows found by the places their
+  // template's first copy had, a one-element row copied without a fragment, and a list watching
+  // its array through one signal, about 230 B, to 18.25 KB: a fifth less script time to create,
+  // replace and append 1,000 rows.)
+  'src/index.js': { gzip: 18.25 * 1024 },
   // The production build (the `production` export condition): the same, without hot reloading
   // (12.5 KB until 3.2, 13 KB until 4.2, 13.5 KB until `animate`, 14 KB until the list work,
   // 14.25 KB until the faster Signals core, 14.75 KB until rows without markers, 15 KB until
@@ -56,8 +59,9 @@ const BUDGETS = {
   // private fields got short names in this build, about 150 B, which brought it back under; 15.75
   // KB until content given to a slot a child has in more than one branch was checked against the
   // branch the server rendered, about 70 B, 3 B over: this entry has every optional module, and
-  // what a server sends, zubra.js, stays under its own budget).
-  'dist/production/index.js': { gzip: 16 * 1024 },
+  // what a server sends, zubra.js, stays under its own budget; 16 KB until a list's rows were
+  // found by remembered places, about 230 B).
+  'dist/production/index.js': { gzip: 16.25 * 1024 },
   // An app that only uses Signals and effects.
   'src/effect.js': { gzip: 4 * 1024 },
   // `animate`'s leave() and glide(), loaded only by components that animate.
@@ -135,8 +139,9 @@ for (const [entry, budget] of Object.entries(ADAPTERS)) {
 // production (dist/bundled/zubra.js), so this is for a server without a bundler that doesn't.
 // 18.75 KB until parts.js and shadow.js (the less common parts and the shadow path, 5.20), two
 // more files in the core's graph: element.js 0.4 KB smaller, the two 1.1 KB, since small files
-// compress worse on their own (as one file, zubra.js, they cost 60 B).
-const SERVED = 19.5 * 1024;
+// compress worse on their own (as one file, zubra.js, they cost 60 B). 19.5 KB until a list's
+// rows were found by remembered places (about 230 B, in blocks.js and deep.js).
+const SERVED = 19.75 * 1024;
 
 test('dist/production as served fits its budget', (t) => {
   const dir = join(here, '../../dist/production');
@@ -160,8 +165,8 @@ test('dist/production as served fits its budget', (t) => {
 // its components use them. 14 KB until parts.js and shadow.js (5.20): what a component names
 // instead of every element carrying it, about 60 B here, where the core has them all, for 0.42 to
 // 0.46 KB off a bundled app. 14.25 KB until private fields got short names in the production
-// build, about 145 B.
-const BUNDLED = 14 * 1024;
+// build, about 145 B. 14 KB until a list's rows were found by remembered places, about 230 B.
+const BUNDLED = 14.25 * 1024;
 
 test('dist/bundled/zubra.js fits its budget, under the file-by-file build', (t) => {
   const size = gzipSync(readFileSync(join(here, '../../dist/bundled/zubra.js'), 'utf8')).length;
