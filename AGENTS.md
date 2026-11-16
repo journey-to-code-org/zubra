@@ -13,7 +13,7 @@ Read the skill before the task, not the source: each is written so an agent can 
 | Run the compiler: check, compile, publish a library, add a registry component, convert React, serve | `skills/zubra-cli/SKILL.md` |
 | Render on a server, or make a meta-framework page complete before JavaScript | `skills/zubra-server/SKILL.md` |
 
-`npm create zubra` copies the first two into new projects, and `zubra build --lib` writes a consuming skill for the library it builds, so apps that use Zubra carry their own.
+`npm create zubra` copies the first two into new projects, beside an `AGENTS.md` of their own (`create/templates/shared/AGENTS.md`: keep it in step with the example components there; `create/test/create.test.js` checks it names each one), and `zubra build --lib` writes a consuming skill for the library it builds, so apps that use Zubra carry their own.
 
 ## Changing the compiler or runtime
 

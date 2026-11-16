@@ -42,7 +42,7 @@ In React, Vue and other frameworks, importing the file gives you a component (Re
 
 ## The dev loop
 
-In an app made by `npm create zubra`, run `npm run dev` and edit the component. It updates in place: elements on the page keep their state (`pressed` keeps its count) and the content given to them. A compile error shows in the browser with the line and a suggested fix. If you change the element's interface (add a prop or event), the page reloads instead.
+In an app made by `npm create zubra` ([the starter app](starter-app.md)), run `npm run dev` and edit a component. It updates in place: elements on the page keep their state (`pressed` keeps its count) and the content given to them. A compile error shows in the browser with the line and a suggested fix. If you change the element's interface (add a prop or event), the page reloads instead.
 
 From the command line, without a bundler:
 

@@ -158,9 +158,15 @@ for (const [name, spec] of Object.entries(props)) {
     delete this[name];
     this.#given.add(name);
     this.#signals[name].set(value);
+    // The upgrade replays the attributes already on the element after this, and the
+    // server writes a prop's attribute when it isn't the default: that replay is older
+    // than the property, so it's skipped (once). A later setAttribute still applies.
+    if (this.hasAttribute(spec.attribute)) (this.#early ??= new Set()).add(spec.attribute);
   }
 }
 ```
+
+The upgrade then calls `attributeChangedCallback` for each attribute already on the tag, after the constructor. A hand-written element that takes properties over has to skip that replay for them, or the server's attribute, which is older, overwrites the value set since.
 
 ### 5. Elements come and go
 

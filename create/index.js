@@ -5,8 +5,9 @@
 //   npm create zubra my-app -- --framework react
 //   npm create zubra my-app -- --framework vue --typescript
 //
-// The app has one component (src/components/hello-counter.zb), the plugin wired up, typings,
-// and a browser test (`npm test`). With --typescript the component is `<script lang="ts">`, and
+// The app has a starter page made of small example components (src/components/: a counter, a
+// list, a form control, async data, slots), the plugin wired up, typings, an AGENTS.md and a
+// browser test (`npm test`). With --typescript the counter is `<script lang="ts">`, and
 // `npm run check` type-checks it (`zubra check --types`). Nothing is installed: the last lines
 // say what to run.
 import { cpSync, existsSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
@@ -54,14 +55,14 @@ export function create(dir, framework, { name = basename(resolve(dir)), typescri
     const readme = join(target, 'README.md');
     writeFileSync(readme, readFileSync(readme, 'utf8')
       .replace('npm test        # builds', 'npm run check   # type-checks the components: scripts, templates, props and events\nnpm test        # builds')
-      .replace('- `src/components/` holds the components: one `.zb` file each, with its script, styles and template.', '- `src/components/` holds the components: one `.zb` file each, with its script (TypeScript, `<script lang="ts">`), styles and template. `npm run check` is `zubra check --types`: your TypeScript checks each script, every `{…}` of its template, and the props and events of the components it uses; run it in CI.'));
+      .replace('- `src/components/` holds the components: one `.zb` file each, with its script, styles and template.', '- `src/components/` holds the components: one `.zb` file each, with its script, styles and template. `hello-counter.zb` is in TypeScript (`<script lang="ts">`, with an `interface Props`); the others are plain JavaScript, and a file becomes TypeScript when you add `lang="ts"` to it. `npm run check` is `zubra check --types`: your TypeScript checks each script, every `{…}` of its template, and the props and events of the components it uses, in both kinds of file; run it in CI.'));
     const agents = join(target, 'AGENTS.md');
     writeFileSync(agents, readFileSync(agents, 'utf8').replace('`npm run dev` runs the app', '`npm run check` type-checks every component (after a change, it should report nothing); `npm run dev` runs the app'));
   }
   // npm drops .gitignore files from packages, so the template's is named _gitignore.
   renameSync(join(target, '_gitignore'), join(target, '.gitignore'));
   const files = walk(target);
-  const values = { name: packageName(name), title: name.replace(/[<>{}"'`&\\$]/g, '') || 'Zubra app', version, framework: FRAMEWORKS[framework].replace(/ \(.*/, '') };
+  const values = { name: packageName(name), title: name.replace(/[<>{}"'`&\\$]/g, '') || 'Zubra app', version, framework: framework === 'vanilla' ? 'plain HTML and JavaScript' : FRAMEWORKS[framework].replace(/ \(.*/, '') };
   for (const file of files) {
     const text = readFileSync(file, 'utf8');
     const filled = text.replace(/\{\{(name|title|version|framework)\}\}/g, (_, key) => values[key]);
@@ -122,7 +123,7 @@ async function main(argv) {
     create(dir, framework, { typescript });
     const cd = relative(process.cwd(), resolve(dir)) || '.';
     const check = typescript ? '  npm run check   type-checks the components (zubra check --types)\n' : '';
-    console.log(`\nA Zubra app (${FRAMEWORKS[framework]}${typescript ? ', TypeScript' : ''}) is in ${cd}. Next:\n\n${cd === '.' ? '' : `  cd ${cd}\n`}  npm install\n  npm run dev     edit src/components/hello-counter.zb: it updates in place\n  npm test        builds the app and clicks through it in Chromium\n${check}`);
+    console.log(`\nA Zubra app (${FRAMEWORKS[framework]}${typescript ? ', TypeScript' : ''}) is in ${cd}. Next:\n\n${cd === '.' ? '' : `  cd ${cd}\n`}  npm install\n  npm run dev     edit src/components/hello-counter.zb: it updates in place\n  npm test        builds the app and clicks through it in Chromium\n${check}\nThe page it opens is made of the examples in src/components/ (a list, a form control, async data, slots):\nread them there, and AGENTS.md for how it all fits together.\n`);
   } finally {
     prompt?.close();
   }
