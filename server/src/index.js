@@ -22,6 +22,7 @@ import { StringDecoder } from 'node:string_decoder';
 import * as nodeStream from 'node:stream';
 const { Transform } = nodeStream;
 import { findCompiler } from './compiler.js';
+import { versionAt, versionSkew } from './versions.js';
 import runtimeModules, { bundled as bundledModules } from '@zubra/runtime/modules';
 import { createCore, joinPath, parseAttributes, propsFrom, SOURCE_EXTENSION as SOURCE, TYPES } from './core.js';
 
@@ -68,6 +69,9 @@ export function createZubra({ components = 'components', packages = [], prefix =
   const bundling = Boolean(bundle) && oneFile;
   const runtimeDir = oneFile ? bundledDir : production && !devtools && existsSync(productionDir) ? productionDir : sourceDir;
   const base = prefix.replace(/\/$/, '');
+  // (Not through `warn` alone when there is none: this is about the install, said once at start.)
+  const skew = versionSkew(versionAt(new URL('./package.json', import.meta.resolve('@zubra/compiler'))), versionAt(join(sourceDir, '..', 'package.json')));
+  if (skew) (warn ?? console.warn)(skew);
 
   // @zubra/sync, for components that start with 'use collection': found from the components
   // folder (the app's own node_modules), served under <prefix>/sync/ and put in the import map,

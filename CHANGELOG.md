@@ -4,6 +4,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Added
+
+- **`@zubra/server` says when the installed `@zubra/compiler` is a later release than `@zubra/runtime`.** A module is compiled for its compiler's release, and a later compiler can write an import the older runtime doesn't have: 5.19.0's output imports `@zubra/runtime/hydrate`, which 5.18.0 has no file for and its server doesn't map. The page still showed its server HTML, so nothing looked wrong on the server; in the browser no module loaded, no element started, and the one sign was `Failed to resolve module specifier "@zubra/runtime/hydrate"`. npm installs that pair without a word, since the peer ranges are `^`: pin `@zubra/runtime` and `@zubra/server` to 5.18.0 and the compiler still resolves to 5.19.0. `createZubra()` now warns once when it starts, with both versions and the install that puts them on one release. An older compiler says nothing (the runtime runs every interface from 2), and nothing else changes. Found on Potomac Solutions' upgrade drill, where this is why the slice failed both live-update tests "on 5.18.0": no prop's behaviour changed between the two releases, and with all three packages on 5.18.0 the slice passes.
+
 ### Changed
 
 - **`@zubra/sync/connect` loads `webrtc.js` only for a page that asks for it** (`connect({ webrtc })`). It was imported by every connected page, peer-to-peer or not: 2.2 KB gzipped on a page that only reads. A page with `webrtc` loads it while its first pull runs, and its live stream (which brings the peers and their signals) opens once it's there, so peers connect as before.
@@ -19,6 +23,8 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 - **A component compiled by 5.18 keeps its event modifiers, form association and hydration on this runtime.** 5.19.0 moved those out of every element: a component compiled by 5.19.0 names them (`binder: $modified`, `forming: $form`, `hydrating: $hydrate`), but one compiled by 5.18 said the same interface (`abi: 4`) without naming them, so on 5.19.0's runtime its key filters and `.prevent` did nothing, it wasn't form-associated, and it rendered over its server markup instead of taking it over. Apps compile their components with the runtime they ship, so this reached only components compiled ahead of time by 5.18 (a library built with `zubra build --lib`, say). Compiled output is now interface 5 (`abi: 5`, calling the runtime's `$component`); interface 4 output calls `$element`, which now fills in what it doesn't name, as `$define` does for interfaces 2 and 3, and a component compiled by 5.18.0 is checked in and tested beside the current output (`since-4.test.js`). The runtime still runs every interface from 2. A module compiled by 5.19.1 needs a runtime of 5.19.1 or later, as each new interface does.
 
 ## 5.19.0 — 2026-11-15
+
+**Installing: keep `@zubra/compiler`, `@zubra/runtime` and `@zubra/server` on one release.** A component compiled by 5.19.0 imports `@zubra/runtime/hydrate` (see "Added" below), which only 5.19.0's runtime has, so a 5.19.0 compiler beside a 5.18.0 runtime and server gives pages where no element starts (the browser's console says `Failed to resolve module specifier "@zubra/runtime/hydrate"`). npm allows that pair: `@zubra/server`'s peer range for the compiler is `^`, so pinning the runtime and the server alone leaves the compiler on the latest. No prop, attribute or `from()` behaves differently in 5.19.0 than in 5.18.0.
 
 ### Security
 
