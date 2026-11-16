@@ -191,6 +191,28 @@ fn javascript_passes_child_props_as_properties_and_finds_slotted_content_when_hy
 }
 
 #[test]
+fn content_for_a_slot_in_two_branches_lists_both_places_to_check() {
+    // The slot is first in the link, and second (after a spinner's region) in the button.
+    const TWO_WAYS: &str = r#"<two-ways href="" busy={false}>
+  <a zb-if={href} href={href}><zb-slot></zb-slot></a>
+  <button zb-else type="button"><span zb-if={busy}>…</span><zb-slot></zb-slot></button>
+</two-ways>"#;
+    const USES: &str = "<script>import './two-ways.zb'</script>\n<uses-it label=\"Go\" href=\"\"><two-ways href={href}>{label}</two-ways></uses-it>";
+    let output = js(USES, &files(&[("./two-ways.zb", TWO_WAYS)]), Some(".js")).unwrap();
+    // two-ways [0] → its zb-if region [0] → the branch's element [0] → the slot's region (the
+    // link's [0], the button's [1]) → the text [0]. The first four steps reach the slot's region,
+    // which the server marks as filled (`<?zb [!?>`) in the branch it rendered.
+    assert!(
+        output.contains("{ path: [0, 0], hydrate: [{ path: [0, 0, 0, 0, 0], slots: [4] }, { path: [0, 0, 0, 1, 0], slots: [4] }], anchor:"),
+        "{output}"
+    );
+    // A slot with one place keeps one path, as before.
+    let one = js(INBOX, &files(&[("./badge.zb", BADGE)]), Some(".js")).unwrap();
+    assert!(one.contains("hydrate: [0, 0, 0, 0], text:"), "{one}");
+    assert!(!one.contains("hydrate: [{"), "{one}");
+}
+
+#[test]
 fn a_bundler_keeps_zb_import_specifiers() {
     let output = js(INBOX, &files(&[("./badge.zb", BADGE)]), None).unwrap();
     assert!(output.contains("import './badge.zb'"), "{output}");

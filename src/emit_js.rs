@@ -746,7 +746,9 @@ fn json(value: &str) -> String {
 #[derive(Clone)]
 struct JsPart {
     path: Vec<usize>,
-    hydrate: Option<Vec<usize>>,
+    /// Where it can sit in server markup: one place, or (a child that puts the slot in more than
+    /// one branch of a `zb-if`) one per branch, each to be checked against the markup.
+    hydrate: Option<Vec<Place>>,
     body: String,
     /// Where in the `.zb` file the part was written (only with `--devtools`).
     at: Option<Span>,
@@ -766,16 +768,41 @@ impl JsPart {
         let at = self.at.map_or_else(String::new, |span| {
             format!(", at: [{}, {}]", span.line, span.column)
         });
-        match &self.hydrate {
-            Some(hydrate) => format!(
+        match self.hydrate.as_deref() {
+            // One place: its path, as every part with one has always been written.
+            Some([place]) => format!(
                 "{{ path: {}, hydrate: {}, {}{at} }}",
                 path_js(&self.path),
-                path_js(hydrate),
+                path_js(&place.path),
+                self.body
+            ),
+            // Several: each with the steps of its path that must be a filled slot's region
+            // (`<?zb [!?>`) in the markup; the runtime takes the first that is.
+            Some(places) => format!(
+                "{{ path: {}, hydrate: [{}], {}{at} }}",
+                path_js(&self.path),
+                places
+                    .iter()
+                    .map(|place| format!(
+                        "{{ path: {}, slots: {} }}",
+                        path_js(&place.path),
+                        path_js(&place.slots)
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", "),
                 self.body
             ),
             None => format!("{{ path: {}, {}{at} }}", path_js(&self.path), self.body),
         }
     }
+}
+
+/// A place a part can sit in server markup: its path, and how many steps of it lead to each slot
+/// region it goes through where the child had more than one place for that slot.
+#[derive(Clone)]
+struct Place {
+    path: Vec<usize>,
+    slots: Vec<usize>,
 }
 
 fn path_js(path: &[usize]) -> String {
@@ -1499,33 +1526,61 @@ impl<'a> Emitter<'a> {
                 content.nodes(&element.children, &[], true)?;
                 self.template.push_str(&content.template);
                 for part in content.parts {
-                    let local = part.hydrate.clone().unwrap_or_else(|| part.path.clone());
-                    let hydrate = match local.split_first() {
-                        Some((first, rest)) => {
-                            let Some((slot, position)) = units.get(*first) else {
-                                return Err(Diagnostic::new(
-                                    element.span,
-                                    "internal error: slot content position out of range",
-                                ));
-                            };
-                            let Some((_, region)) =
-                                info.slot_paths.iter().find(|(name, _)| name == slot)
-                            else {
-                                return Err(Diagnostic::new(
-                                    element.span,
-                                    format!("<{}> has no slot named `{slot}`", element.name),
-                                ));
-                            };
-                            path.iter()
-                                .chain(region)
-                                .copied()
-                                .chain(std::iter::once(*position))
-                                .chain(rest.iter().copied())
-                                .collect()
+                    let locals = part.hydrate.clone().unwrap_or_else(|| {
+                        vec![Place {
+                            path: part.path.clone(),
+                            slots: Vec::new(),
+                        }]
+                    });
+                    let mut hydrate = Vec::new();
+                    for local in locals {
+                        let Some((first, rest)) = local.path.split_first() else {
+                            // A part bound to the content's own parent: can't happen at block top.
+                            hydrate.push(Place {
+                                path: path.to_vec(),
+                                slots: Vec::new(),
+                            });
+                            continue;
+                        };
+                        let Some((slot, position)) = units.get(*first) else {
+                            return Err(Diagnostic::new(
+                                element.span,
+                                "internal error: slot content position out of range",
+                            ));
+                        };
+                        // Every place the child has for this slot: one, or one per branch of a
+                        // `zb-if` that has it (the server renders one branch; the runtime checks).
+                        let mut regions: Vec<&Vec<usize>> = Vec::new();
+                        for (name, region) in &info.slot_paths {
+                            if name == slot && !regions.contains(&region) {
+                                regions.push(region);
+                            }
                         }
-                        // A part bound to the content's own parent: can't happen at block top.
-                        None => path.to_vec(),
-                    };
+                        if regions.is_empty() {
+                            return Err(Diagnostic::new(
+                                element.span,
+                                format!("<{}> has no slot named `{slot}`", element.name),
+                            ));
+                        }
+                        let ambiguous = regions.len() > 1;
+                        for region in regions {
+                            let prefix = path.len() + region.len();
+                            let mut slots: Vec<usize> =
+                                if ambiguous { vec![prefix] } else { Vec::new() };
+                            // The local path's first step became the region and the position.
+                            slots.extend(local.slots.iter().map(|steps| steps + prefix));
+                            hydrate.push(Place {
+                                path: path
+                                    .iter()
+                                    .chain(region)
+                                    .copied()
+                                    .chain(std::iter::once(*position))
+                                    .chain(rest.iter().copied())
+                                    .collect(),
+                                slots,
+                            });
+                        }
+                    }
                     // (Pushed as is: the part keeps where its own markup was written.)
                     self.parts.push(JsPart {
                         path: path.iter().chain(&part.path).copied().collect(),

@@ -505,12 +505,25 @@ let nativeFirst; // looked up on first use, so the module loads without a DOM
 
 const childRange = (parent) => ({ first: parent.firstChild, stop: null });
 
+/**
+ * Where a part given to a child component sits in server markup: its one place, or, where the
+ * child has the slot in more than one branch of a `zb-if` (`[{ path, slots }]`), the first whose
+ * slot regions are filled slots (`<?zb [!?>`): the branch the server rendered.
+ */
+const placed = (range, hydrate) =>
+  typeof hydrate[0] === 'number' ? hydrate
+    : hydrate.find(({ path, slots }) => slots.every((steps) => {
+      const region = walk(range, path.slice(0, steps));
+      return region !== null && marker(region) === '[!';
+    }))?.path ?? null;
+
 /** The node for every part, or null if the markup doesn't have the template's shape. */
 function locate(range, parts, hydrating = false) {
   const nodes = [];
   for (const part of parts) {
     // In server markup, content given to a child component sits where the child projected it.
-    const node = walk(range, hydrating && part.hydrate ? part.hydrate : part.path);
+    const at = hydrating && part.hydrate ? placed(range, part.hydrate) : part.path;
+    const node = at && walk(range, at);
     const fits = !node ? false
       : part.when || part.each || part.slot || part.await ? isOpen(node) && matchingClose(node) !== null
       : part.anchor || part.global ? marker(node) === ''
