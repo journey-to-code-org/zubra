@@ -856,3 +856,81 @@ test("injectShadowRoots: a quoted '>' in a host's attribute doesn't end its star
   assert.match(injected, /<count-stepper name='q2' value="1" label='a>b'><template shadowrootmode="open">/);
   assert.equal((injected.match(/shadowrootmode/g) ?? []).length, 2);
 });
+
+test('finishing a page with a different page object than rendered it says so, once, in development', () => {
+  const warned = [];
+  const zubra = createZubra({ components, production: false, warn: (message) => warned.push(message) });
+  // The mistake: one page object renders, another finishes, so the second knows of no component.
+  const body = zubra.page().render('hello-there', { name: 'Ada' });
+  const html = zubra.page().finish(layout(body));
+  assert.doesNotMatch(html, /components\/hello-there\.js/, 'the module is missing, which is the problem');
+  assert.equal(warned.length, 1);
+  assert.match(warned[0], /the page has <hello-there>, but nothing this page object rendered loads it/);
+  assert.match(warned[0], /page\.render\('hello-there', props\); page\.finish\(html\)/);
+  zubra.page().finish(layout(body));
+  assert.equal(warned.length, 1, 'said once per tag');
+  // The same through zubra.render(), which no page hears of.
+  zubra.page().finish(layout(zubra.render('count-stepper')));
+  assert.equal(warned.length, 2);
+  assert.match(warned[1], /<count-stepper>/);
+});
+
+test('a page finished by the object that rendered it, a child its component imports, and a tag in a comment or a script get no warning', () => {
+  const warned = [];
+  const zubra = createZubra({ components, production: false, warn: (message) => warned.push(message) });
+  const page = zubra.page();
+  // <order-form> imports <count-stepper>, whose tag is in its markup: the form's module loads it.
+  const body = page.render('order-form');
+  assert.match(body, /<count-stepper/);
+  page.finish(layout(`${body}<!-- <hello-there> --><script>const tag = '<hello-there>';</script>`));
+  // A tag the page wrote for an element whose module it loads itself.
+  zubra.page().finish(layout('<hello-there name="Bo"></hello-there><script type="module" src="/_zubra/components/hello-there.js"></script>'));
+  assert.deepEqual(warned.filter((message) => message.includes('page object')), []);
+});
+
+test("a component that uses a sibling's tag without importing it is named, with the import to add", () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-unimported-'));
+  try {
+    writeFileSync(join(dir, 'price-tag.zb'), '<price-tag cents={0}><b>{cents}</b></price-tag>\n');
+    writeFileSync(join(dir, 'menu-row.zb'), '<menu-row name=""><span>{name}</span><price-tag cents={250}></price-tag></menu-row>\n');
+    writeFileSync(join(dir, 'menu-card.zb'), "<script>import './price-tag.zb'</script>\n<menu-card name=\"\"><span>{name}</span><price-tag cents={250}></price-tag></menu-card>\n");
+    const warned = [];
+    const zubra = createZubra({ components: dir, production: false, warn: (message) => warned.push(message) });
+    // Without the import the compiler takes <price-tag> for someone else's element: it's left
+    // empty in the HTML, and its module isn't the row's to load.
+    const row = zubra.page();
+    const html = row.finish(layout(row.render('menu-row', { name: 'Bun' })));
+    assert.match(html, /<price-tag cents="250"><\/price-tag>/);
+    assert.equal(warned.length, 1);
+    assert.match(warned[0], /a component's template uses <price-tag> without importing it \(add its import to that component's script: import '\.\/price-tag\.zb'/);
+    // With it, the tag is rendered and loaded, and nothing is said.
+    warned.length = 0;
+    const card = zubra.page();
+    assert.match(card.finish(layout(card.render('menu-card', { name: 'Bun' }))), /<price-tag cents="250">\s*<b>250<\/b>/);
+    assert.deepEqual(warned, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the check for strangers never fails a page: a folder where two files have one tag still finishes", () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-two-tags-'));
+  try {
+    // Routes do this (`routes/a/b.zb` and `routes/c.zb`, both <x-page>), and render by name.
+    mkdirSync(join(dir, 'a'));
+    writeFileSync(join(dir, 'a', 'b.zb'), '<x-page word="one"><p>{word}</p></x-page>\n');
+    writeFileSync(join(dir, 'c.zb'), '<x-page word="two"><p>{word}</p></x-page>\n');
+    const zubra = createZubra({ components: dir, production: false, warn: () => {} });
+    const page = zubra.page();
+    assert.match(page.finish(layout(page.render('a/b'))), /<p>one<\/p>/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('in production a finished page is not read for strangers', () => {
+  const warned = [];
+  const zubra = createZubra({ components, production: true, warn: (message) => warned.push(message) });
+  zubra.page().finish(layout(zubra.page().render('hello-there', { name: 'Ada' })));
+  assert.deepEqual(warned, []);
+});
