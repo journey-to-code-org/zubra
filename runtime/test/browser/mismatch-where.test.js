@@ -1,5 +1,5 @@
 // Server markup that doesn't have the template's shape is rendered fresh, and the development
-// build's warning says where the two part ways: the top-level shapes, or the first binding whose
+// build's warning is followed by one that says where the two part ways: the top-level shapes, or the first binding whose
 // place holds something else. `npm run test:browser`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,10 +28,15 @@ async function warningFor(markup) {
     return host.querySelector('p').textContent;
   });
   assert.equal(text, 'Bun today · Sold out', 'rendered fresh, and live');
+  // The first warning is the one there always was; where they differ follows, once its module
+  // (loaded only now) is here.
+  const where = (message) => message.includes("where <menu-item>'s markup doesn't match its template");
+  for (let waited = 0; !messages.some(where) && waited < 5000; waited += 25) await page.waitForTimeout(25);
   await page.close();
-  const warnings = messages.filter((message) => message.includes("doesn't match its template"));
-  assert.equal(warnings.length, 1, messages.join('\n'));
-  return warnings[0];
+  assert.deepEqual(messages.map((message) => message.replace(/ \(see .*/, '')).slice(0, 1), ["warning: zubra: <menu-item>'s markup doesn't match its template; rendering it fresh"]);
+  assert.equal(messages.length, 2, messages.join('\n'));
+  assert.ok(where(messages[1]), messages[1]);
+  return messages[1];
 }
 
 test('the server\'s own markup is taken over without a word', { skip }, async () => {
@@ -43,7 +48,7 @@ test('the server\'s own markup is taken over without a word', { skip }, async ()
 test('a missing top-level element: the warning gives both top-level shapes', { skip }, async () => {
   const markup = server({ name: 'Bun', left: 3 }).replace(/<h3>.*?<\/h3>/, '');
   const warning = await warningFor(markup);
-  assert.match(warning, /rendering it fresh: the template's top level is <h3> <p> <form>, and the markup's is <p> <form> \(positions count elements and markers\)/);
+  assert.match(warning, /doesn't match its template: the template's top level is <h3> <p> <form>, and the markup's is <p> <form> \(positions count elements and markers\)$/);
 });
 
 test('a region that isn\'t where the template has one: the warning names the binding, its place and what is there', { skip }, async () => {

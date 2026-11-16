@@ -537,47 +537,6 @@ function locate(range, parts, hydrating = false) {
   return nodes;
 }
 
-// @dev
-// Where server markup stops having the template's shape, in words, for the warning that it was
-// rendered fresh: the first difference in the top-level shape (what `hydrate.js` compares), or
-// the first part whose place holds something else (what `locate` refused). Positions count
-// elements and markers, as paths do.
-const nameOf = (node) => (!node ? 'nothing' : node.nodeType === 1 ? `<${node.localName}>` : isOpen(node) ? 'a region (<?zb [?>…<?zb ]?>)' : isClose(node) ? "a region's end" : 'a text marker (<?zb ?>)');
-const shapeOf = (range) => [...positions(range.first, range.stop)].map((node) => (node.nodeType === 1 ? `<${node.localName}>` : isOpen(node) ? '[region]' : '[text]')).join(' ') || 'nothing';
-const expects = (part) => (part.when ? 'a zb-if region'
-  : part.each ? 'a zb-each region'
-  : part.await ? 'a zb-await region'
-  : part.slot ? 'a slot region'
-  : part.anchor || part.global ? 'a text marker (<?zb ?>)'
-  : `an element${part.attribute ? ` (for its ${part.attribute} binding)` : part.text ? ' (for its text)' : ''}`);
-function mismatch(tag, root, template, parts) {
-  const want = shapeOf(childRange(template));
-  const have = shapeOf(childRange(root));
-  if (want !== have) return `the template's top level is ${want}, and the markup's is ${have}`;
-  const range = childRange(root);
-  for (const part of parts) {
-    const path = part.hydrate ? placed(range, part.hydrate) : part.path;
-    const node = walk(range, path);
-    const fits = !node ? false
-      : part.when || part.each || part.slot || part.await ? isOpen(node) && matchingClose(node) !== null
-      : part.anchor || part.global ? marker(node) === ''
-      : node.nodeType === 1;
-    if (fits) continue;
-    if (!path.length) return `the template expects ${expects(part)} for content given to a child component, and the child's markup has no place for it`;
-    // The elements the path goes through, as far as the markup has them.
-    const through = [`<${tag}>`];
-    for (let step = 1; step < path.length; step++) {
-      const at = walk(range, path.slice(0, step));
-      if (!at) break;
-      through.push(at.nodeType === 1 ? `<${at.localName}>` : 'a region');
-    }
-    const reached = through.length === path.length;
-    return `the template expects ${expects(part)} in ${through.join(' › ')}${reached ? `, at position ${path[path.length - 1] + 1}` : ''}, and the markup has ${reached ? nameOf(node) : `nothing at position ${path[through.length - 1] + 1} there`}${reached && node && isOpen(node) && matchingClose(node) === null ? ' that is never closed' : ''}`;
-  }
-  return '';
-}
-// @dev-end
-
 // ---- blocks: the contents of an zb-if branch or an zb-each row ----------------------------
 
 const blueprints = new WeakMap();
@@ -1402,7 +1361,14 @@ function defineElement(tag, definition) {
             // @dev
             console.warn(lost
               ? `zubra: <${tag}>'s hydration markers (<?zb [?>, <?zb ]?>, …) are missing, so it's rendered fresh. A sanitizer or a fragment parser removed them; keep processing instructions (and comments, for markup from a 4.x server)${see('hydration-markers')}`
-              : `zubra: <${tag}>'s markup doesn't match its template; rendering it fresh${((where) => (where ? `: ${where} (positions count elements and markers)` : ''))(mismatch(tag, root, componentTemplate.content, parts))}${see('server-rendering-and-hydration')}`);
+              : `zubra: <${tag}>'s markup doesn't match its template; rendering it fresh${see('server-rendering-and-hydration')}`);
+            // Where they part ways, in a second warning, from a module loaded only now. The markup
+            // is moved out to be read then (it is about to be replaced).
+            if (!lost) {
+              const was = document.createDocumentFragment();
+              was.append(...root.childNodes);
+              import('./mismatch.js').then((module) => module.report(tag, was, componentTemplate.content, parts, [positions, walk, placed, isOpen, isClose, marker, matchingClose]), () => {});
+            }
             // @dev-end
           }
           // Find and bind the parts before inserting (see mountBlock).
