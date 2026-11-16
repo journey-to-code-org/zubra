@@ -4,7 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,6 +26,37 @@ test('the plugin and the server ask for this release of the compiler and the run
     const pkg = json(`${path}/package.json`);
     const wanted = { ...pkg.peerDependencies, ...pkg.dependencies };
     for (const name of ['@zubra/compiler', '@zubra/runtime']) assert.equal(wanted[name], range, `${path}: ${name}`);
+  }
+});
+
+test('the compiler asks for a runtime no older than itself, only where one is installed', () => {
+  // Compiled output is for its compiler's release; a runtime runs older compilers' output, never
+  // a later one's. With this, npm refuses the pair that starts no element (#324), and still
+  // installs the compiler alone.
+  const pkg = json('compiler/package.json');
+  assert.deepEqual(pkg.peerDependencies, { '@zubra/runtime': `>=${version}` });
+  assert.deepEqual(pkg.peerDependenciesMeta, { '@zubra/runtime': { optional: true } });
+  const root = json('compiler/package-lock.json').packages[''];
+  assert.deepEqual([root.peerDependencies, root.peerDependenciesMeta], [pkg.peerDependencies, pkg.peerDependenciesMeta], 'the lockfile says the same');
+});
+
+test('scripts/bump-version.sh moves that range with the version', () => {
+  // The script edits files by path from where it runs: run it on copies of the two it must change here.
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-bump-'));
+  try {
+    const script = readFileSync(join(repo, 'scripts/bump-version.sh'), 'utf8');
+    const block = script.slice(script.indexOf('for f in compiler/package.json compiler/package-lock.json; do'), script.indexOf('echo "version $v"'));
+    assert.match(block, /@zubra\/runtime/);
+    mkdirSync(join(dir, 'compiler'));
+    for (const file of ['compiler/package.json', 'compiler/package-lock.json']) cpSync(join(repo, file), join(dir, file));
+    execFileSync('sh', ['-c', `set -e; v=9.8.7; ${block}`], { cwd: dir });
+    for (const file of ['compiler/package.json', 'compiler/package-lock.json']) {
+      const text = readFileSync(join(dir, file), 'utf8');
+      assert.equal(text.match(/"@zubra\/runtime": ">=([0-9.]+)"/)?.[1], '9.8.7', file);
+      JSON.parse(text);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
