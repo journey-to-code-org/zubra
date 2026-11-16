@@ -1,10 +1,10 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createZubra } from '@zubra/server';
 import { createRouter } from '../src/index.js';
 
@@ -395,7 +395,8 @@ test("a load that throws: onError is told the route, the component and its file,
   const dir = mkdtempSync(join(tmpdir(), 'zubra-router-about-'));
   const files = {
     'app.zb': '<app-shell><zb-slot></zb-slot></app-shell>\n',
-    'boom-page.zb': "<script>'use route /boom/:id'\nexport function load({ params }) { throw new Error(`no row ${params.id}`) }</script>\n<boom-page></boom-page>\n",
+    // (The throw is on line 5 of the file; in the half the router imports it's on another.)
+    'boom-page.zb': "<!-- A page whose load throws. -->\n<script>\n  'use route /boom/:id'\n  export function load({ params }) {\n    throw new Error(`no row ${params.id}`)\n  }\n</script>\n<boom-page></boom-page>\n",
     // Its load is fine; it can't render (a required prop the load doesn't return).
     'bare-page.zb': "<script>'use route /bare'\nexport function load() { return {} }</script>\n<bare-page name><p>{name}</p></bare-page>\n",
   };
@@ -414,9 +415,11 @@ test("a load that throws: onError is told the route, the component and its file,
     assert.deepEqual(about.route, { path: '/boom/7', pattern: '/boom/:id', params: { id: '7' } });
     assert.equal(about.component, 'boom-page');
     assert.equal(about.file, relative(process.cwd(), join(dir, 'boom-page.zb')));
+    assert.equal(about.line, 5, "the component's own line, not the generated half's");
+    assert.doesNotMatch(thrown.stack, /boom-page\.route\.mjs[^\n]*:5:/, 'which is elsewhere in the half');
     // A page that fails to render, its load having run: no component's load to name.
     assert.equal((await asked.fetch(new Request('http://localhost/bare'))).status, 500);
-    assert.deepEqual([told[1][2].component, told[1][2].file, told[1][2].route.path], [null, null, '/bare']);
+    assert.deepEqual([told[1][2].component, told[1][2].file, told[1][2].line, told[1][2].route.path], [null, null, null, '/bare']);
 
     // The default: one line saying which request and which file, then the error itself.
     console.error = (...args) => logged.push(args);
@@ -424,11 +427,21 @@ test("a load that throws: onError is told the route, the component and its file,
     const response = await quiet.fetch(new Request('http://localhost/boom/7'));
     assert.doesNotMatch(await response.text(), /no row/);
     assert.equal(logged.length, 2);
-    assert.equal(logged[0][0], `@zubra/router: GET /boom/7: the load in ${relative(process.cwd(), join(dir, 'boom-page.zb'))} threw (the browser got a 500 without the message):`);
+    assert.equal(logged[0][0], `@zubra/router: GET /boom/7: the load in ${relative(process.cwd(), join(dir, 'boom-page.zb'))} threw, at line 5 (the browser got a 500 without the message):`);
     assert.equal(logged[1][0].message, 'no row 7');
     logged.length = 0;
     await quiet.fetch(new Request('http://localhost/bare'));
     assert.match(logged[0][0], /^@zubra\/router: GET \/bare: the page failed to render /);
+    // The half's own map names the component by its address, for `node --enable-source-maps`.
+    const half = readFileSync(join(dir, '.cache-b', 'boom-page.route.mjs'), 'utf8');
+    const map = JSON.parse(Buffer.from(/sourceMappingURL=data:application\/json;base64,(\S+)\s*$/.exec(half)[1], 'base64').toString());
+    assert.deepEqual(map.sources, [pathToFileURL(join(dir, 'boom-page.zb')).href]);
+    // A thrown value with no stack (`throw 'x'`) has no line to give.
+    writeFileSync(join(dir, 'text-page.zb'), "<script>\n  'use route /text'\n  export function load() {\n    throw 'just text'\n  }\n</script>\n<text-page></text-page>\n");
+    const texts = [];
+    const third = await createRouter({ zubra: createZubra({ components: dir }), components: dir, cacheDir: join(dir, '.cache-c'), onError: (...args) => texts.push(args) });
+    await third.fetch(new Request('http://localhost/text'));
+    assert.deepEqual([texts[0][0], texts[0][2].component, texts[0][2].line], ['just text', 'text-page', null]);
   } finally {
     console.error = error;
     rmSync(dir, { recursive: true, force: true });

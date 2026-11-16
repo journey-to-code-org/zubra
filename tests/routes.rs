@@ -320,3 +320,104 @@ fn server_code_cannot_read_the_scripts_own_bindings() {
     )
     .unwrap();
 }
+
+#[test]
+fn the_server_half_can_end_with_a_map_of_its_functions_lines_to_the_components() {
+    // TypeScript too: its types are removed in place, so a line of the function is still the
+    // same line of the file.
+    let source = "<!-- A page. -->\n<script lang=\"ts\">\n  'use route /farms/:id'\n  import { find } from './farms.js'\n\n  export async function save(formData: FormData) {\n    'use server'\n    return find(String(formData.get('id')))\n  }\n\n  export async function load({ params }: { params: { id: string } }) {\n    const farm = find(params.id)\n    return { farm }\n  }\n</script>\n<farm-page farm={null}><p>{farm}</p></farm-page>";
+    let plain = compile_server(source).unwrap();
+    assert!(!plain.contains("sourceMappingURL"), "{plain}");
+    let mapped = zubra::compile_server_at(source, Some("components/farm-page.zb")).unwrap();
+    // The same module, and one comment after it.
+    assert!(mapped.starts_with(&plain), "{mapped}");
+    let comment = mapped[plain.len()..].trim_end();
+    let encoded = comment
+        .strip_prefix("//# sourceMappingURL=data:application/json;base64,")
+        .unwrap_or_else(|| panic!("{comment}"));
+    let map: serde_json::Value = serde_json::from_slice(&unbase64(encoded)).unwrap();
+    assert_eq!(map["version"], 3);
+    assert_eq!(
+        map["sources"],
+        serde_json::json!(["components/farm-page.zb"])
+    );
+    // Each line of each function, in the module, is its own line of the file.
+    let lines = decode(map["mappings"].as_str().unwrap());
+    let module: Vec<&str> = mapped.lines().collect();
+    let file: Vec<&str> = source.lines().collect();
+    let line_of =
+        |text: &str, lines: &[&str]| lines.iter().position(|line| line.contains(text)).unwrap();
+    for text in [
+        "async function save(",
+        "return find(String(",
+        "async function load(",
+        "const farm = find(params.id)",
+        "return { farm }",
+    ] {
+        let generated = line_of(text, &module);
+        assert_eq!(
+            lines
+                .iter()
+                .find(|(at, _)| *at == generated)
+                .map(|(_, source)| *source),
+            Some(line_of(text, &file)),
+            "{text}"
+        );
+    }
+    // Nothing else is mapped: the header and the constants aren't the file's lines.
+    assert_eq!(lines.len(), 4 + 4);
+    // A component with no function in its half has nothing to map, and a JSX component's
+    // script is the compiler's own text.
+    let bare = "<bare-page><p>x</p></bare-page>";
+    assert!(!zubra::compile_server_at(bare, Some("bare-page.zb"))
+        .unwrap()
+        .contains("sourceMappingURL"));
+}
+
+fn unbase64(text: &str) -> Vec<u8> {
+    const DIGITS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::new();
+    let (mut bits, mut count) = (0u32, 0);
+    for digit in text.chars().take_while(|digit| *digit != '=') {
+        bits = (bits << 6) | DIGITS.find(digit).unwrap() as u32;
+        count += 6;
+        if count >= 8 {
+            count -= 8;
+            out.push((bits >> count) as u8);
+            bits &= (1 << count) - 1;
+        }
+    }
+    out
+}
+
+/// A source map's `mappings` as (generated line, source line), both from 0.
+fn decode(mappings: &str) -> Vec<(usize, usize)> {
+    const DIGITS: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::new();
+    let mut source_line = 0i64;
+    for (generated, line) in mappings.split(';').enumerate() {
+        if line.is_empty() {
+            continue;
+        }
+        let mut fields = Vec::new();
+        let (mut value, mut shift) = (0i64, 0);
+        for digit in line.chars() {
+            let digit = DIGITS.find(digit).unwrap() as i64;
+            value |= (digit & 31) << shift;
+            if digit & 32 != 0 {
+                shift += 5;
+                continue;
+            }
+            fields.push(if value & 1 == 1 {
+                -(value >> 1)
+            } else {
+                value >> 1
+            });
+            (value, shift) = (0, 0);
+        }
+        assert_eq!(fields.len(), 4, "one segment a line");
+        source_line += fields[2];
+        out.push((generated, source_line as usize));
+    }
+    out
+}

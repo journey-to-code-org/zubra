@@ -512,7 +512,11 @@ fn answer(request: &Map<String, Value>, path: &str, set: &crate::loaded::Set) ->
             crate::compile_declarations_for(source, file_name(&path), framework)
         }
         ("compile", "interface") => crate::compile_interface_with(source, &path, &loader),
-        ("compile", "server") => crate::compile_server(source),
+        // `sourceMap`: the module ends with a map of its functions' lines to this file's.
+        ("compile", "server") => crate::compile_server_at(
+            source,
+            (request.get("sourceMap").and_then(Value::as_bool) == Some(true)).then_some(&path),
+        ),
         ("compile", "manifest") => {
             let name = file_name(&path);
             let stem = crate::components::component_extension(name)
