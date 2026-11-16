@@ -359,8 +359,13 @@ pub enum Framework {
     Vue,
     /// The element itself, typed for Svelte templates (`svelte/elements`).
     Svelte,
-    /// The element itself, typed for Solid's JSX (`prop:` / `on:`).
+    /// The element itself, typed for Solid 1's JSX (`prop:` / `on:`).
     Solid,
+    /// The element itself, typed for Solid 2's JSX: declared in `@solidjs/web/jsx-runtime` (where
+    /// Solid 2 keeps `JSX`), with `prop:` for properties and `on<event>` for events. Solid 2
+    /// compiles `on:valuechange` to a listener for ":valuechange", which never fires, and
+    /// `onvaluechange` (or `onValueChange`) to one for "valuechange".
+    Solid2,
 }
 
 /// `<prop>` + `<prop>change` pairs: the component's two-way bindings (as the adapters find them).
@@ -402,6 +407,7 @@ pub fn declarations(
             out.push_str("import type { HTMLAttributes } from \"svelte/elements\";\n\n")
         }
         Framework::Solid => out.push_str("import type { JSX } from \"solid-js\";\n\n"),
+        Framework::Solid2 => out.push_str("import type { JSX } from \"@solidjs/web\";\n\n"),
     }
     // A TypeScript script's own types, which the interface may mention.
     for import in &component.script.type_imports {
@@ -512,7 +518,7 @@ pub fn declarations(
         Framework::None => out.push_str(&format!("export default {class};\n")),
         Framework::React => out.push_str(&react_component(component, &interface, &class)),
         Framework::Vue => out.push_str(&vue_component(component, &interface, &class)),
-        Framework::Svelte | Framework::Solid => {
+        Framework::Svelte | Framework::Solid | Framework::Solid2 => {
             out.push_str(&format!("export default {class};\n"));
             out.push_str(&intrinsic_element(component, &interface, &class, framework));
         }
@@ -592,7 +598,8 @@ fn react_component(
 }
 
 /// Svelte and Solid use the element directly: declare it among their template elements, with
-/// its props and events (`onvaluechange` in Svelte; `prop:value` / `on:valuechange` in Solid).
+/// its props and events (`onvaluechange` in Svelte; `prop:value` / `on:valuechange` in Solid 1,
+/// `prop:value` / `onvaluechange` in Solid 2).
 fn intrinsic_element(
     component: &ComponentAst,
     interface: &validate::Interface,
@@ -605,13 +612,14 @@ fn intrinsic_element(
         let optional = if prop.required() { "" } else { "?" };
         let key = property_key(&prop.name);
         members.push(format!("{key}{optional}: {}", prop_type(prop)));
-        if framework == Framework::Solid {
+        if matches!(framework, Framework::Solid | Framework::Solid2) {
             members.push(format!("\"prop:{}\"?: {}", prop.name, prop_type(prop)));
         }
     }
     for event in &interface.events {
         let handler = match framework {
             Framework::Solid => format!("\"on:{}\"", event.name),
+            Framework::Solid2 => format!("\"on{}\"", event.name),
             _ => format!("on{}", event.name),
         };
         members.push(format!(
@@ -621,6 +629,9 @@ fn intrinsic_element(
     }
     let own = format!("{{ {} }}", members.join("; "));
     match framework {
+        Framework::Solid2 => format!(
+            "\ndeclare module \"@solidjs/web/jsx-runtime\" {{\n  namespace JSX {{\n    interface IntrinsicElements {{\n      {tag}: Omit<JSX.HTMLAttributes<{class}>, keyof {own}> & {own};\n    }}\n  }}\n}}\n"
+        ),
         Framework::Svelte => format!(
             "\ndeclare module \"svelte/elements\" {{\n  interface SvelteHTMLElements {{\n    {tag}: Omit<HTMLAttributes<{class}>, keyof {own}> & {own};\n  }}\n}}\n"
         ),

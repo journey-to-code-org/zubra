@@ -20,6 +20,7 @@ import { buildLibrary } from './library.js';
 import { loadComponents, serve as serveMcp } from './mcp.js';
 import { buildEmbed } from './embed.js';
 import { checkTypes, formatDiagnostic } from './typecheck.js';
+import { solidOf } from './solid.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -117,14 +118,17 @@ function checkedIn(paths) {
 /** The frameworks typings can be for, by the npm package an app that uses one depends on. */
 const FRAMEWORKS = { react: 'react', vue: 'vue', svelte: 'svelte', 'solid-js': 'solid' };
 
-/** The framework of the app at `root`: the one in its package.json, or `none` (the elements). */
+/**
+ * The framework of the app at `root`: the one in its package.json, or `none` (the elements).
+ * Solid is `solid` or `solid2`, by the version installed (see solid.js).
+ */
 function frameworkOf(root) {
   let manifest = {};
   try { manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')); } catch { /* no package.json: the elements */ }
   const names = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies, ...manifest.peerDependencies });
   const found = [...new Set(names.filter((name) => name in FRAMEWORKS).map((name) => FRAMEWORKS[name]))];
   if (found.length > 1) throw new Error(`zubra types: package.json depends on ${found.join(' and ')}: say which the typings are for with --framework ${found.join('|')}`);
-  return found[0] ?? 'none';
+  return found[0] === 'solid' ? solidOf(root) : (found[0] ?? 'none');
 }
 
 /**
@@ -138,8 +142,8 @@ function frameworkOf(root) {
 export function writeTypes(paths, { dir = '.zubra/types', framework, root = process.cwd() } = {}) {
   const base = resolve(root);
   const out = resolve(base, dir);
-  if (framework !== undefined && framework !== 'none' && !Object.values(FRAMEWORKS).includes(framework)) {
-    throw new Error(`zubra types: --framework is ${Object.values(FRAMEWORKS).join(', ')} or none, not "${framework}"`);
+  if (framework !== undefined && framework !== 'none' && framework !== 'solid2' && !Object.values(FRAMEWORKS).includes(framework)) {
+    throw new Error(`zubra types: --framework is ${Object.values(FRAMEWORKS).join(', ')}, solid2 or none, not "${framework}"`);
   }
   framework ??= frameworkOf(base);
   const components = (paths.length ? paths : [base]).flatMap((path) => {
