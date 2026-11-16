@@ -57,11 +57,19 @@ const left = items.filter((item) => !item.done).length
   <h2>How things work</h2>
   <p class="zx-lede">Each card is a file in <code>src/components/</code>. Open one, change it, save.</p>
   <div class="zx-grid">
-    <example-card heading="Lists, conditions and input" file="src/components/todo-list.zb" code={listCode}>
+    <example-card
+      heading="Lists, conditions and input"
+      file="src/components/todo-list.zb"
+      code={listCode}
+    >
       <todo-list></todo-list>
       <span slot="note">Mutating state updates only what read it. Nothing re-renders.</span>
     </example-card>
-    <example-card heading="A real form control" file="src/components/rating-input.zb" code={formCode}>
+    <example-card
+      heading="A real form control"
+      file="src/components/rating-input.zb"
+      code={formCode}
+    >
       <form class="zx-form" onsubmit.prevent={send}>
         <rating-input name="stars" value={3}></rating-input>
         <button>Submit</button>
@@ -80,8 +88,16 @@ const left = items.filter((item) => !item.done).length
   </div>
   <nav aria-label="Zubra documentation">
     <a href="https://journey-to-code-org.github.io/zubra/docs/" target="_blank" rel="noreferrer">Tutorial and reference</a>
-    <a href="https://journey-to-code-org.github.io/zubra/playground/" target="_blank" rel="noreferrer">Playground</a>
-    <a href="https://github.com/journey-to-code-org/zubra/tree/main/registry/components" target="_blank" rel="noreferrer">Components to copy</a>
+    <a
+      href="https://journey-to-code-org.github.io/zubra/playground/"
+      target="_blank"
+      rel="noreferrer"
+    >Playground</a>
+    <a
+      href="https://github.com/journey-to-code-org/zubra/tree/main/registry/components"
+      target="_blank"
+      rel="noreferrer"
+    >Components to copy</a>
     <a href="https://github.com/journey-to-code-org/zubra" target="_blank" rel="noreferrer">GitHub</a>
   </nav>
 </zubra-examples>

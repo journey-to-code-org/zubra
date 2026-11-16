@@ -24,8 +24,15 @@
 </style>
 <rating-input form-associated value:model={0} max={5} required={false}>
   <zb-each items={stars} as="star" key={star}>
-    <button type="button" aria-label="{star} of {max}" aria-pressed={star === value ? 'true' : 'false'} class:lit={star <= shown}
-            onclick={() => (value = star)} onmouseenter={() => (hovered = star)} onmouseleave={() => (hovered = null)}>★</button>
+    <button
+      type="button"
+      aria-label="{star} of {max}"
+      aria-pressed={star === value ? 'true' : 'false'}
+      class:lit={star <= shown}
+      onclick={() => (value = star)}
+      onmouseenter={() => (hovered = star)}
+      onmouseleave={() => (hovered = null)}
+    >★</button>
   </zb-each>
   <output>{value} of {max}</output>
 </rating-input>

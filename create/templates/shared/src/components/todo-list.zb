@@ -38,14 +38,23 @@
 </style>
 <todo-list>
   <form onsubmit.prevent={add}>
-    <input value={draft} oninput={(event) => (draft = event.target.value)} aria-label="New item" placeholder="Something to do">
+    <input
+      value={draft}
+      oninput={(event) => (draft = event.target.value)}
+      aria-label="New item"
+      placeholder="Something to do"
+    >
     <button>Add</button>
   </form>
   <ul zb-if={items.length}>
     <zb-each items={items} as="item" key={item.id}>
       <li class:done={item.done}>
         <label><input type="checkbox" checked={item.done} onchange={() => (item.done = !item.done)}> {item.text}</label>
-        <button type="button" aria-label="Remove {item.text}" onclick={() => items.splice(items.indexOf(item), 1)}>×</button>
+        <button
+          type="button"
+          aria-label="Remove {item.text}"
+          onclick={() => items.splice(items.indexOf(item), 1)}
+        >×</button>
       </li>
     </zb-each>
   </ul>
