@@ -10,7 +10,7 @@ import { useBrowser, open, here, compiler, runtimeOnly } from './harness.js';
 
 const fixture = (name) => join(here, `fixtures/${name}.zb`);
 const fills = fixture('fills-branch-slot');
-useBrowser(Object.fromEntries(['fills-branch-slot', 'branch-slot', 'fills-slot-swap', 'slot-swap', 'fills-slot-swap-tagged', 'slot-swap-tagged', 'frame-box', 'relay-box', 'fills-relay-box', 'relay-branch', 'fills-relay-branch'].map((name) => [name, fixture(name)])));
+useBrowser(Object.fromEntries(['fills-branch-slot', 'branch-slot', 'fills-slot-swap', 'slot-swap', 'fills-slot-swap-tagged', 'slot-swap-tagged', 'frame-box', 'relay-box', 'fills-relay-box', 'relay-branch', 'fills-relay-branch', 'named-relay', 'fills-named-relay'].map((name) => [name, fixture(name)])));
 
 let rendered = 0;
 const server = (props, source = fills) => {
@@ -118,3 +118,70 @@ for (const [branch, framed, kept] of [['its own branch (forwarded)', true, true]
     assert.deepEqual(result, { kept, text: 'Stop' });
   });
 }
+
+// #323: a named slot passed on to a child component's slot. Its content keeps its `slot="y"`
+// (its name in <named-relay>), which <frame-box> has no slot for; the slot part says which of
+// <frame-box>'s slots it is in, and the content is shown there.
+const shown = (page, tag) => page.evaluate(async (tag) => {
+  const host = document.querySelector(tag);
+  await host.updateComplete;
+  await new Promise((resolve) => setTimeout(resolve)); // the slot routers' observers
+  return {
+    framed: host.querySelector('.frame b')?.textContent ?? null,
+    own: host.querySelector('p.own i')?.textContent ?? null,
+    count: host.querySelectorAll('b').length,
+  };
+}, tag);
+
+test('a named slot passed on to a child component shows its content there, in plain HTML', async () => {
+  const { page, messages } = await open('<named-relay><b slot="y">B</b><i>own</i></named-relay>', { modules: ['frame-box', 'named-relay'] });
+  assert.deepEqual(await shown(page, 'named-relay'), { framed: 'B', own: 'own', count: 1 });
+  // Content added later goes there too, and content taken out of the slot leaves.
+  const later = await page.evaluate(async () => {
+    const host = document.querySelector('named-relay');
+    const c = document.createElement('b');
+    c.slot = 'y';
+    c.textContent = 'C';
+    host.appendChild(c);
+    await new Promise((resolve) => setTimeout(resolve));
+    const both = [...host.querySelectorAll('.frame b')].map((b) => b.textContent).join(' ');
+    host.removeChild(host.querySelector('b'));
+    await new Promise((resolve) => setTimeout(resolve));
+    return { both, left: [...host.querySelectorAll('.frame b')].map((b) => b.textContent).join(' ') };
+  });
+  assert.deepEqual(later, { both: 'B C', left: 'C' });
+  // Its `slot` changed: <named-relay> moves it to its own `z` slot, out of <frame-box> (by its
+  // attribute: what it was passed on as is <frame-box>'s to read, not <named-relay>'s).
+  const moved = await page.evaluate(async () => {
+    const host = document.querySelector('named-relay');
+    host.querySelector('.frame b').slot = 'z';
+    await new Promise((resolve) => setTimeout(resolve));
+    return { framed: host.querySelectorAll('.frame b').length, z: host.querySelector('span.z b')?.textContent ?? null, own: host.querySelectorAll('p.own b').length };
+  });
+  assert.deepEqual(moved, { framed: 0, z: 'C', own: 0 });
+  assert.deepEqual(messages, []);
+});
+
+test('a named slot passed on to a child component, filled by a component: rendered fresh, and live', async () => {
+  const { page, messages } = await open('<fills-named-relay></fills-named-relay>', { modules: ['frame-box', 'named-relay', 'fills-named-relay'] });
+  assert.deepEqual(await shown(page, 'fills-named-relay'), { framed: 'Go', own: 'own', count: 1 });
+  await page.evaluate(async () => { const host = document.querySelector('fills-named-relay'); host.label = 'Stop'; await host.updateComplete; });
+  assert.deepEqual(await shown(page, 'fills-named-relay'), { framed: 'Stop', own: 'own', count: 1 });
+  assert.deepEqual(messages, []);
+});
+
+test('a named slot passed on to a child component: server markup is taken over where the child put it', { skip: runtimeOnly }, async () => {
+  const { page, messages } = await open(server({ label: 'Go' }, fixture('fills-named-relay')), {
+    beforeModules: "window.serverInner = document.querySelector('fills-named-relay .frame b');",
+    modules: ['frame-box', 'named-relay', 'fills-named-relay'],
+  });
+  const kept = await page.evaluate(async () => {
+    const host = document.querySelector('fills-named-relay');
+    await host.updateComplete;
+    return !!window.serverInner && host.querySelector('.frame b') === window.serverInner;
+  });
+  assert.equal(kept, true);
+  await page.evaluate(async () => { const host = document.querySelector('fills-named-relay'); host.label = 'Stop'; await host.updateComplete; });
+  assert.deepEqual(await shown(page, 'fills-named-relay'), { framed: 'Stop', own: 'own', count: 1 });
+  assert.deepEqual(messages, []);
+});

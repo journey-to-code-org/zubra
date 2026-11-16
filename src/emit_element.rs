@@ -310,6 +310,7 @@ pub fn emit(
         uses: BTreeSet::new(),
         members: BTreeSet::new(),
         slots: uses_slots,
+        forwarding: Vec::new(),
     };
 
     // ---- the template
@@ -1317,6 +1318,9 @@ struct Emitter<'a, 'n> {
     /// Class members the module needs (effects, mounted…).
     members: BTreeSet<&'static str>,
     slots: bool,
+    /// The `<zb-slot>`s right inside a light-DOM child component's tag (by where they're written):
+    /// what each shows is passed on to the child's default slot (`forward`).
+    forwarding: Vec<crate::Span>,
 }
 
 impl Emitter<'_, '_> {
@@ -1598,7 +1602,16 @@ impl Emitter<'_, '_> {
                         block.update_indent()
                     ));
                 }
-                Node::Slot { name, fallback, .. } => {
+                Node::Slot {
+                    name,
+                    fallback,
+                    span,
+                } => {
+                    let forward = if self.forwarding.contains(span) {
+                        ", \"default\""
+                    } else {
+                        ""
+                    };
                     let data = name.replace("--", "-");
                     let start = block.marker(&format!("slot {data}"));
                     let end = block.marker("/slot");
@@ -1608,7 +1621,7 @@ impl Emitter<'_, '_> {
                         self.branch(block, fallback)?
                     };
                     block.updates.push(format!(
-                        "// <zb-slot{}>\n{}this.#slotRegion({start}, {end}, {}, {fallback})",
+                        "// <zb-slot{}>\n{}this.#slotRegion({start}, {end}, {}, {fallback}{forward})",
                         if name == "default" {
                             String::new()
                         } else {
@@ -1942,6 +1955,15 @@ impl Emitter<'_, '_> {
             return Ok(());
         }
         block.svg = svg && lower_name != "foreignobject";
+        // A slot of this component's right inside a light-DOM child's tag sits in the child's
+        // default slot: its content is passed on there, whatever its own `slot`.
+        if child.is_some_and(|child| !child.shadow) {
+            for node in &element.children {
+                if let Node::Slot { span, .. } = node {
+                    self.forwarding.push(*span);
+                }
+            }
+        }
         self.nodes(block, &element.children, false)?;
         block.svg = was_svg;
         block.markup.push_str("</");

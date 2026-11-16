@@ -498,14 +498,18 @@ const @apple = /mac|iphone|ipad|ipod/i.test(globalThis.navigator?.platform ?? ""
 //@@ slotted: insert
 // Light-DOM slots: the page's children for this element, sorted by their slot attribute.
 const @isContent = (node) => node.nodeType === 1 || (node.nodeType === 3 && node.data.trim() !== "");
-const @slotName = (node) => (node.nodeType === 1 && node.getAttribute("slot")) || "default";
+// Content an outer component passed on to one of this element's slots (`<frame-box><zb-slot
+// name="y">` in its template) keeps its own `slot` ("y"); the outer one puts `{ to, slot }` under
+// this shared symbol, and `to`, this element, routes it by that. Every other host reads the attribute.
+const @forward = Symbol.for("zubra.forward");
+const @slotName = (node, host) => (node[@forward]?.to === host ? node[@forward].slot : (node.nodeType === 1 && node.getAttribute("slot")) || "default");
 
 /**
  * The slot for each child: by its slot attribute. A framework's markers (comments, whitespace, a
  * pair of empty text nodes) go with the content they belong to.
  */
-function @assignSlots(nodes) {
-  const named = nodes.map((node) => (@isContent(node) ? @slotName(node) : null));
+function @assignSlots(nodes, host) {
+  const named = nodes.map((node) => (@isContent(node) ? @slotName(node, host) : null));
   const near = (i, step) => {
     for (let j = i + step; nodes[j]; j += step) if (named[j]) return named[j];
     return null;
@@ -561,7 +565,7 @@ function @dropStandIn(node) {
   }
   #collectSlots() {
     const children = [...this.childNodes];
-    @assignSlots(children).forEach((name, i) => {
+    @assignSlots(children, this).forEach((name, i) => {
       this.#warnSlot(name, children[i]);
       const record = this.#slot(name);
       record.nodes.push(children[i]);
@@ -574,9 +578,22 @@ function @dropStandIn(node) {
       }
     });
   }
-  /** A slot between `start` and `end`, showing its nodes or `fallback()`. */
-  #slotRegion(start, end, name, fallback) {
+  /**
+   * A slot between `start` and `end`, showing its nodes or `fallback()`. `into`: the slot sits
+   * right inside a light-DOM child's tag, in that child's slot of this name; what it shows is
+   * passed on there (see @slotName).
+   */
+  #slotRegion(start, end, name, fallback, into = null) {
     const record = this.#slot(name);
+    let passing = [];
+    let label = null; // `{ to: the child, slot }`, on every node passed on
+    const pass = (nodes) => {
+      if (!into) return;
+      label ??= { to: start.parentNode, slot: into };
+      for (const node of passing) if (!nodes.includes(node) && node[@forward] === label) delete node[@forward];
+      for (const node of nodes) node[@forward] = label;
+      passing = [...nodes];
+    };
     const region = {
       start,
       end,
@@ -602,11 +619,13 @@ function @dropStandIn(node) {
             if (node === cursor) cursor = cursor.nextSibling;
             else @move(start.parentNode, node, cursor);
           }
+          pass(record.nodes);
           return;
         }
         // Only markers and whitespace (a framework's bookkeeping): they wait in the park, where the
         // framework can still add content next to them, while the fallback shows.
         if (record.nodes.length) record.park.append(...record.nodes);
+        pass([]);
         if (fallback && !region.fallback) {
           while (start.nextSibling !== end) start.nextSibling.remove();
           const block = fallback();
@@ -672,7 +691,7 @@ function @dropStandIn(node) {
     this.#watch(node);
     const content = @isContent(node);
     // A marker or whitespace goes in the slot of what it's inserted before.
-    const name = content ? @slotName(node) : (before && this.#holding(before)?.name) || "default";
+    const name = content ? @slotName(node, this) : (before && this.#holding(before)?.name) || "default";
     this.#warnSlot(name, node);
     const record = this.#slot(name);
     const home = this.#slot("default");
@@ -756,7 +775,7 @@ function @dropStandIn(node) {
       for (const record of records) {
         if (record.type === "characterData") written.add(record.target);
         const slot = record.type === "attributes" && this.#holding(record.target);
-        if (slot && @slotName(record.target) !== slot.name) this.#reslot(record.target);
+        if (slot && @slotName(record.target, this) !== slot.name) this.#reslot(record.target);
         // Solid clears a run of nodes one by one, skipping those that aren't where the first is
         // (an element moved to its slot), and puts an empty text node in the first one's place:
         // the stand-ins right after that node are the rest of the run.
@@ -799,7 +818,7 @@ function @dropStandIn(node) {
         }
         // Content that belongs to another slot goes there: an element added next to a marker
         // here, or text that was a marker while it was empty. (A copy: moving one takes it out.)
-        for (const node of [...slot.nodes]) if (@isContent(node) && @slotName(node) !== slot.name) this.#reslot(node);
+        for (const node of [...slot.nodes]) if (@isContent(node) && @slotName(node, this) !== slot.name) this.#reslot(node);
         this.#show(slot);
       }
     });

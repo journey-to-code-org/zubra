@@ -106,6 +106,7 @@ const GENERATED: &[&str] = &[
     "ids",
     "apple",
     "isContent",
+    "forward",
     "slotName",
     "assignSlots",
     "standIns",
