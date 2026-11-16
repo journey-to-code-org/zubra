@@ -4,6 +4,7 @@
 export default [
   { group: 'Guide', pages: [
     { file: 'docs/guide/README.md', slug: '', label: 'Overview' },
+    { file: 'docs/guide/starter-app.md', label: 'The starter app' },
     { file: 'docs/guide/01-first-component.md', label: 'Your first component' },
     { file: 'docs/guide/02-templates.md', label: 'Templates' },
     { file: 'docs/guide/03-props-and-events.md', label: 'Two-way props and events' },
