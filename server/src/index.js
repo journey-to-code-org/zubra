@@ -35,8 +35,9 @@ const posix = (path) => path.split(sep).join('/');
 
 /**
  * `components`: the folder of `.zb` (and `.zb.jsx`/`.zb.tsx`) files. `prefix`: the URL path
- * the browser modules are served under. `cache`: keep compiled output (turn it off in
- * development to pick up edits). `production`: serve the runtime's production build, without hot
+ * the browser modules are served under. `cache`: keep compiled output and renders. In
+ * development an edit under the folder is still picked up on the next request (the folder's
+ * files are checked for changes first); `cache: false` compiles on every request instead. `production`: serve the runtime's production build, without hot
  * reloading (by default when `NODE_ENV` is `production`). `devtools`: compile for the Zubra DevTools
  * extension and serve the runtime build it reads (on by default except in production;
  * `ZUBRA_DEVTOOLS=1` turns it on there too, for a demo or a staging site). `imports`: more import map entries,
@@ -112,16 +113,41 @@ export function createZubra({ components = 'components', packages = [], prefix =
 
   // name (the path without its extension, "/"-separated) → file
   const files = new Map();
-  (function walk(dir) {
-    for (const entry of readdirSync(dir).sort()) {
-      const path = join(dir, entry);
-      if (statSync(path).isDirectory()) {
-        if (entry !== 'node_modules' && !entry.startsWith('.')) walk(path);
-      } else if (SOURCE.test(entry)) {
-        files.set(posix(relative(root, path)).replace(SOURCE, ''), path);
+  // `seen`: every file under the folder with when it was written and its size, as one string.
+  const list = () => {
+    const found = new Map();
+    let seen = '';
+    (function walk(dir) {
+      for (const entry of readdirSync(dir).sort()) {
+        const path = join(dir, entry);
+        const stat = statSync(path, { throwIfNoEntry: false });
+        if (!stat) continue; // (gone between the listing and here: an editor's temporary file)
+        if (stat.isDirectory()) {
+          if (entry !== 'node_modules' && !entry.startsWith('.')) walk(path);
+          continue;
+        }
+        seen += `${path}\0${stat.mtimeMs}\0${stat.size}\n`;
+        if (SOURCE.test(entry)) found.set(posix(relative(root, path)).replace(SOURCE, ''), path);
       }
-    }
-  })(root);
+    })(root);
+    return { found, seen };
+  };
+  let { found: listed, seen } = list();
+  for (const [name, path] of listed) files.set(name, path);
+  // In development, with `cache`: has anything in the folder been written, added or removed
+  // since this was last asked? If so the list of components is read again (a package's
+  // components, added below, stay as they were listed), and the core lets go of what it kept:
+  // an edit shows on the next request, with no restart and without `cache: false`'s compile per
+  // request. A file a component imports from outside the folder isn't watched.
+  const changed = cache && !production ? () => {
+    const now = list();
+    if (now.seen === seen) return false;
+    seen = now.seen;
+    for (const name of listed.keys()) if (!now.found.has(name)) files.delete(name);
+    for (const [name, path] of now.found) files.set(name, path);
+    listed = now.found;
+    return true;
+  } : null;
 
   // A package's folder of components (`@acme/kit/components`), found in the node_modules above
   // the components folder, joins the same map under its specifier, and the import map sends that
@@ -173,6 +199,7 @@ export function createZubra({ components = 'components', packages = [], prefix =
     bundle: bundling,
     // Development only: it reads every tag of every finished page.
     checkPages: !production,
+    changed,
     runtimeFile: oneFile ? 'zubra.js' : 'core.js',
     runtimeModules: oneFile ? bundledModules : runtimeModules,
     // The compiler keys a context by its module's path, joined to the importing component's.

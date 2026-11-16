@@ -25,13 +25,31 @@ const RENDER_LARGEST = 512 * 1024;
  * host serves under `<base>/` beyond the components' modules (`{ status, type, body }` or null).
  * `needs(name, code)`: the host's check on a compiled module (a package it needs being installed).
  */
-export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}` }) {
+export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, changed = null, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}` }) {
   if (gaps !== 'warn' && gaps !== 'ignore') throw new Error(`@zubra/server: gaps is "warn" or "ignore", not ${JSON.stringify(gaps)}`);
   if (clientModules !== 'all' && clientModules !== 'needed') throw new Error(`@zubra/server: clientModules is "all" or "needed", not ${JSON.stringify(clientModules)}`);
   if (typeof inline !== 'boolean') throw new Error(`@zubra/server: inline is true or false, not ${JSON.stringify(inline)}`);
   if (typeof preload !== 'boolean') throw new Error(`@zubra/server: preload is true or false, not ${JSON.stringify(preload)}`);
   const memo = new Map();
+  // `changed` (the Node server in development, with `cache`): asked whether the sources differ
+  // from when it was last asked, at most once per run of synchronous work (a render, a request
+  // for a module), before anything kept is used. If they do, everything kept goes, so an edit
+  // shows on the next request with no restart, and a page that hasn't changed still costs what
+  // `cache` makes it cost.
+  let checked = false;
+  const fresh = () => {
+    if (!changed || checked) return;
+    checked = true;
+    queueMicrotask(() => {
+      checked = false;
+    });
+    if (!changed()) return;
+    memo.clear();
+    forgotten();
+  };
+  let forgotten = () => {};
   const once = (key, make) => {
+    fresh();
     if (!cache || !memo.has(key)) memo.set(key, make());
     return memo.get(key);
   };
@@ -132,7 +150,12 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   // answer larger than `RENDER_LARGEST` isn't kept. A promise prop is never the same twice.
   const rendered = new Map();
   let renderedSize = 0;
+  forgotten = () => {
+    rendered.clear();
+    renderedSize = 0;
+  };
   const answer = (name, props, slots, pending, idPrefix, context) => {
+    fresh();
     const path = pathOf(name);
     const ask = () => send({ path, files: sourcesOf(path), emit: 'html', props, slots, slotSource: 'html', partial: true, ...(gaps === 'warn' ? { gaps: true } : {}), ...(pending.length ? { pending } : {}), ...(idPrefix ? { idPrefix } : {}), ...(Object.keys(context).length ? { context } : {}) });
     if (!cache || pending.length) return ask();
@@ -435,7 +458,8 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     // The runtime's and @zubra/sync's own modules import each other by name too.
     return asset && !inline && asset.status === 200 && rest.endsWith('.js') ? { ...asset, body: resolved(asset.body) } : asset;
   }
-  const cacheControl = cache ? 'public, max-age=3600' : 'no-cache';
+  // (With `changed`, a module may differ on the next request: the browser asks each time.)
+  const cacheControl = cache && !changed ? 'public, max-age=3600' : 'no-cache';
   /** The `cache-control` for what `serve` answered: a URL with its content's hash in it is for good. */
   // Only a 200 is cached: a 404 cached before a deploy would outlast it by an hour.
   const cacheControlOf = (served) => (served.status !== 200 ? 'no-cache' : cache && served.immutable ? 'public, max-age=31536000, immutable' : cacheControl);

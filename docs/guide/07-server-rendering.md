@@ -35,7 +35,7 @@ res.end(page.finish(myLayout(card)));            // + the components' CSS and mo
 Two things to get right from the start:
 
 - **One `zubra.page()` per request, used for both `render()` and `finish()`.** The page object collects the components it renders, and `finish()` adds the CSS and modules of those. A page rendered by one object and finished by another shows the server's HTML and never comes alive.
-- **`createZubra({ components, cache: false })` while you develop.** By default a component is compiled once and its renders are kept, which is what a deployed server wants; an edit to a `.zb` file then shows only after a restart. With `cache: false` every request reads the files again, so an edit shows on reload. For example: `cache: process.env.NODE_ENV === 'production'`.
+- **Edit and reload.** In development an edit to a `.zb` file (or a file added or removed) shows on the next request; there's nothing to restart. The server keeps what it compiled and lets go of it when something in the components folder changes. With `NODE_ENV=production` it compiles once and never looks again, which is what a deployed server wants. A file a component imports from outside the folder isn't watched: restart for those.
 
 To change a rendered component from a script on the page (a live price, a status), set its props as properties: [Setting a prop from outside](03-props-and-events.md#setting-a-prop-from-outside).
 
