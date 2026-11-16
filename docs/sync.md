@@ -119,6 +119,14 @@ Components don't change. The protocol is plain HTTP, so any server can keep the 
 
 Changes arrive over a live channel: `GET /_zb/sync/live?since=<cursor>` is a server-sent event stream of `changes` as they're pushed (and `presence`, below). While it's open there's nothing to poll; when it drops, the connection polls (every 2 seconds by default, and when the browser comes back online) and reopens it from the current cursor. `connect({ live: false })` polls only. A server with several processes needs a shared log and a pub/sub between them; the reference server's subscribers are its own process's.
 
+**A refused read is silent on the page, by design, and the server says so in development.** A page isn't told what it may not read: whether a document exists can be the very thing `authorize` hides. So a collection whose every read is refused looks, to the page, exactly like an empty one, and its components show their defaults with nothing in the console and no failed request. To keep that from being a mystery to whoever wrote `authorize`, the server logs once per collection when a page read the whole log and was sent none of a collection that has documents:
+
+```
+@zubra/sync: a page read "secrets" (GET /_zb/sync/pull) and was sent none of its 2 documents: `authorize` refused every read. …
+```
+
+It names the cause (`authorize`, or the server's `scope` leaving them all out). It's logged where `process.env.NODE_ENV` exists and isn't `production`; `createSyncServer({ warn })` takes a function to send it elsewhere, or `false` to turn it off (a server where one tenant rightly sees nothing of another's collection, say). A collection the page's own `scope` leaves out, a page that sees some of the collection, and later batches (other people's changes, refused as a matter of course) say nothing.
+
 ### Only what the page shows: `scope`
 
 By default a page receives, and stores, every change in the log. A page that shows one showing's seats, or one business's orders, should ask for just those:
