@@ -519,7 +519,12 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
      */
     function strangers(html) {
       if (!checkPages) return;
-      const tags = byTag();
+      let tags;
+      try {
+        tags = byTag();
+      } catch {
+        return; // (two files with one tag: an error for whoever asks for that tag, not for this page)
+      }
       let known = null;
       for (const { tag } of hostTags(html, tags)) {
         const name = tags.get(tag);

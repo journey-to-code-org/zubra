@@ -888,6 +888,21 @@ test('a page finished by the object that rendered it, a child its component impo
   assert.deepEqual(warned.filter((message) => message.includes('page object')), []);
 });
 
+test("the check for strangers never fails a page: a folder where two files have one tag still finishes", () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-two-tags-'));
+  try {
+    // Routes do this (`routes/a/b.zb` and `routes/c.zb`, both <x-page>), and render by name.
+    mkdirSync(join(dir, 'a'));
+    writeFileSync(join(dir, 'a', 'b.zb'), '<x-page word="one"><p>{word}</p></x-page>\n');
+    writeFileSync(join(dir, 'c.zb'), '<x-page word="two"><p>{word}</p></x-page>\n');
+    const zubra = createZubra({ components: dir, production: false, warn: () => {} });
+    const page = zubra.page();
+    assert.match(page.finish(layout(page.render('a/b'))), /<p>one<\/p>/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('in production a finished page is not read for strangers', () => {
   const warned = [];
   const zubra = createZubra({ components, production: true, warn: (message) => warned.push(message) });
