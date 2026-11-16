@@ -12,6 +12,7 @@
 //! bindings. So in `<zb-header title={title}><h1>{title}</h1>`, `{title}` is the *prop* (which
 //! defaults to the script's `title`), and a build-time override reaches the template.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
@@ -1361,11 +1362,13 @@ struct Context<'a> {
 }
 
 #[derive(Default)]
-struct LowerState {
+struct LowerState<'a> {
     /// Shadow-DOM components: supplied slot content, rendered as the host's light-DOM children.
     light: Vec<Node>,
-    /// Loop variables, innermost last.
-    scopes: Vec<Vec<(String, Value)>>,
+    /// Loop variables, innermost last. A list's item is lent where the list itself outlives the
+    /// render (a prop, a script value, or an item of one): a row is then read where it is, not
+    /// copied for each pass over it.
+    scopes: Vec<Vec<(String, Cow<'a, Value>)>>,
     active_slots: HashSet<String>,
 }
 
@@ -1375,7 +1378,7 @@ enum Binding<'v> {
     Runtime,
 }
 
-impl Context<'_> {
+impl<'a> Context<'a> {
     fn names_in_scope<'s>(&'s self, scopes: &'s [Vec<String>]) -> Vec<&'s str> {
         scopes
             .iter()
@@ -1628,7 +1631,28 @@ impl Context<'_> {
         Ok(())
     }
 
-    fn binding<'s>(&'s self, name: &str, state: &'s LowerState) -> Option<Binding<'s>> {
+    /// The value `name` has, when it outlives this render's state: a prop, a script value, or a
+    /// loop variable lent from one. `None` for anything else, a loop variable that owns its value
+    /// included (it hides whatever it shadows).
+    fn lasting(&self, name: &str, state: &LowerState<'a>) -> Option<&'a Value> {
+        for scope in state.scopes.iter().rev() {
+            if let Some((_, value)) = scope.iter().rev().find(|(local, _)| local == name) {
+                return match value {
+                    Cow::Borrowed(value) => Some(*value),
+                    Cow::Owned(_) => None,
+                };
+            }
+        }
+        if let Some(prop) = self.props.iter().find(|prop| prop.name == name) {
+            return (!prop.unknown).then_some(&prop.value);
+        }
+        match find_local(self.locals, name) {
+            Some(Local::Value(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    fn binding<'s>(&'s self, name: &str, state: &'s LowerState<'a>) -> Option<Binding<'s>> {
         for scope in state.scopes.iter().rev() {
             if let Some((_, value)) = scope.iter().rev().find(|(local, _)| local == name) {
                 return Some(Binding::Value(value));
@@ -1653,7 +1677,7 @@ impl Context<'_> {
         &self,
         expression: &Expression,
         span: Span,
-        state: &LowerState,
+        state: &LowerState<'a>,
     ) -> Result<Option<Value>, Diagnostic> {
         if partial() {
             // `hydrated()` written in the template, not first bound in the script: false on the
@@ -1691,7 +1715,7 @@ impl Context<'_> {
     }
 
     /// A runtime expression the server evaluates anyway (`pure.rs`), or `None`.
-    fn pure_value(&self, expression: &Expression, state: &LowerState) -> Option<Value> {
+    fn pure_value(&self, expression: &Expression, state: &LowerState<'a>) -> Option<Value> {
         let Expression::Runtime { source, .. } = expression else {
             return None;
         };
@@ -1734,7 +1758,7 @@ impl Context<'_> {
 
     /// `name && rest`, `!name && rest`, `name || rest`, `!name || rest`, where `name` is known
     /// at render time (or a literal) and decides the result without `rest`.
-    fn short_circuit(&self, source: &str, state: &LowerState) -> Option<Value> {
+    fn short_circuit(&self, source: &str, state: &LowerState<'a>) -> Option<Value> {
         let text = source.trim_start();
         let (negated, text) = match text.strip_prefix('!') {
             Some(rest) if !rest.starts_with('=') => (true, rest.trim_start()),
@@ -1785,7 +1809,7 @@ impl Context<'_> {
         &self,
         expression: &Expression,
         span: Span,
-        state: &LowerState,
+        state: &LowerState<'a>,
     ) -> Result<Value, Diagnostic> {
         let mut runtime = None;
         expression.for_each_identifier(&mut |name| {
@@ -1815,7 +1839,11 @@ impl Context<'_> {
     }
 
     /// Text with its values; partially rendered text the browser fills in is empty.
-    fn lower_parts(&self, parts: &[AstPart], state: &LowerState) -> Result<Vec<Part>, Diagnostic> {
+    fn lower_parts(
+        &self,
+        parts: &[AstPart],
+        state: &LowerState<'a>,
+    ) -> Result<Vec<Part>, Diagnostic> {
         Ok(self
             .lower_known_parts(parts, state)?
             .unwrap_or_else(|| vec![Part::Escaped(String::new())]))
@@ -1825,7 +1853,7 @@ impl Context<'_> {
     fn lower_known_parts(
         &self,
         parts: &[AstPart],
-        state: &LowerState,
+        state: &LowerState<'a>,
     ) -> Result<Option<Vec<Part>>, Diagnostic> {
         let mut lowered = Vec::new();
         for part in parts {
@@ -1849,18 +1877,18 @@ impl Context<'_> {
     fn lower_nodes(
         &self,
         nodes: &[ast::Node],
-        state: &mut LowerState,
+        state: &mut LowerState<'a>,
     ) -> Result<Vec<Node>, Diagnostic> {
         self.lower_block(nodes, state, false)
     }
 
     /// `block_top`: these nodes are the top level of an `zb-if` branch or `zb-each` row.
     /// `let:` values for the innermost scope, evaluated in order (each may use the ones before).
-    fn lower_lets(&self, lets: &[ast::Let], state: &mut LowerState) -> Result<(), Diagnostic> {
+    fn lower_lets(&self, lets: &[ast::Let], state: &mut LowerState<'a>) -> Result<(), Diagnostic> {
         for binding in lets {
             let value = self.evaluate(&binding.value, binding.span, state)?;
             if let Some(scope) = state.scopes.last_mut() {
-                scope.push((binding.name.clone(), value));
+                scope.push((binding.name.clone(), Cow::Owned(value)));
             }
         }
         Ok(())
@@ -1869,7 +1897,7 @@ impl Context<'_> {
     fn lower_block(
         &self,
         nodes: &[ast::Node],
-        state: &mut LowerState,
+        state: &mut LowerState<'a>,
         block_top: bool,
     ) -> Result<Vec<Node>, Diagnostic> {
         let mut output = Vec::new();
@@ -1893,7 +1921,7 @@ impl Context<'_> {
     fn lower_element(
         &self,
         element: &ast::Element,
-        state: &mut LowerState,
+        state: &mut LowerState<'a>,
     ) -> Result<Node, Diagnostic> {
         if crate::emit_js::is_global_listener(&element.name) {
             // Listeners only: a placeholder the element finds them by.
@@ -1930,7 +1958,7 @@ impl Context<'_> {
     fn lower_node(
         &self,
         node: &ast::Node,
-        state: &mut LowerState,
+        state: &mut LowerState<'a>,
     ) -> Result<Vec<Node>, Diagnostic> {
         match node {
             ast::Node::Text(parts) => Ok(vec![Node::Text(self.lower_parts(parts, state)?)]),
@@ -1968,29 +1996,45 @@ impl Context<'_> {
             } => {
                 // A `let:` the server can't evaluate leaves the list to the browser.
                 let browser_only = lets.iter().any(|binding| binding.value.is_runtime());
-                let Some(value) = (if browser_only {
+                // A list that outlives the render (a prop, a script value, a field of an outer
+                // row lent the same way) is read where it is: its rows are lent to their scopes.
+                let lent = if browser_only {
                     None
                 } else {
-                    self.evaluate_known(items, *items_span, state)?
-                }) else {
-                    return Ok(vec![Node::OpenClient, Node::Close]);
+                    match items.lent(&|name| self.lasting(name, state)) {
+                        Some(Value::Array(list)) => Some(list),
+                        _ => None,
+                    }
                 };
-                let Value::Array(list) = value else {
-                    return Err(Diagnostic::new(
-                        *items_span,
-                        format!(
-                            "zb-each items must be an array, found {}",
-                            expression::type_name(&value)
-                        ),
-                    ));
+                let list: Vec<Cow<'a, Value>> = if let Some(list) = lent {
+                    list.iter().map(Cow::Borrowed).collect()
+                } else {
+                    let Some(value) = (if browser_only {
+                        None
+                    } else {
+                        self.evaluate_known(items, *items_span, state)?
+                    }) else {
+                        return Ok(vec![Node::OpenClient, Node::Close]);
+                    };
+                    let Value::Array(list) = value else {
+                        return Err(Diagnostic::new(
+                            *items_span,
+                            format!(
+                                "zb-each items must be an array, found {}",
+                                expression::type_name(&value)
+                            ),
+                        ));
+                    };
+                    list.into_iter().map(Cow::Owned).collect()
                 };
                 // A region for the list, and one per row.
-                let mut output = vec![Node::Open];
-                let mut keys = HashSet::new();
+                let mut output = Vec::with_capacity(list.len() * 3 + 2);
+                output.push(Node::Open);
+                let mut keys = HashSet::with_capacity(if key.is_some() { list.len() } else { 0 });
                 for (position, entry) in list.into_iter().enumerate() {
-                    let mut scope = destructure_owned(item, entry);
+                    let mut scope = destructure_entry(item, entry);
                     if let Some(index) = index {
-                        scope.push((index.clone(), Value::from(position)));
+                        scope.push((index.clone(), Cow::Owned(Value::from(position))));
                     }
                     state.scopes.push(scope);
                     if let Err(error) = self.lower_lets(lets, state) {
@@ -2140,6 +2184,7 @@ impl Context<'_> {
                                 .name
                                 .iter()
                                 .flat_map(|name| destructure(name, &resolved))
+                                .map(|(name, value)| (name, Cow::Owned(value)))
                                 .collect(),
                         );
                         let lowered = self
@@ -2173,7 +2218,7 @@ impl Context<'_> {
         &self,
         element: &ast::Element,
         child: &ast::ChildComponent,
-        state: &mut LowerState,
+        state: &mut LowerState<'a>,
     ) -> Result<Node, Diagnostic> {
         let interface =
             interface_of(child).map_err(|error| error.in_file(&child.path, &child.source))?;
@@ -2423,7 +2468,7 @@ impl Context<'_> {
         &self,
         element: &ast::Element,
         attributes: &mut Vec<ir::Attribute>,
-        state: &LowerState,
+        state: &LowerState<'a>,
     ) -> Result<(), Diagnostic> {
         let mut classes = Vec::new();
         let mut styles = Vec::new();
@@ -2501,7 +2546,7 @@ impl Context<'_> {
         element: &ast::Element,
         attribute: &ast::Attribute,
         attributes: &mut Vec<ir::Attribute>,
-        state: &LowerState,
+        state: &LowerState<'a>,
         props: &[String],
     ) -> Result<(), Diagnostic> {
         let AttributeValue::Expression(expression, span) = &attribute.value else {
@@ -2673,7 +2718,7 @@ impl Context<'_> {
     fn lower_attribute(
         &self,
         attribute: &ast::Attribute,
-        state: &LowerState,
+        state: &LowerState<'a>,
         custom_element: bool,
     ) -> Result<Option<ir::Attribute>, Diagnostic> {
         let lower = attribute.name.to_ascii_lowercase();
@@ -2778,8 +2823,9 @@ impl Context<'_> {
 /// marks the matching `<option selected>` (by its `value`, or its text when it has none), and a
 /// textarea's value becomes its content. (The element sets the `value` property when it starts.)
 fn form_value_as_html(element: &mut ir::Element) {
-    let name = element.name.to_ascii_lowercase();
-    if name != "select" && name != "textarea" {
+    // Compared without a lowered copy: this runs for every element of every render.
+    let textarea = element.name.eq_ignore_ascii_case("textarea");
+    if !textarea && !element.name.eq_ignore_ascii_case("select") {
         return;
     }
     let Some(position) = element
@@ -2795,7 +2841,7 @@ fn form_value_as_html(element: &mut ir::Element) {
         .value
         .map(|parts| joined(&parts))
         .unwrap_or_default();
-    if name == "textarea" {
+    if textarea {
         element.children = vec![Node::Text(vec![Part::Escaped(value)])];
         return;
     }
@@ -3725,9 +3771,12 @@ fn bound_names(text: &str) -> Vec<String> {
 /// `undefined`).
 /// As [`destructure`], for a value that is ours to keep: a plain name takes it as it is,
 /// without a copy (each row of a list, once per row).
-fn destructure_owned(text: &str, value: Value) -> Vec<(String, Value)> {
+fn destructure_entry<'v>(text: &str, value: Cow<'v, Value>) -> Vec<(String, Cow<'v, Value>)> {
     if crate::ast::is_pattern(text) {
         destructure(text, &value)
+            .into_iter()
+            .map(|(name, value)| (name, Cow::Owned(value)))
+            .collect()
     } else {
         vec![(text.trim().to_owned(), value)]
     }

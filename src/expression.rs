@@ -203,7 +203,7 @@ impl Expression {
     /// The value this path reads, where it is: a name, or a field or item of one that is
     /// there. `None` for anything else (a missing field, `length`, a computed value), which
     /// [`Self::eval`] then works out from a copy, as it always has.
-    fn lent<'v>(&self, lend: &Lend<'_, 'v>) -> Option<&'v Value> {
+    pub(crate) fn lent<'v>(&self, lend: &Lend<'_, 'v>) -> Option<&'v Value> {
         match self {
             Self::Identifier(name) => lend(name),
             Self::Member {
