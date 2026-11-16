@@ -1,8 +1,9 @@
 // zb-each: a part with `binder: $each` (interface 4).
 
-import { clearBetween, deleteBetween, fragmentParents, freshCopy, hydratable, mountBlock, move, parentOf } from './blocks.js';
+import { clearBetween, deleteBetween, freshParts, hydratable, mountBlock, move, parentOf } from './blocks.js';
 import { scope, effect, batch } from './effect.js';
-import { $r, bind, childRange, isOpen, locate, matchingClose, positions, see, untrack } from './element.js';
+import { $r, bind, isOpen, matchingClose, positions, see, untrack } from './element.js';
+import { trackItems } from './deep.js';
 import { Signal } from './signal.js';
 
 /**
@@ -34,18 +35,20 @@ export function bindEach(part, open, hydrating, context) {
       const owner = rowsOwner.run(() => scope(() => mountBlock(part.block, [item, position], rowOpen, rowClose, hydrateRow, context)));
       return { key, item, position, open: rowOpen, close: rowClose, owner };
     }
-    const parent = parentOf(open);
-    const fragment = freshCopy(part.block, parent);
-    fragmentParents.set(fragment, parent);
+    let top;
     const owner = rowsOwner.run(() => scope(() => {
       const parts = part.block.parts(item, position);
-      const nodes = locate(childRange(fragment), parts);
+      let nodes;
+      [top, nodes] = freshParts(part.block, parentOf(open), parts);
       parts.forEach((each, at) => bind(each, nodes[at], false, context));
     }));
-    if (!fragment.firstChild) fragment.append(document.createComment(''));
-    return { key, item, position, open: fragment.firstChild, close: fragment.lastChild, owner };
+    // One element: the row is that element.
+    const lone = top.nodeType === 1;
+    if (!lone && !top.firstChild) top.append(document.createComment(''));
+    return { key, item, position, open: lone ? top : top.firstChild, close: lone ? top : top.lastChild, owner };
   };
   const nodesOf = (row) => {
+    if (row.open === row.close) return [row.open];
     const nodes = [];
     for (let node = row.open; ; node = node.nextSibling) {
       nodes.push(node);
@@ -86,9 +89,9 @@ export function bindEach(part, open, hydrating, context) {
       // @dev-end
       list = [];
     }
-    // Reactive state (deep.js) tracks by property: reading the length and each index here means
+    // Reactive state (deep.js) tracks by property: watching the list's items here means
     // `items.push(x)`, `items.splice(…)` and `items[i] = x` re-run this effect.
-    for (let index = 0, { length } = list; index < length; index++) list[index];
+    trackItems(list);
     const hydrate = first;
     first = false;
     untrack(() => {
