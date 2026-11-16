@@ -4,6 +4,8 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+## 5.20.0 — 2026-11-16
+
 ### Security
 
 - **The release job runs nothing it didn't pin.** `.github/workflows/release.yml` publishes every `@zubra` package and the VS Code extension through trusted publishing, with provenance, and ran third-party code from references that move: `dtolnay/rust-toolchain@master`, `Swatinem/rust-cache@v2` and the `actions/*@v4` tags, `npx --yes @vscode/vsce` (the newest vsce on every release) and `npm install -g npm@11`. A compromised upstream would have run with the job's publishing identity. Every action in every workflow is now pinned to a commit, with its version in a comment, and `.github/dependabot.yml` proposes updates weekly; the publishing job has no build cache (one any run on `main` can write); npm is pinned to 11.21.2; and `@vscode/vsce` is the extension's own devDependency (4.1.1), installed from its lockfile. Found in the 2026-11-16 audit.
