@@ -32,6 +32,13 @@ const card = page.render('info-card', { heading: 'Plans' }); // HTML, inside you
 res.end(page.finish(myLayout(card)));            // + the components' CSS and module scripts
 ```
 
+Two things to get right from the start:
+
+- **One `zubra.page()` per request, used for both `render()` and `finish()`.** The page object collects the components it renders, and `finish()` adds the CSS and modules of those. A page rendered by one object and finished by another shows the server's HTML and never comes alive.
+- **`createZubra({ components, cache: false })` while you develop.** By default a component is compiled once and its renders are kept, which is what a deployed server wants; an edit to a `.zb` file then shows only after a restart. With `cache: false` every request reads the files again, so an edit shows on reload. For example: `cache: process.env.NODE_ENV === 'production'`.
+
+To change a rendered component from a script on the page (a live price, a status), set its props as properties: [Setting a prop from outside](03-props-and-events.md#setting-a-prop-from-outside).
+
 The component's script runs on the server too, as far as it's deterministic: `.map()`, `.filter()`, `toFixed()`, `Math`, template literals, and arrow functions from the script. What only the browser can compute (a handler, `Date`, `Intl`, a value from `fetch`) is left for the element: its text renders empty and its region renders when the element starts, without a hydration warning. `zubra check --server` lists those places.
 
 ## From the command line

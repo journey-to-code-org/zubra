@@ -545,7 +545,9 @@ That's the same in the Rust CLI, the WebAssembly build and every server. `compil
 
 **Partial rendering.** A component may use what only the browser can compute: JavaScript expressions, runtime-only script values, or defaults computed in the browser. `--partial` (or `partial: true` in a request) renders everything else and leaves those parts for the element. Their text renders empty, their attributes are left out, and their conditionals and lists become empty `<?zb [??>` regions that the element renders when it starts, without a hydration warning. Without it, the HTML output reports the first such part as an error. `@zubra/compiler`'s `render()` and the plugin's server builds render partially, so every component (JSX ones with state included) can be server-rendered.
 
-In an app's server, **`@zubra/server`** does the whole job with any template engine. It renders components into a page, adds their CSS and module scripts, and serves the browser modules and `@zubra/runtime`, with no bundler:
+In an app's server, **`@zubra/server`** does the whole job with any template engine. It renders components into a page, adds their CSS and module scripts, and serves the browser modules and `@zubra/runtime`, with no bundler. In development pass `cache: false`: it reads and compiles the components again on every request, so an edit shows on reload (by default a component is compiled once, and an edit needs a restart).
+
+A page:
 
 ```js
 import { zubra } from '@zubra/server/express';          // or /fastify, /hono; or createZubra() from '@zubra/server'
