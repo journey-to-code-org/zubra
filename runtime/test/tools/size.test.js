@@ -53,8 +53,11 @@ const BUDGETS = {
   // in this entry, about 0.25 KB together, which take 0.55 and 0.34 KB off the apps that don't use
   // what they replace; 15.75 KB until parts.js and shadow.js, about 90 B here, 0.42 to 0.46 KB
   // off each of the comparison's hosts; 16 KB until the signal graph's and an effect owner's
-  // private fields got short names in this build, about 150 B, which brought it back under).
-  'dist/production/index.js': { gzip: 15.75 * 1024 },
+  // private fields got short names in this build, about 150 B, which brought it back under; 15.75
+  // KB until content given to a slot a child has in more than one branch was checked against the
+  // branch the server rendered, about 70 B, 3 B over: this entry has every optional module, and
+  // what a server sends, zubra.js, stays under its own budget).
+  'dist/production/index.js': { gzip: 16 * 1024 },
   // An app that only uses Signals and effects.
   'src/effect.js': { gzip: 4 * 1024 },
   // `animate`'s leave() and glide(), loaded only by components that animate.

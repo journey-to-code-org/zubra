@@ -1,0 +1,7 @@
+<!-- Fills both of <slot-swap>'s slots: the server renders one; nothing says which. -->
+<script>
+  import './slot-swap.zb'
+</script>
+<fills-slot-swap a="A" b="B" wide={false}>
+  <slot-swap wide={wide}><b slot="left">{a}</b><i slot="right">{b}</i></slot-swap>
+</fills-slot-swap>

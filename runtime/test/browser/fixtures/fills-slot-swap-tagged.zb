@@ -1,0 +1,8 @@
+<!-- Fills only the right slot of <slot-swap-tagged>, which has the left one at the same place in
+     its other branch. -->
+<script>
+  import './slot-swap-tagged.zb'
+</script>
+<fills-slot-swap-tagged b="B" wide={false}>
+  <slot-swap-tagged wide={wide}><i slot="right">{b}</i></slot-swap-tagged>
+</fills-slot-swap-tagged>

@@ -505,12 +505,28 @@ let nativeFirst; // looked up on first use, so the module loads without a DOM
 
 const childRange = (parent) => ({ first: parent.firstChild, stop: null });
 
+/**
+ * Where a part given to a child component sits in server markup: its one place, or, where that's
+ * in doubt (the child has the slot in more than one branch of a `zb-if`, or another slot where
+ * this one is), the first place (`[{ path, kinds }]`) whose steps lead to what the compiler
+ * expects there: `kinds[i]` for step `i`, a tag name, `[` for a region, `[!` for a filled slot's
+ * (a hole for a step it doesn't check). That's the branch the server rendered; none (or no
+ * places): `[]`, which leads nowhere, so the element renders fresh.
+ */
+const placed = (range, hydrate) =>
+  hydrate[0]?.path
+    ? hydrate.find(({ path, kinds }) => kinds.every((kind, step) => {
+      const node = walk(range, path.slice(0, step + 1));
+      return (node && (marker(node) ?? node.localName)) === kind;
+    }))?.path ?? []
+    : hydrate;
+
 /** The node for every part, or null if the markup doesn't have the template's shape. */
 function locate(range, parts, hydrating = false) {
   const nodes = [];
   for (const part of parts) {
     // In server markup, content given to a child component sits where the child projected it.
-    const node = walk(range, hydrating && part.hydrate ? part.hydrate : part.path);
+    const node = walk(range, hydrating && part.hydrate ? placed(range, part.hydrate) : part.path);
     const fits = !node ? false
       : part.when || part.each || part.slot || part.await ? isOpen(node) && matchingClose(node) !== null
       : part.anchor || part.global ? marker(node) === ''

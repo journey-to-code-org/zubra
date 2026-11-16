@@ -158,6 +158,7 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
         shadow: component.shadow,
         scopes: Vec::new(),
         base: Vec::new(),
+        trail: Vec::new(),
         template: String::new(),
         parts: Vec::new(),
         slot_paths: Vec::new(),
@@ -711,6 +712,7 @@ pub(crate) fn child_infos(
                     shadow: child.ast.shadow,
                     scopes: Vec::new(),
                     base: Vec::new(),
+                    trail: Vec::new(),
                     template: String::new(),
                     parts: Vec::new(),
                     slot_paths: Vec::new(),
@@ -746,7 +748,9 @@ fn json(value: &str) -> String {
 #[derive(Clone)]
 struct JsPart {
     path: Vec<usize>,
-    hydrate: Option<Vec<usize>>,
+    /// Where it can sit in server markup: one place, or (a child that puts the slot in more than
+    /// one branch of a `zb-if`) one per branch, each to be checked against the markup.
+    hydrate: Option<Vec<Place>>,
     body: String,
     /// Where in the `.zb` file the part was written (only with `--devtools`).
     at: Option<Span>,
@@ -766,16 +770,48 @@ impl JsPart {
         let at = self.at.map_or_else(String::new, |span| {
             format!(", at: [{}, {}]", span.line, span.column)
         });
-        match &self.hydrate {
-            Some(hydrate) => format!(
+        match self.hydrate.as_deref() {
+            // One place: its path, as every part with one has always been written.
+            Some([place]) if place.kinds.is_empty() => format!(
                 "{{ path: {}, hydrate: {}, {}{at} }}",
                 path_js(&self.path),
-                path_js(hydrate),
+                path_js(&place.path),
+                self.body
+            ),
+            // Several, or one that may not be there: each with what its steps must lead to in the
+            // markup; the runtime takes the first that matches (none: the element renders fresh).
+            Some(places) => format!(
+                "{{ path: {}, hydrate: [{}], {}{at} }}",
+                path_js(&self.path),
+                places
+                    .iter()
+                    .map(|place| format!(
+                        "{{ path: {}, kinds: [{}] }}",
+                        path_js(&place.path),
+                        // Unchecked steps are holes (`[, "[", "a"]`), which `every` skips.
+                        place
+                            .kinds
+                            .iter()
+                            .map(|kind| kind.as_deref().map(json).unwrap_or_default())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", "),
                 self.body
             ),
             None => format!("{{ path: {}, {}{at} }}", path_js(&self.path), self.body),
         }
     }
+}
+
+/// A place a part can sit in server markup: its path, and, where that's in doubt, what some of
+/// its steps must lead to (`kinds[i]` for step `i`: a tag name, `[` for a region, `[!` for a
+/// filled slot's region; `None` for a step that isn't checked).
+#[derive(Clone)]
+struct Place {
+    path: Vec<usize>,
+    kinds: Vec<Option<String>>,
 }
 
 fn path_js(path: &[usize]) -> String {
@@ -812,7 +848,16 @@ pub(crate) struct ChildInfo {
     pub(crate) props: Vec<String>,
     pub(crate) shadow: bool,
     /// Where each slot region is in the child's template (light DOM only), for hydrate paths.
-    slot_paths: Vec<(String, Vec<usize>)>,
+    slot_paths: Vec<SlotPlace>,
+}
+
+/// A slot's region in a component's template: the slot's name, its path, and what each step of
+/// that path leads to in server markup (tag names, `[` for a region, `[!` for the slot's own).
+#[derive(Clone)]
+struct SlotPlace {
+    name: String,
+    path: Vec<usize>,
+    trail: Vec<String>,
 }
 
 /// The elements that can be a top-level node of server markup for a template that is only regions
@@ -888,9 +933,13 @@ struct Emitter<'a> {
     /// This emitter's position in the component template (non-empty inside zb-if blocks), so
     /// slot regions can be recorded with full paths.
     base: Vec<usize>,
+    /// What each step of `base` and of the element path being emitted leads to in server markup:
+    /// an element's tag name, or `[` for a region. Recorded with each slot's place, so a parent can
+    /// tell the branch the server rendered from another that has a slot at the same place.
+    trail: Vec<String>,
     template: String,
     parts: Vec<JsPart>,
-    slot_paths: Vec<(String, Vec<usize>)>,
+    slot_paths: Vec<SlotPlace>,
     /// `--devtools`: stamp each part with `span`, where the markup it comes from was written.
     locations: bool,
     span: Option<Span>,
@@ -948,6 +997,7 @@ impl<'a> Emitter<'a> {
             shadow: self.shadow,
             scopes,
             base: self.base.clone(),
+            trail: self.trail.clone(),
             template: String::new(),
             parts: Vec::new(),
             slot_paths: Vec::new(),
@@ -1077,6 +1127,8 @@ impl<'a> Emitter<'a> {
             block.scopes.push((binding.name.clone(), js));
         }
         block.base = self.base.iter().chain(at).copied().collect();
+        // The block sits in a region: `at`'s last step.
+        block.trail = self.trail.iter().cloned().chain(["[".to_owned()]).collect();
         block.nodes(nodes, &[], true)?;
         self.slot_paths.append(&mut block.slot_paths);
         Ok(format!(
@@ -1248,10 +1300,16 @@ impl<'a> Emitter<'a> {
                         // or with the fallback block.
                         self.template.push_str("<!--[--><!--]-->");
                         let region = next(path);
-                        self.slot_paths.push((
-                            name.clone(),
-                            self.base.iter().chain(&region).copied().collect(),
-                        ));
+                        self.slot_paths.push(SlotPlace {
+                            name: name.clone(),
+                            path: self.base.iter().chain(&region).copied().collect(),
+                            trail: self
+                                .trail
+                                .iter()
+                                .cloned()
+                                .chain(["[!".to_owned()])
+                                .collect(),
+                        });
                         let fallback = if fallback.is_empty() {
                             "null".to_owned()
                         } else {
@@ -1499,33 +1557,87 @@ impl<'a> Emitter<'a> {
                 content.nodes(&element.children, &[], true)?;
                 self.template.push_str(&content.template);
                 for part in content.parts {
-                    let local = part.hydrate.clone().unwrap_or_else(|| part.path.clone());
-                    let hydrate = match local.split_first() {
-                        Some((first, rest)) => {
-                            let Some((slot, position)) = units.get(*first) else {
-                                return Err(Diagnostic::new(
-                                    element.span,
-                                    "internal error: slot content position out of range",
-                                ));
-                            };
-                            let Some((_, region)) =
-                                info.slot_paths.iter().find(|(name, _)| name == slot)
-                            else {
-                                return Err(Diagnostic::new(
-                                    element.span,
-                                    format!("<{}> has no slot named `{slot}`", element.name),
-                                ));
-                            };
-                            path.iter()
-                                .chain(region)
-                                .copied()
-                                .chain(std::iter::once(*position))
-                                .chain(rest.iter().copied())
-                                .collect()
+                    let locals = part.hydrate.clone().unwrap_or_else(|| {
+                        vec![Place {
+                            path: part.path.clone(),
+                            kinds: Vec::new(),
+                        }]
+                    });
+                    let mut hydrate = Vec::new();
+                    // Whether a place has to be checked against the markup: when this part had
+                    // checks of its own, or the child has the slot in more than one place, or
+                    // another of its slots at the same place (in another branch).
+                    let mut checked = locals.iter().any(|local| !local.kinds.is_empty());
+                    for local in locals {
+                        let Some((first, rest)) = local.path.split_first() else {
+                            // A part bound to the content's own parent: can't happen at block top.
+                            hydrate.push(Place {
+                                path: path.to_vec(),
+                                kinds: Vec::new(),
+                            });
+                            continue;
+                        };
+                        let Some((slot, position)) = units.get(*first) else {
+                            return Err(Diagnostic::new(
+                                element.span,
+                                "internal error: slot content position out of range",
+                            ));
+                        };
+                        // Every place the child has for this slot: one, or one per branch of a
+                        // `zb-if` that has it (the server renders one branch).
+                        let mut places: Vec<&SlotPlace> = Vec::new();
+                        for place in &info.slot_paths {
+                            if place.name == *slot
+                                && !places.iter().any(|seen| seen.path == place.path)
+                            {
+                                places.push(place);
+                            }
                         }
-                        // A part bound to the content's own parent: can't happen at block top.
-                        None => path.to_vec(),
-                    };
+                        if places.is_empty() {
+                            return Err(Diagnostic::new(
+                                element.span,
+                                format!("<{}> has no slot named `{slot}`", element.name),
+                            ));
+                        }
+                        let others = |place: &SlotPlace| {
+                            info.slot_paths
+                                .iter()
+                                .filter(|other| other.name != *slot && other.path == place.path)
+                                .map(|other| other.trail.clone())
+                                .collect::<Vec<_>>()
+                        };
+                        checked |= places.len() > 1
+                            || places.iter().any(|place| !others(place).is_empty());
+                        for place in places {
+                            // A place another slot has, by the same steps, in another branch: no
+                            // markup tells them apart, so it isn't offered (rendered fresh instead).
+                            if others(place).contains(&place.trail) {
+                                continue;
+                            }
+                            // This component's steps unchecked, then the child's to its slot, then
+                            // the content's own (the local path's first step became the region's
+                            // and the position).
+                            let mut kinds: Vec<Option<String>> = vec![None; path.len()];
+                            kinds.extend(place.trail.iter().cloned().map(Some));
+                            kinds.extend(local.kinds.iter().cloned());
+                            hydrate.push(Place {
+                                path: path
+                                    .iter()
+                                    .chain(&place.path)
+                                    .copied()
+                                    .chain(std::iter::once(*position))
+                                    .chain(rest.iter().copied())
+                                    .collect(),
+                                kinds,
+                            });
+                        }
+                    }
+                    // Nothing in doubt: the one place, unchecked, as parts have always been written.
+                    if !checked {
+                        for place in &mut hydrate {
+                            place.kinds.clear();
+                        }
+                    }
                     // (Pushed as is: the part keeps where its own markup was written.)
                     self.parts.push(JsPart {
                         path: path.iter().chain(&part.path).copied().collect(),
@@ -1534,8 +1646,79 @@ impl<'a> Emitter<'a> {
                         at: part.at,
                     });
                 }
+                // This component's own slots inside the content (a slot it forwards to the child):
+                // where they sit in server markup is where the child projects that content, so
+                // they're recorded there, with what each step leads to (this component's elements,
+                // the child host, the child's own steps to its slot, then the content's).
+                let host = self.trail.len();
+                let at_host: Vec<String> = self
+                    .trail
+                    .iter()
+                    .cloned()
+                    .chain([element.name.to_ascii_lowercase()])
+                    .collect();
+                for forwarded in std::mem::take(&mut content.slot_paths) {
+                    // Only the default slot, for now: content for a named slot keeps its `slot`
+                    // attribute, which the child routes by, and it has no slot of that name, so
+                    // a parent of this component is still told it has no such slot.
+                    if forwarded.name != "default" {
+                        continue;
+                    }
+                    let local = &forwarded.path[self.base.len()..];
+                    let kinds = &forwarded.trail[host..];
+                    let (Some((first, rest)), Some((_, rest_kinds))) =
+                        (local.split_first(), kinds.split_first())
+                    else {
+                        continue;
+                    };
+                    let Some((slot, position)) = units.get(*first) else {
+                        return Err(Diagnostic::new(
+                            element.span,
+                            "internal error: slot content position out of range",
+                        ));
+                    };
+                    let mut found = false;
+                    let mut seen: Vec<&Vec<usize>> = Vec::new();
+                    for place in info.slot_paths.iter().filter(|place| place.name == *slot) {
+                        if seen.contains(&&place.path) {
+                            continue;
+                        }
+                        seen.push(&place.path);
+                        found = true;
+                        self.slot_paths.push(SlotPlace {
+                            name: forwarded.name.clone(),
+                            path: self
+                                .base
+                                .iter()
+                                .chain(path)
+                                .chain(&place.path)
+                                .copied()
+                                .chain(std::iter::once(*position))
+                                .chain(rest.iter().copied())
+                                .collect(),
+                            trail: at_host
+                                .iter()
+                                .chain(&place.trail)
+                                .chain(&kinds[..1])
+                                .chain(rest_kinds)
+                                .cloned()
+                                .collect(),
+                        });
+                    }
+                    if !found {
+                        return Err(Diagnostic::new(
+                            element.span,
+                            format!("<{}> has no slot named `{slot}`", element.name),
+                        ));
+                    }
+                }
             }
-            _ => self.nodes(&element.children, path, false)?,
+            _ => {
+                self.trail.push(element.name.to_ascii_lowercase());
+                let done = self.nodes(&element.children, path, false);
+                self.trail.pop();
+                done?
+            }
         }
         self.template.push_str("</");
         self.template.push_str(&element.name);
