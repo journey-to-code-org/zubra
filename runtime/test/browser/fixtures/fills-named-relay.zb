@@ -1,0 +1,7 @@
+<!-- Fills <named-relay>'s `y` slot, which <named-relay> forwards to <frame-box>'s, and its default. -->
+<script>
+  import './named-relay.zb'
+</script>
+<fills-named-relay label="Go">
+  <named-relay><b slot="y">{label}</b><i>own</i></named-relay>
+</fills-named-relay>

@@ -740,7 +740,15 @@ function slotRecord(context, name) {
   return slot;
 }
 
-const slotName = (node) => (node.nodeType === 1 && node.getAttribute('slot')) || 'default';
+/**
+ * Content a component passes on to a light-DOM child's slot (`<frame-box><zb-slot name="y">`)
+ * keeps its own `slot` attribute (`slot="y"`, its name in the outer component). That slot part
+ * names the child's slot it sits in (`forward`), and puts `{ to: the child, slot }` on each node
+ * here: the child routes it by that, and every other host, the outer one included, by the
+ * attribute. A symbol shared by name, so `--emit element` output reads it too.
+ */
+const FORWARD = Symbol.for('zubra.forward');
+const slotName = (node, host) => (node[FORWARD]?.to === host ? node[FORWARD].slot : (node.nodeType === 1 && node.getAttribute('slot')) || 'default');
 /** An element or non-blank text: what fills a slot (comments and whitespace don't). */
 const isContent = (node) => node.nodeType === 1 || (node.nodeType === TEXT && node.data.trim() !== '');
 
@@ -1408,4 +1416,4 @@ function defineElement(tag, definition) {
 }
 
 /** @internal What the runtime's feature modules (blocks, when, each, await, slots) take from here. */
-export { adopt, APPLE, bind, blueprint, childRange, COMMENT, current, defineElement, formOf, hasContent, isClose, isContent, isOpen, listen, locate, mark, marker, matchingClose, PI, positions, READS, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, TEXT, toSheet, unmark, untrack };
+export { adopt, APPLE, FORWARD, bind, blueprint, childRange, COMMENT, current, defineElement, formOf, hasContent, isClose, isContent, isOpen, listen, locate, mark, marker, matchingClose, PI, positions, READS, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, TEXT, toSheet, unmark, untrack };

@@ -5,7 +5,7 @@
 
 import { clearBetween, mountBlock, move } from './blocks.js';
 import { scope, effect } from './effect.js';
-import { COMMENT, TEXT, isContent, mark, marker, matchingClose, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, unmark } from './element.js';
+import { COMMENT, FORWARD, TEXT, isContent, mark, marker, matchingClose, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, unmark } from './element.js';
 
 /**
  * zb-slot in light DOM: the host's own children for this slot, moved in once at startup, or the
@@ -19,6 +19,18 @@ export function bindSlot(part, open, hydrating, context) {
     // The server already put supplied content here.
     for (let node = open.nextSibling; node !== close; node = node.nextSibling) slot.nodes.push(node);
   }
+  // A slot right inside a light-DOM child's tag (`forward`: the child's slot it sits in): what it
+  // shows is passed on to that slot, and the child routes it there, not by its own `slot`.
+  // `passing` is what this slot passed on, so what has left it stops being.
+  let passing = [];
+  let label = null; // `{ to: the child, slot }`, one for every node passed on
+  const pass = (nodes) => {
+    if (!part.forward) return;
+    label ??= { to: open.parentNode, slot: part.forward };
+    for (const node of passing) if (!nodes.includes(node) && node[FORWARD] === label) delete node[FORWARD];
+    for (const node of nodes) node[FORWARD] = label;
+    passing = [...nodes];
+  };
   const holder = scope(); // owns the fallback while it shows
   let fallback = null;
   let first = hydrating;
@@ -34,11 +46,13 @@ export function bindSlot(part, open, hydrating, context) {
         if (fallback) { fallback.dispose(); fallback = null; clearBetween(open, close); }
         setMarker(open, '[!');
         place(slot.nodes, open, context.slotted);
+        pass(slot.nodes);
         return;
       }
       // Only markers and whitespace (a framework's bookkeeping): they wait in the park, where
       // the framework can still add content next to them, while the fallback shows.
       if (slot.nodes.length) slot.park.append(...slot.nodes);
+      pass([]);
       if (part.fallback) {
         if (fallback) return;
         if (!hydrate || marker(open) !== '[') clearBetween(open, close);
@@ -58,6 +72,7 @@ export function bindSlot(part, open, hydrating, context) {
       if (slot.region !== region) return;
       slot.region = null;
       slot.park.append(...slot.nodes);
+      pass([]);
       holder.dispose();
     };
   });
@@ -101,8 +116,8 @@ function place(nodes, open, tag) {
  * Empty text nodes come in pairs (Vue brackets each fragment, a v-for, with two): both go with
  * the content between them, since Vue moves that content through the start anchor's parent.
  */
-function assignSlots(nodes) {
-  const named = nodes.map((node) => (isContent(node) ? slotName(node) : null));
+function assignSlots(nodes, host) {
+  const named = nodes.map((node) => (isContent(node) ? slotName(node, host) : null));
   // The slot of the nearest content after (step 1) or before (step -1) node i.
   const near = (i, step) => { for (let j = i + step; nodes[j]; j += step) if (named[j]) return named[j]; return null; };
   // An empty text node right before content opens a range; otherwise it closes the last one,
@@ -162,7 +177,7 @@ function routeChildren(host, context, slots, tag) {
     else slot.nodes.push(node);
   };
   const named = (node) => {
-    const name = slotName(node);
+    const name = slotName(node, host);
     // @dev
     if (!slots.includes(name) && isContent(node)) console.warn(`zubra: <${tag}> has no slot named "${name}"; that content is not shown${see('slots')}`);
     // @dev-end
@@ -231,7 +246,7 @@ function routeChildren(host, context, slots, tag) {
     for (const record of records) {
       if (record.type === 'characterData') written.push(record.target);
       const slot = record.type === 'attributes' && holding(record.target);
-      if (slot && slotName(record.target) !== slot.name) reslot(record.target);
+      if (slot && slotName(record.target, host) !== slot.name) reslot(record.target);
       // Solid clears a run of nodes one by one, skipping those that aren't where the first is
       // (an element moved to its slot), and puts an empty text node in the first one's place:
       // the stand-ins right after that node are the rest of the run.
@@ -277,7 +292,7 @@ function routeChildren(host, context, slots, tag) {
       }
       // Content that belongs to another slot goes there: an element added next to a marker here,
       // or text that was a marker while it was empty. (A copy: moving one takes it out of the list.)
-      for (const node of [...slot.nodes]) if (isContent(node) && slotName(node) !== slot.name) reslot(node);
+      for (const node of [...slot.nodes]) if (isContent(node) && slotName(node, host) !== slot.name) reslot(node);
       show(slot);
     }
     // Content a parent adds inside a slot itself (its zb-if or zb-each there) is slotted too;
@@ -307,7 +322,8 @@ function routeChildren(host, context, slots, tag) {
  */
 export const $slotted = {
   assign(context, children, slots, tag) {
-    assignSlots(children).forEach((name, i) => {
+    // (The host's own children: their parent is the host.)
+    assignSlots(children, children[0]?.parentNode).forEach((name, i) => {
       slotRecord(context, name).nodes.push(children[i]);
       // An element for a named slot keeps its place among the page's children (see routeChildren).
       if (name !== 'default' && isContent(children[i])) slotRecord(context, 'default').nodes.push(standIn(children[i]));

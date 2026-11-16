@@ -1,0 +1,9 @@
+<!-- Forwards its `y` slot to <frame-box>'s default slot, and keeps its default and `z` slots itself. -->
+<script>
+  import './frame-box.zb'
+</script>
+<named-relay>
+  <frame-box><zb-slot name="y"></zb-slot></frame-box>
+  <p class="own"><zb-slot></zb-slot></p>
+  <span class="z"><zb-slot name="z"></zb-slot></span>
+</named-relay>

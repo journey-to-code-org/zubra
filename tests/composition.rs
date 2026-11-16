@@ -265,23 +265,30 @@ fn content_for_a_slot_its_component_forwards_sits_where_the_next_component_put_i
         "{sends}"
     );
 
-    // A named slot forwarded isn't offered yet (its content's `slot` attribute would send it to
-    // the next component's slot of that name): a parent is told so, as before.
+    // A named slot forwarded (#323): its content keeps `slot="y"`, so named-relay's slot part
+    // says which of frame-box's slots it's in (`forward`), and the parent's content hydrates there.
     const NAMED: &str = "<script>import './frame-box.zb'</script>\n<named-relay><frame-box><zb-slot name=\"y\"></zb-slot></frame-box></named-relay>";
     const FILLS: &str = "<script>import './named-relay.zb'</script>\n<fills-it label=\"B\"><named-relay><b slot=\"y\">{label}</b></named-relay></fills-it>";
-    let error = js(
+    let named = js(NAMED, &files(&[("./frame-box.zb", FRAME)]), Some(".js")).unwrap();
+    assert!(
+        named.contains(r#"binder: $slot, slot: "y", fallback: null, forward: "default""#),
+        "{named}"
+    );
+    let fills = js(
         FILLS,
         &files(&[("./named-relay.zb", NAMED), ("./frame-box.zb", FRAME)]),
         Some(".js"),
     )
-    .unwrap_err();
+    .unwrap();
     assert!(
-        error
-            .message
-            .contains("<named-relay> has no slot named `y`"),
-        "{}",
-        error.message
+        fills.contains("{ path: [0, 0], hydrate: [0, 0, 0, 0, 0, 0], text:"),
+        "{fills}"
     );
+    // The default slot passed on says so too; a slot inside the component's own elements doesn't.
+    let relay = js(RELAY, &files(&[("./frame-box.zb", FRAME)]), Some(".js")).unwrap();
+    assert!(relay.contains(r#"forward: "default""#), "{relay}");
+    let frame = js(FRAME, &files(&[]), Some(".js")).unwrap();
+    assert!(!frame.contains("forward:"), "{frame}");
 }
 
 #[test]

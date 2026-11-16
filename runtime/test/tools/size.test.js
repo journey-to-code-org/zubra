@@ -43,8 +43,9 @@ const BUDGETS = {
   // comparison's hosts is 0.42 to 0.46 KB smaller. A list's rows found by the places their
   // template's first copy had, a one-element row copied without a fragment, and a list watching
   // its array through one signal, about 230 B, to 18.25 KB: a fifth less script time to create,
-  // replace and append 1,000 rows.)
-  'src/index.js': { gzip: 18.25 * 1024 },
+  // replace and append 1,000 rows. A named slot passed on to a child component's slot (the
+  // content routed by the slot it was passed on to, not its own `slot`), about 60 B, to 18.5 KB.)
+  'src/index.js': { gzip: 18.5 * 1024 },
   // The production build (the `production` export condition): the same, without hot reloading
   // (12.5 KB until 3.2, 13 KB until 4.2, 13.5 KB until `animate`, 14 KB until the list work,
   // 14.25 KB until the faster Signals core, 14.75 KB until rows without markers, 15 KB until
@@ -166,7 +167,8 @@ test('dist/production as served fits its budget', (t) => {
 // instead of every element carrying it, about 60 B here, where the core has them all, for 0.42 to
 // 0.46 KB off a bundled app. 14.25 KB until private fields got short names in the production
 // build, about 145 B. 14 KB until a list's rows were found by remembered places, about 230 B.
-const BUNDLED = 14.25 * 1024;
+// 14.25 KB until a named slot could be passed on to a child component's slot, about 60 B.
+const BUNDLED = 14.5 * 1024;
 
 test('dist/bundled/zubra.js fits its budget, under the file-by-file build', (t) => {
   const size = gzipSync(readFileSync(join(here, '../../dist/bundled/zubra.js'), 'utf8')).length;

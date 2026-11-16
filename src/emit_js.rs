@@ -1638,11 +1638,26 @@ impl<'a> Emitter<'a> {
                             place.kinds.clear();
                         }
                     }
+                    // A slot of this component's own, right inside the child's tag: the content
+                    // given to it keeps its `slot` attribute (the name it has here), so the part
+                    // says which of the child's slots the content is in (`forward`), and the
+                    // child routes it there instead of by that attribute.
+                    let body = match (
+                        part.path.as_slice(),
+                        part.path.first().and_then(|first| units.get(*first)),
+                    ) {
+                        ([_], Some((into, _)))
+                            if part.body.starts_with("binder: $slot, slot: ") =>
+                        {
+                            format!("{}, forward: {}", part.body, json(into))
+                        }
+                        _ => part.body,
+                    };
                     // (Pushed as is: the part keeps where its own markup was written.)
                     self.parts.push(JsPart {
                         path: path.iter().chain(&part.path).copied().collect(),
                         hydrate: Some(hydrate),
-                        body: part.body,
+                        body,
                         at: part.at,
                     });
                 }
@@ -1658,12 +1673,8 @@ impl<'a> Emitter<'a> {
                     .chain([element.name.to_ascii_lowercase()])
                     .collect();
                 for forwarded in std::mem::take(&mut content.slot_paths) {
-                    // Only the default slot, for now: content for a named slot keeps its `slot`
-                    // attribute, which the child routes by, and it has no slot of that name, so
-                    // a parent of this component is still told it has no such slot.
-                    if forwarded.name != "default" {
-                        continue;
-                    }
+                    // A named slot too: its part says which of the child's slots it sits in
+                    // (`forward`, below), and the content goes there whatever its own `slot`.
                     let local = &forwarded.path[self.base.len()..];
                     let kinds = &forwarded.trail[host..];
                     let (Some((first, rest)), Some((_, rest_kinds))) =
