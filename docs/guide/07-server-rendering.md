@@ -32,6 +32,8 @@ const card = page.render('info-card', { heading: 'Plans' }); // HTML, inside you
 res.end(page.finish(myLayout(card)));            // + the components' CSS and module scripts
 ```
 
+To start from a working server instead of this fragment, `npm create zubra@latest my-app -- --framework server` writes one: a page, a form with a server function, and a test ([the starter app](starter-app.md#the-server-rendered-app)).
+
 Two things to get right from the start:
 
 - **One `zubra.page()` per request, used for both `render()` and `finish()`.** The page object collects the components it renders, and `finish()` adds the CSS and modules of those. A page rendered by one object and finished by another shows the server's HTML and never comes alive.
