@@ -4,6 +4,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Added
+
+- **`@zubra/router` says whose `load` threw.** A `load` that throws was logged as the bare error, whose stack names only the generated server half (`node_modules/.cache/zubra-router/boom-page.route.mjs:9`): not the request, not the route, not the `.zb` file, and not that file's line. `onError` now gets a third argument, `about`: `{ route, component, file }`, the route answered and, for a `load`, the component it's in and its file (both `null` when the page failed to render). The default handler logs `@zubra/router: GET /boom/7: the load in components/boom-page.zb threw (the browser got a 500 without the message):` and then the error, as before. An `onError(error, request)` an app already has is called as it was. The line numbers are still the generated file's.
+
 ### Changed
 
 - **`@zubra/sync/connect` loads `webrtc.js` only for a page that asks for it** (`connect({ webrtc })`). It was imported by every connected page, peer-to-peer or not: 2.2 KB gzipped on a page that only reads. A page with `webrtc` loads it while its first pull runs, and its live stream (which brings the peers and their signals) opens once it's there, so peers connect as before.

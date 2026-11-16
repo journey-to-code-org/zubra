@@ -46,8 +46,13 @@ export interface RouterOptions {
   components?: string;
   /** Where the routes' server halves are written (default `node_modules/.cache/zubra-router`). */
   cacheDir?: string;
-  /** Called when a `load` or a render throws; the browser gets the 500 page, never the message. */
-  onError?(error: unknown, request: Request): void;
+  /**
+   * Called when a `load` or a render throws; the browser gets the 500 page, never the message.
+   * `about` says what was being answered: the `route`, and when a `load` threw, the `component`
+   * it belongs to and its `file` (relative to where the server runs); both null for a render.
+   * The default logs the request and the file, then the error.
+   */
+  onError?(error: unknown, request: Request, about: { route: { path: string; pattern: string | null; params: Record<string, string> }; component: string | null; file: string | null }): void;
   /** The document's language (default `en`). */
   lang?: string;
   /**
