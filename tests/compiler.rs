@@ -815,12 +815,12 @@ function go() {}
   <a href={href} class="link {label}" hidden={off} onclick={go}>{count}</a>
 </zb-x>"#);
     assert!(module.contains(
-        "import { $component as $define, $r, $t, $hydrate } from \"@zubra/runtime\";\nimport { state } from '@zubra/runtime';"
+        "import { $component as $define, $r, $t, $url, $hydrate } from \"@zubra/runtime\";\nimport { state } from '@zubra/runtime';"
     ));
     assert!(module.contains(r#"template: "\n  <p>Hi <b>there</b><!----></p>\n  <a></a>\n","#));
     for part in [
         r#"{ path: [0, 1], anchor: () => " " + $t($p.label) + "!" }"#,
-        r#"{ path: [1], attribute: "href", url: true, value: () => $p.href }"#,
+        r#"{ path: [1], attribute: "href", url: $url, value: () => $p.href }"#,
         r#"{ path: [1], attribute: "class", value: () => "link " + $t($p.label) }"#,
         r#"{ path: [1], attribute: "hidden", boolean: true, value: () => $p.off }"#,
         r#"{ path: [1], on: "click", handler: () => $r(go) }"#,
@@ -1383,7 +1383,7 @@ fn a_listener_with_modifiers_names_its_binder_and_a_plain_one_does_not() {
         "{module}"
     );
     assert!(
-        module.contains("global: \"window\", binder: $modified, on: \"keydown\""),
+        module.contains("binder: $modified, global: \"window\", on: \"keydown\""),
         "{module}"
     );
     assert!(
@@ -1456,4 +1456,32 @@ fn client_only_output_leaves_hydration_out() {
     // The parts are the same either way.
     let parts = |module: &str| module[module.find("setup(").unwrap()..].to_owned();
     assert_eq!(parts(&hydrating), parts(&client));
+}
+
+#[test]
+fn less_common_parts_and_the_shadow_path_are_named_where_used() {
+    let module = js(
+        r#"<zb-x shadow><zb-window onresize={() => 1}></zb-window><a href={1} class={2} class:on={3} style:width={4}>a</a><img srcset={5}><p class={6}>p</p></zb-x>"#,
+    );
+    for expected in [
+        "binder: $global, global: \"window\", on: \"resize\"",
+        "attribute: \"href\", url: $url,",
+        "binder: $classes, classes: () => 2",
+        "binder: $toggle, toggle: \"on\"",
+        "binder: $style, style: \"width\"",
+        "attribute: \"srcset\", srcset: $srcset,",
+        "\n  shadowing: $shadow,\n",
+        "import { $component as $define, $r, $t, $global, $classes, $toggle, $style, $url, $srcset, $hydrate, $shadow } from \"@zubra/runtime\";",
+    ] {
+        assert!(module.contains(expected), "`{expected}` in:\n{module}");
+    }
+    // A class without class: toggles is a plain attribute; a light-DOM component names no shadow path.
+    assert!(
+        module.contains("attribute: \"class\", value: () => 6"),
+        "{module}"
+    );
+    let light = js(r#"<zb-y><p class={1}>p</p></zb-y>"#);
+    for absent in ["$classes", "$shadow", "$url", "$global"] {
+        assert!(!light.contains(absent), "no `{absent}` in:\n{light}");
+    }
 }

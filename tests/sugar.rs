@@ -41,12 +41,12 @@ fn class_and_style_directives_render_merged_and_bind_one_by_one() {
     );
     let code = js(source);
     for part in [
-        r#"{ path: [0], toggle: "on", value: () => $p.on }"#,
-        r#"{ path: [0], toggle: "big", value: () => ($p.size > 10) }"#,
-        r#"{ path: [0], style: "font-size", value: () => ($p.size + "px") }"#,
-        r#"{ path: [0], style: "--tone", value: () => $p.tone }"#,
-        r#"{ path: [1], toggle: "a", value: () => $p.on }"#,
-        r#"{ path: [1], style: "background-color", value: () => $p.tone }"#,
+        r#"{ path: [0], binder: $toggle, toggle: "on", value: () => $p.on }"#,
+        r#"{ path: [0], binder: $toggle, toggle: "big", value: () => ($p.size > 10) }"#,
+        r#"{ path: [0], binder: $style, style: "font-size", value: () => ($p.size + "px") }"#,
+        r#"{ path: [0], binder: $style, style: "--tone", value: () => $p.tone }"#,
+        r#"{ path: [1], binder: $toggle, toggle: "a", value: () => $p.on }"#,
+        r#"{ path: [1], binder: $style, style: "background-color", value: () => $p.tone }"#,
     ] {
         assert!(code.contains(part), "{part}\n{code}");
     }
@@ -63,7 +63,7 @@ fn a_computed_class_beside_toggles_is_bound_token_by_token() {
     assert!(out.contains(r#"<p class="base t1 on">x</p>"#), "{out}");
     let code = js(source);
     assert!(
-        code.contains(r#"{ path: [0], classes: () => "base " + $t($p.tone) }"#),
+        code.contains(r#"{ path: [0], binder: $classes, classes: () => "base " + $t($p.tone) }"#),
         "{code}"
     );
     assert!(
@@ -184,7 +184,7 @@ fn ref_global_listeners_and_else_if() {
     );
     let code = js(source);
     assert!(
-        code.contains(r#"{ path: [0], global: "window", on: "resize", handler: () => $r(key) }"#),
+        code.contains(r#"{ path: [0], binder: $global, global: "window", on: "resize", handler: () => $r(key) }"#),
         "{code}"
     );
     assert!(

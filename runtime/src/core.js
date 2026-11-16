@@ -6,12 +6,19 @@ export { Signal, isNative } from './signal.js';
 export { effect, scope, flush, tick } from './effect.js';
 export { resource } from './resource.js';
 export {
-  define, $component, ABI, state, computed, watch, onMount, onUnmount, id, props, host, emit, adoptStyles,
+  define, $component, ABI, state, computed, watch, onMount, onUnmount, id, props, host, emit,
   createContext, provide, inject, ContextRequestEvent, ContextProviderEvent,
   formValue, validity, onFormReset, onFormRestore, onFormDisabled,
   prevent, stop, selfOnly, submit, keys, model, hasSlot, hydrated, signal, from, raw,
   isSafeUrl, isSafeSrcset, $r, $t,
+  // The URL checks as interface 5 output names them (`url: $url`, `srcset: $srcset`).
+  $url, $srcset,
 } from './element.js';
+// The less common simple parts (window listeners, class lists and toggles, style properties) and
+// the shadow-DOM path: named by the output that has them. In the core for @zubra/server's pages,
+// and modules of their own, so a bundler leaves out what an app's components don't use.
+export { $global, $classes, $toggle, $style } from './parts.js';
+export { $shadow, adoptStyles } from './shadow.js';
 // zb-if, zb-each, event modifiers and form controls are on most pages (and the block helpers
 // with them): in the core, so a page loads them with it, not as more requests. zb-await, the slot
 // router and $define, which fewer pages need, are files of their own. (Each is still a module of
