@@ -86,7 +86,7 @@ A layout's `load` works the same way, and for its whole section: what it returns
 
 ## Errors
 
-An unknown path (`router.notFound(req, res)` at the end of the app's handlers, or `router.listener`), `notFound()`, and a `load` that throws render inside `app.zb`, with status 404 or 500. `error.zb`, if the app has one, goes in the shell's slot with a `status` prop; otherwise a heading does. A shell that declares an `error` prop is given `{ status }`. The message never reaches the browser; `onError(error, request, about)` is told, with `about` naming the route and, for a `load`, the component and its file; without `onError` the server logs that line and the error. With no shell, or when the shell can't render, the response is plain text.
+An unknown path (`router.notFound(req, res)` at the end of the app's handlers, or `router.listener`), `notFound()`, and a `load` that throws render inside `app.zb`, with status 404 or 500. `error.zb`, if the app has one, goes in the shell's slot with a `status` prop; otherwise a heading does. A shell that declares an `error` prop is given `{ status }`. The message never reaches the browser; `onError(error, request, about)` is told, with `about` naming the route and, for a `load`, the component, its file and the line of that file it threw at; without `onError` the server logs that line and the error. With no shell, or when the shell can't render, the response is plain text.
 
 ## What it doesn't do
 

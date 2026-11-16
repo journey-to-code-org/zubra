@@ -24,6 +24,7 @@
 // answer after a post without JavaScript (`createRouter({ actions })`). Besides props it can
 // return a `title`, `notFound()`, `redirect(to)` or `show(component, props)`.
 import { randomUUID } from 'node:crypto';
+import { SourceMap } from 'node:module';
 import { existsSync, mkdirSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -59,8 +60,9 @@ async function urlPattern() {
  * (default `components`). `cacheDir`: where the routes' server halves are written (bare imports
  * resolve from there, so keep it inside the project). `onError(error, request, about)`: called when a
  * `load` throws or a page fails to render; the browser gets a 500, never the message. `about` is
- * `{ route, component, file }`: the route answered, and the component whose `load` threw with its
- * file (both null when it was the render). By default it is logged, with the request and the file. `lang`: the document's
+ * `{ route, component, file, line }`: the route answered, and the component whose `load` threw
+ * with its file and the line of that file it threw at (all null when it was the render; `line`
+ * also when the error has no stack to read it from). By default it is logged, with the request and the file. `lang`: the document's
  * language (default `en`). `head`: HTML for every page's `<head>` (fonts, a stylesheet), or a
  * function of `{ url, request, route }` returning it; written as given, so it is the app's own
  * markup, never a visitor's text. `context({ request, req })`: what each `load` gets as
@@ -74,8 +76,9 @@ export async function createRouter({
   cacheDir = join(process.cwd(), 'node_modules', '.cache', 'zubra-router'),
   onError = (error, request, about) => {
     // Which request and which file, before the error: its own stack names only the generated
-    // server half in the cache (`boom-page.route.mjs`), not the component it was written in.
-    console.error(`@zubra/router: ${request.method} ${about.route.path}: ${about.file ? `the load in ${about.file} threw` : 'the page failed to render'} (the browser got a 500 without the message):`);
+    // server half in the cache (`boom-page.route.mjs`), not the component it was written in
+    // (unless Node runs with `--enable-source-maps`, which reads the half's map).
+    console.error(`@zubra/router: ${request.method} ${about.route.path}: ${about.file ? `the load in ${about.file} threw${about.line ? `, at line ${about.line}` : ''}` : 'the page failed to render'} (the browser got a 500 without the message):`);
     console.error(error);
   },
   lang = 'en',
@@ -119,13 +122,37 @@ export async function createRouter({
   // imports point back at the source; each is written beside its place and renamed in, so a
   // second process starting at the same moment never imports half a file.
   const loads = new Map();
+  const linesOf = new Map();
+  const MAP = /\n\/\/# sourceMappingURL=data:application\/json;base64,([A-Za-z0-9+/=]+)\s*$/;
+  /** The line of the component's own file where `error` was thrown in its `load`, or null. */
+  const lineIn = (name, error) => {
+    const lines = linesOf.get(name);
+    if (!lines || typeof error?.stack !== 'string') return null;
+    // The first frame in the half itself (a function it called may be the one that threw).
+    const at = error.stack.indexOf(lines.href);
+    const frame = at < 0 ? null : /^(?:\?[^:\s)]*)?:(\d+):(\d+)/.exec(error.stack.slice(at + lines.href.length));
+    if (!frame) return null;
+    const entry = lines.map.findEntry(Number(frame[1]) - 1, Number(frame[2]) - 1);
+    return typeof entry?.originalLine === 'number' ? entry.originalLine + 1 : null;
+  };
   for (const [name, path] of halves) {
-    const response = compile({ emit: 'server', path, files: read(path) });
+    // `sourceMap`: the half ends with a map of its functions' lines to the component's (a
+    // compiler from before it knew the word answers without one, and lines stay the half's).
+    const response = compile({ emit: 'server', path, files: read(path), sourceMap: true });
     if (!response.ok) throw new Error(response.error);
     // One file name per component name, with no two names sharing one (`a/b` and `a__b` did).
     const module = join(cacheDir, `${name.replace(/_/g, '_u').replace(/\//g, '_s')}.route.mjs`);
     const writing = `${module}.${process.pid}.${randomUUID()}.tmp`;
-    writeFileSync(writing, rewriteImports(response.output, (specifier) => pathToFileURL(resolve(dirname(path), specifier)).href));
+    let code = rewriteImports(response.output, (specifier) => pathToFileURL(resolve(dirname(path), specifier)).href);
+    const mapped = MAP.exec(code);
+    if (mapped) {
+      // The map names the component by its address, so Node's own `--enable-source-maps` reads
+      // it too; and it is kept, to say the line when a `load` throws without that flag.
+      const map = { ...JSON.parse(Buffer.from(mapped[1], 'base64').toString()), sources: [pathToFileURL(path).href] };
+      code = `${code.slice(0, mapped.index)}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify(map)).toString('base64')}\n`;
+      linesOf.set(name, { href: pathToFileURL(module).href, map: new SourceMap(map) });
+    }
+    writeFileSync(writing, code);
     renameSync(writing, module);
     loads.set(name, (await import(`${pathToFileURL(module).href}?t=${Date.now()}`)).load);
   }
@@ -150,9 +177,9 @@ export async function createRouter({
     // `about`: what was being answered (`route`), and, when a `load` threw, whose it was
     // (`component`, and its `file` from where the server runs); both null for a render.
     let thrower = null;
-    const about = () => ({ route, component: thrower, file: thrower === null ? null : fileOf.get(thrower) ?? null });
+    const about = (error) => ({ route, component: thrower, file: thrower === null ? null : fileOf.get(thrower) ?? null, line: thrower === null ? null : lineIn(thrower, error) });
     const fail = (error) => {
-      onError(error, request, about());
+      onError(error, request, about(error));
       return errorPage(500);
     };
     const document = async (body, title) => {
@@ -186,7 +213,7 @@ export async function createRouter({
         headers.set('content-type', 'text/html; charset=utf-8');
         return new Response(request.method === 'HEAD' ? null : html, { status, headers });
       } catch (failure) {
-        onError(failure, request, about());
+        onError(failure, request, about(failure));
         return plain();
       }
     };
