@@ -75,8 +75,9 @@ export interface ZubraOptions {
   prefix?: string;
   /**
    * Keep compiled output, and the HTML of recent renders: the same component with the same
-   * props, slots and context is rendered once (default true). False recompiles and renders on
-   * every request, for development.
+   * props, slots and context is rendered once (default true). In development (not `production`)
+   * a file written, added or removed under the components folder lets go of what was kept, so an
+   * edit shows on the next request with no restart. False recompiles and renders on every request.
    */
   cache?: boolean;
   /** Serve the runtime's production build, without hot reloading (default: `NODE_ENV` is `production`). */
