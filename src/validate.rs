@@ -338,24 +338,34 @@ pub fn validate_partial(
     component: &ast::ComponentAst,
     values: &Value,
     slot_values: &HashMap<String, Vec<ast::Node>>,
+    slots_rendered: bool,
 ) -> Result<ir::Component, Diagnostic> {
     let previous = PARTIAL.with(|flag| flag.replace(true));
-    let result = validate(component, values, slot_values);
+    let result = validate(component, values, slot_values, slots_rendered);
     PARTIAL.with(|flag| flag.set(previous));
     result
 }
 
+/// `slots_rendered`: the slot content is HTML a server already rendered (`slotSource: "html"`),
+/// kept as written: a tag in it is never expanded as one of this component's children, at any
+/// depth, as it was rendered already (a router's page, put in its layout's slot).
 pub fn validate(
     component: &ast::ComponentAst,
     values: &Value,
     slot_values: &HashMap<String, Vec<ast::Node>>,
+    slots_rendered: bool,
 ) -> Result<ir::Component, Diagnostic> {
     let overrides = values
         .as_object()
         .ok_or_else(|| Diagnostic::new(Span::new(1, 1), "component props must be a JSON object"))?;
     // Each render numbers its hosts' id bases from 1.
     ID_COUNTS.with(|counts| counts.borrow_mut().clear());
-    lower_component(component, overrides, &Supply::Templates(slot_values), None)
+    let supply = if slots_rendered {
+        Supply::Rendered(slot_values)
+    } else {
+        Supply::Templates(slot_values)
+    };
+    lower_component(component, overrides, &supply, None)
 }
 
 /// [`analyze`] for a child component, worked out once for as long as its tree is kept however
@@ -374,13 +384,16 @@ fn interface_of(child: &ast::ChildComponent) -> Result<std::rc::Rc<Interface>, D
 /// component's own scope, or nodes a parent component already lowered in *its* scope.
 enum Supply<'a> {
     Templates(&'a HashMap<String, Vec<ast::Node>>),
+    /// As `Templates`, for HTML a server already rendered: lowered without expanding any tag as a
+    /// child component (it was expanded when it was rendered).
+    Rendered(&'a HashMap<String, Vec<ast::Node>>),
     Lowered(HashMap<String, Vec<Node>>),
 }
 
 impl Supply<'_> {
     fn names(&self) -> Vec<&String> {
         match self {
-            Supply::Templates(map) => map.keys().collect(),
+            Supply::Templates(map) | Supply::Rendered(map) => map.keys().collect(),
             Supply::Lowered(map) => map.keys().collect(),
         }
     }
@@ -407,7 +420,9 @@ impl Supply<'_> {
             })
         }
         match self {
-            Supply::Templates(map) => map.get(name).is_some_and(|nodes| template(nodes)),
+            Supply::Templates(map) | Supply::Rendered(map) => {
+                map.get(name).is_some_and(|nodes| template(nodes))
+            }
             Supply::Lowered(map) => map.get(name).is_some_and(|nodes| lowered(nodes)),
         }
     }
@@ -591,7 +606,7 @@ fn lower_rest(
             .0
             .set(in_scope().map(str::to_owned).collect());
     }
-    if let Supply::Templates(templates) = supply {
+    if let Supply::Templates(templates) | Supply::Rendered(templates) = supply {
         for nodes in templates.values() {
             context.resolve_nodes(nodes, &mut scopes)?;
         }
@@ -1370,6 +1385,8 @@ struct LowerState<'a> {
     /// copied for each pass over it.
     scopes: Vec<Vec<(String, Cow<'a, Value>)>>,
     active_slots: HashSet<String>,
+    /// Lowering HTML a server already rendered ([`Supply::Rendered`]): no tag is a child component.
+    rendered: bool,
 }
 
 enum Binding<'v> {
@@ -1927,8 +1944,10 @@ impl<'a> Context<'a> {
             // Listeners only: a placeholder the element finds them by.
             return Ok(Node::Anchor);
         }
-        if let Some(child) = self.component.child(&element.name) {
-            return self.lower_child(element, child, state);
+        if !state.rendered {
+            if let Some(child) = self.component.child(&element.name) {
+                return self.lower_child(element, child, state);
+            }
         }
         let custom = element.name.contains('-');
         let mut attributes = Vec::with_capacity(element.attributes.len());
@@ -2100,6 +2119,15 @@ impl<'a> Context<'a> {
                         .get(name)
                         .map(|nodes| self.lower_block(nodes, state, !self.shadow))
                         .transpose()?,
+                    Supply::Rendered(templates) => match templates.get(name) {
+                        Some(nodes) => {
+                            let outer = std::mem::replace(&mut state.rendered, true);
+                            let lowered = self.lower_block(nodes, state, !self.shadow);
+                            state.rendered = outer;
+                            Some(lowered?)
+                        }
+                        None => None,
+                    },
                     Supply::Lowered(lowered) => lowered.get(name).cloned(),
                 };
                 let output = if self.shadow {
