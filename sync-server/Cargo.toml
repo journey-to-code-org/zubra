@@ -13,6 +13,6 @@ name = "zubra-sync"
 path = "src/main.rs"
 
 [dependencies]
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 serde_json = "1"
 tiny_http = "0.12"

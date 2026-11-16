@@ -14,7 +14,7 @@
     "@zubra/server": "file:../../../server"
   },
   "devDependencies": {
-    "wrangler": "4.45.0"
+    "wrangler": "4.162.0"
   },
   "engines": {
     "node": ">=20"
