@@ -210,7 +210,7 @@ test('zubra types writes the typings a build with dts: { dir } writes, for the a
   assert.match(read('types/vue/src/own.d.zb.ts'), /from "vue"/);
   run = zubra(['types', 'src', '--framework', 'angular'], app);
   assert.equal(run.status, 1);
-  assert.match(run.stderr, /--framework is react, vue, svelte, solid or none, not "angular"/);
+  assert.match(run.stderr, /--framework is react, vue, svelte, solid, solid2 or none, not "angular"/);
 
   // Two frameworks: it asks. A component that doesn't compile: reported, the rest still written.
   writeFileSync(join(app, 'package.json'), JSON.stringify({ dependencies: { react: '^19.0.0', 'solid-js': '^1.9.0' } }));
@@ -222,6 +222,13 @@ test('zubra types writes the typings a build with dts: { dir } writes, for the a
   assert.equal(run.status, 1);
   assert.match(run.stderr, /broken\.zb:1:/);
   assert.match(read('types/solid/src/own.d.zb.ts'), /solid-js/);
+  // Solid 2, by the version the app asks for (or has installed): its JSX is @solidjs/web's.
+  rmSync(join(app, 'src/broken.zb'));
+  writeFileSync(join(app, 'package.json'), JSON.stringify({ dependencies: { 'solid-js': '^2.0.0', '@solidjs/web': '^2.0.0' } }));
+  run = zubra(['types', 'src', '--dir', 'types/solid2'], app);
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /typings of 1 component in types\/solid2, for solid2/);
+  assert.match(read('types/solid2/src/own.d.zb.ts'), /declare module "@solidjs\/web\/jsx-runtime"/);
   run = zubra(['types', 'nowhere', '--framework', 'none'], app);
   assert.match(run.stderr, /nowhere doesn't exist/);
 });

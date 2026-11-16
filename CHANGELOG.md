@@ -6,6 +6,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## 5.20.0 — 2026-11-16
 
+### Added
+
+- **Typings for Solid 2.** Solid 2 (2.0.0-rc) keeps JSX in `@solidjs/web/jsx-runtime`, not `solid-js`, so the Solid typings declared nothing it reads: `<choice-cards>` was an unknown element. And it compiles `on:valuechange` to a listener for an event named ":valuechange", which never fires; `onvaluechange` (or `onValueChange`) is what listens for "valuechange". `--framework solid2` (`--emit dts`, `zubra types`) declares the element there, with `prop:` for properties and `on<event>` for events, and `zubra types` and the build plugin's `dts` choose it when the app's solid-js is 2 or later (installed, or else asked for in its package.json). Solid 1 apps get what they did. The MCP server's `component_usage` takes `solid2`, and the consuming skills (the repository's, `npm create zubra`'s and `zubra build --lib`'s) have a Solid 2 row. Checked by TypeScript against Solid 2.0.0-rc.22's own types. (#234)
+
 ### Security
 
 - **The release job runs nothing it didn't pin.** `.github/workflows/release.yml` publishes every `@zubra` package and the VS Code extension through trusted publishing, with provenance, and ran third-party code from references that move: `dtolnay/rust-toolchain@master`, `Swatinem/rust-cache@v2` and the `actions/*@v4` tags, `npx --yes @vscode/vsce` (the newest vsce on every release) and `npm install -g npm@11`. A compromised upstream would have run with the job's publishing identity. Every action in every workflow is now pinned to a commit, with its version in a comment, and `.github/dependabot.yml` proposes updates weekly; the publishing job has no build cache (one any run on `main` can write); npm is pinned to 11.21.2; and `@vscode/vsce` is the extension's own devDependency (4.1.1), installed from its lockfile. Found in the 2026-11-16 audit.

@@ -212,7 +212,8 @@ ${name} is a library of zubra web components. Each is a standard custom element:
 | React | ${code('<Tag value={v} items={list} />')} | ${code('onValueChange={(e) => e.detail}')} | ${code('value')} + ${code('onValueChange')} |
 | Vue | ${code(':items="list"')} | ${code('@valuechange="…"')} | ${code('v-model')} / ${code('v-model:prop')} |
 | Svelte | ${code('{value} items={list}')} | ${code('onvaluechange={…}')} | ${code('bind:value')} |
-| Solid | ${code('prop:items={list}')} | ${code('on:valuechange={…}')} | ${code('prop:value')} + ${code('on:valuechange')} |
+| Solid 1 | ${code('prop:items={list}')} | ${code('on:valuechange={…}')} | ${code('prop:value')} + ${code('on:valuechange')} |
+| Solid 2 | ${code('prop:items={list}')} | ${code('onvaluechange={…}')} | ${code('prop:value')} + ${code('onvaluechange')} |
 | Angular (${code('CUSTOM_ELEMENTS_SCHEMA')}) | ${code('[items]="list"')} | ${code('(valuechange)="…"')} | ${code('zubraModel [(ngModel)]')} from ${code('@zubra/runtime/angular')} |
 | Plain HTML | ${code('el.items = list')} or a JSON attribute | ${code("addEventListener('valuechange', …)")} | the pair by hand |
 

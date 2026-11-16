@@ -502,10 +502,11 @@ fn answer(request: &Map<String, Value>, path: &str, set: &crate::loaded::Set) ->
                 Some("vue") => Framework::Vue,
                 Some("svelte") => Framework::Svelte,
                 Some("solid") => Framework::Solid,
+                Some("solid2") => Framework::Solid2,
                 None | Some("none") => Framework::None,
                 Some(other) => {
                     return failure(&format!(
-                        "unknown framework `{other}`; expected react, vue, svelte, solid or none"
+                        "unknown framework `{other}`; expected react, vue, svelte, solid, solid2 or none"
                     ))
                 }
             };

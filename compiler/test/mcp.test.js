@@ -121,6 +121,9 @@ test('usage per framework, from an installed package', () => {
   assert.match(usage(rating, 'vue'), /^import StarRating from '@acme\/ui\/vue\/star-rating';\n<StarRating v-model="value" :max='5' label="Rating">/);
   assert.match(usage(rating, 'svelte'), /<star-rating value=\{value\} onvaluechange=\{\(event\) => \(value = event\.detail\)\}/);
   assert.match(usage(rating, 'solid'), /prop:value=\{value\(\)\} on:valuechange=/);
+  // Solid 2 listens with onvaluechange (it compiles on:valuechange to a listener for ":valuechange").
+  assert.match(usage(rating, 'solid2'), /prop:value=\{value\(\)\} onvaluechange=/);
+  assert.doesNotMatch(usage(rating, 'solid2'), /on:/);
   assert.match(usage(rating, 'angular'), /\[value\]="value" \(valuechange\)="value = \$event\.detail"/);
   const html = usage(rating, 'html');
   assert.match(html, /^import '@acme\/ui\/star-rating';/);
@@ -130,7 +133,7 @@ test('usage per framework, from an installed package', () => {
   // Every usage passes the check.
   const all = loadComponents(['@acme/ui'], { cwd: join(dir, 'app') });
   for (const component of all) {
-    for (const framework of ['html', 'react', 'vue', 'svelte', 'solid', 'angular']) {
+    for (const framework of ['html', 'react', 'vue', 'svelte', 'solid', 'solid2', 'angular']) {
       assert.deepEqual(check(all, usage(component, framework)), [], `${component.tag} in ${framework}`);
     }
   }

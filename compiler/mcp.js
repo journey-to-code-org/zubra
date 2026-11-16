@@ -20,7 +20,9 @@ import { compileFile } from './index.js';
 
 const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 const SOURCE = /\.zb(?:\.[jt]sx)?$/;
-const FRAMEWORKS = ['html', 'react', 'vue', 'svelte', 'solid', 'angular'];
+// solid2: Solid 2, which listens with `onvaluechange` (it compiles `on:valuechange` to a listener
+// for ":valuechange", which never fires).
+const FRAMEWORKS = ['html', 'react', 'vue', 'svelte', 'solid', 'solid2', 'angular'];
 // Attributes every element takes, which a check shouldn't report.
 const GLOBAL = /^(id|class|classname|style|slot|title|lang|dir|hidden|tabindex|role|part|key|ref|name|form|disabled|aria-[\w-]+|data-[\w-]+|zb-props|v-[\w:.-]+|bind:[\w-]+|use:[\w-]+|client:[\w-]+|#[\w-]+)$/i;
 
@@ -172,12 +174,13 @@ export function usage(component, framework = 'html', from = component.origin) {
       const v = example(prop);
       if (framework === 'html') return typeof v === 'boolean' ? (v ? ` ${prop.attribute}` : '') : typeof v === 'object' ? ` ${prop.attribute ?? prop.name}='${JSON.stringify(v)}'` : ` ${prop.attribute ?? prop.name}="${String(v).replaceAll('"', '&quot;')}"`;
       if (framework === 'svelte') return prop.name === model ? ` ${prop.name}={${camel(prop.name)}} on${prop.name.toLowerCase()}change={(event) => (${camel(prop.name)} = event.detail)}` : ` ${prop.name}={${JSON.stringify(v)}}`;
-      if (framework === 'solid') return prop.name === model ? ` prop:${prop.name}={${camel(prop.name)}()} on:${prop.name.toLowerCase()}change={(event) => set${prop.name[0].toUpperCase()}${prop.name.slice(1)}(event.detail)}` : typeof v === 'object' ? ` prop:${prop.name}={${JSON.stringify(v)}}` : ` ${prop.attribute ?? prop.name}={${JSON.stringify(v)}}`;
+      if (framework === 'solid' || framework === 'solid2') return prop.name === model ? ` prop:${prop.name}={${camel(prop.name)}()} ${framework === 'solid2' ? 'on' : 'on:'}${prop.name.toLowerCase()}change={(event) => set${prop.name[0].toUpperCase()}${prop.name.slice(1)}(event.detail)}` : typeof v === 'object' ? ` prop:${prop.name}={${JSON.stringify(v)}}` : ` ${prop.attribute ?? prop.name}={${JSON.stringify(v)}}`;
       return prop.name === model ? ` [${prop.name}]="${camel(prop.name)}" (${prop.name.toLowerCase()}change)="${camel(prop.name)} = $event.detail"` : ` [${prop.name}]='${JSON.stringify(v)}'`;
     });
     if (event) {
       if (framework === 'svelte') attrs.push(` on${event.name}={(event) => console.log(event.detail)}`);
       if (framework === 'solid') attrs.push(` on:${event.name}={(event) => console.log(event.detail)}`);
+      if (framework === 'solid2') attrs.push(` on${event.name}={(event) => console.log(event.detail)}`);
       if (framework === 'angular') attrs.push(` (${event.name})="handle($event.detail)"`);
     }
     lines.push(`<${tag}${attrs.join('')}>${named.map((slot) => `\n  <span slot="${slot}">…</span>`).join('')}${slots.includes('default') ? '\n  …' : ''}${named.length || slots.includes('default') ? '\n' : ''}</${tag}>`);
