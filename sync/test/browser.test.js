@@ -685,6 +685,24 @@ test('a tab whose peer id someone else holds now takes a new one, and is live ag
   }
 });
 
+test('webrtc.js is loaded only by a page that asks for webrtc', async () => {
+  const fetched = async (mode) => {
+    const context = await browser.newContext();
+    const tab = await context.newPage();
+    const urls = [];
+    tab.on('request', (request) => urls.push(new URL(request.url()).pathname));
+    await tab.goto(`${base}/board?doc=b9&${mode}`);
+    await tab.waitForFunction(() => customElements.get('board-view') && window.link);
+    // The live stream opens after webrtc.js, when the page asked for it: by then it's here.
+    for (let waited = 0; !urls.some((url) => url === '/_zb/sync/live') && waited < 5000; waited += 50) await tab.waitForTimeout(50);
+    assert.ok(urls.includes('/_zb/sync/live'), `${mode}: the live stream opened`);
+    await context.close();
+    return urls.some((url) => url.endsWith('/sync/webrtc.js'));
+  };
+  assert.equal(await fetched('connect'), false, 'a connected page without webrtc');
+  assert.equal(await fetched('rtc'), true, 'connect({ webrtc: true })');
+});
+
 test('webrtc: once two devices have a data channel, presence stops going through the server', async () => {
   const a = await browser.newContext();
   const b = await browser.newContext();
