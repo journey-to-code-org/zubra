@@ -200,16 +200,51 @@ fn content_for_a_slot_in_two_branches_lists_both_places_to_check() {
     const USES: &str = "<script>import './two-ways.zb'</script>\n<uses-it label=\"Go\" href=\"\"><two-ways href={href}>{label}</two-ways></uses-it>";
     let output = js(USES, &files(&[("./two-ways.zb", TWO_WAYS)]), Some(".js")).unwrap();
     // two-ways [0] → its zb-if region [0] → the branch's element [0] → the slot's region (the
-    // link's [0], the button's [1]) → the text [0]. The first four steps reach the slot's region,
-    // which the server marks as filled (`<?zb [!?>`) in the branch it rendered.
+    // link's [0], the button's [1]) → the text [0]. From the second step on, each place says what
+    // it leads to in the branch that has it: the region, the <a> or <button>, a filled slot.
     assert!(
-        output.contains("{ path: [0, 0], hydrate: [{ path: [0, 0, 0, 0, 0], slots: [4] }, { path: [0, 0, 0, 1, 0], slots: [4] }], anchor:"),
+        output.contains(r#"{ path: [0, 0], hydrate: [{ path: [0, 0, 0, 0, 0], checks: [[1, ["[", "a", "[!"]]] }, { path: [0, 0, 0, 1, 0], checks: [[1, ["[", "button", "[!"]]] }], anchor:"#),
         "{output}"
     );
     // A slot with one place keeps one path, as before.
     let one = js(INBOX, &files(&[("./badge.zb", BADGE)]), Some(".js")).unwrap();
     assert!(one.contains("hydrate: [0, 0, 0, 0], text:"), "{one}");
     assert!(!one.contains("hydrate: [{"), "{one}");
+}
+
+#[test]
+fn content_for_a_slot_that_shares_its_place_with_another_slot_is_checked_or_not_offered() {
+    // The same steps to both slots: nothing in the markup says which the server rendered.
+    const SAME: &str = r#"<slot-swap wide={false}>
+  <p zb-if={wide}><zb-slot name="left"></zb-slot></p>
+  <p zb-else><zb-slot name="right"></zb-slot></p>
+</slot-swap>"#;
+    // Different elements: the element does.
+    const TAGGED: &str = r#"<slot-swap wide={false}>
+  <p zb-if={wide}><zb-slot name="left"></zb-slot></p>
+  <div zb-else><zb-slot name="right"></zb-slot></div>
+</slot-swap>"#;
+    const USES: &str = "<script>import './slot-swap.zb'</script>\n<uses-it a=\"A\" b=\"B\"><slot-swap><b slot=\"left\">{a}</b><i slot=\"right\">{b}</i></slot-swap></uses-it>";
+    let same = js(USES, &files(&[("./slot-swap.zb", SAME)]), Some(".js")).unwrap();
+    // No place to offer: the element renders fresh rather than bind one slot's content to the other's.
+    assert!(
+        same.contains("{ path: [0, 0], hydrate: [], text:"),
+        "{same}"
+    );
+    assert!(
+        same.contains("{ path: [0, 1], hydrate: [], text:"),
+        "{same}"
+    );
+    let tagged = js(USES, &files(&[("./slot-swap.zb", TAGGED)]), Some(".js")).unwrap();
+    // One place each, checked: the only way to tell it from the other slot's.
+    assert!(
+        tagged.contains(r#"{ path: [0, 0], hydrate: [{ path: [0, 0, 0, 0, 0], checks: [[1, ["[", "p", "[!"]]] }], text:"#),
+        "{tagged}"
+    );
+    assert!(
+        tagged.contains(r#"{ path: [0, 1], hydrate: [{ path: [0, 0, 0, 0, 0], checks: [[1, ["[", "div", "[!"]]] }], text:"#),
+        "{tagged}"
+    );
 }
 
 #[test]

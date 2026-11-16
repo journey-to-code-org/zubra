@@ -8,13 +8,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { useBrowser, open, here, compiler, runtimeOnly } from './harness.js';
 
-const fills = join(here, 'fixtures/fills-branch-slot.zb');
-useBrowser({ 'fills-branch-slot': fills, 'branch-slot': join(here, 'fixtures/branch-slot.zb') });
+const fixture = (name) => join(here, `fixtures/${name}.zb`);
+const fills = fixture('fills-branch-slot');
+useBrowser(Object.fromEntries(['fills-branch-slot', 'branch-slot', 'fills-slot-swap', 'slot-swap', 'fills-slot-swap-tagged', 'slot-swap-tagged'].map((name) => [name, fixture(name)])));
 
-const server = (props) => {
-  const file = join(tmpdir(), `zb-branch-slot-${Object.values(props).join('-').replace(/\W/g, '')}.json`);
+let rendered = 0;
+const server = (props, source = fills) => {
+  const file = join(tmpdir(), `zb-branch-slot-${process.pid}-${rendered++}.json`);
   writeFileSync(file, JSON.stringify(props));
-  return compiler(fills, '--props', file, '--partial');
+  return compiler(source, '--props', file, '--partial');
 };
 
 for (const [branch, props, inner] of [
@@ -37,5 +39,45 @@ for (const [branch, props, inner] of [
     }, inner);
     assert.deepEqual(result, { kept: true, text: props.busy ? '…Stop now' : 'Stop now' });
     assert.deepEqual(messages, []);
+  });
+}
+
+// Another slot of the child at the same place in its other branch: content must never be bound to
+// the other slot's nodes. Where the branches differ (a <p> and a <div>), the element tells which
+// the server rendered; where they don't, the element renders fresh.
+test('content for a slot that shares its place with another slot, by the same steps, is rendered fresh, never bound to the other', { skip: runtimeOnly }, async () => {
+  const { page, messages } = await open(server({ a: 'A', b: 'B' }, fixture('fills-slot-swap')), {
+    beforeModules: "window.serverInner = document.querySelector('fills-slot-swap i');",
+    modules: ['slot-swap', 'fills-slot-swap'],
+  });
+  const result = await page.evaluate(async () => {
+    const host = document.querySelector('fills-slot-swap');
+    await host.updateComplete;
+    const kept = host.querySelector('i') === window.serverInner;
+    host.a = 'A2'; // the left slot's content: not shown (the server rendered the right branch)
+    host.b = 'B2';
+    await host.updateComplete;
+    return { kept, shown: host.querySelector('slot-swap').textContent.trim() };
+  });
+  assert.deepEqual(result, { kept: false, shown: 'B2' });
+  assert.ok(messages.every((message) => /doesn't match its template/.test(message)), messages.join('\n'));
+});
+
+for (const [branch, wide, kept] of [['its own branch', false, true], ['the other branch', true, false]]) {
+  test(`content for a slot that shares its place with another slot in a different element: server markup with ${branch} is ${kept ? 'taken over' : 'rendered fresh'}`, { skip: runtimeOnly }, async () => {
+    const { page } = await open(server({ b: 'B', wide }, fixture('fills-slot-swap-tagged')), {
+      beforeModules: "window.serverInner = document.querySelector('fills-slot-swap-tagged slot-swap-tagged');",
+      modules: ['slot-swap-tagged', 'fills-slot-swap-tagged'],
+    });
+    const result = await page.evaluate(async () => {
+      const host = document.querySelector('fills-slot-swap-tagged');
+      await host.updateComplete;
+      const kept = host.querySelector('slot-swap-tagged') === window.serverInner;
+      host.b = 'B2';
+      host.wide = false;
+      await host.updateComplete;
+      return { kept, shown: host.querySelector('slot-swap-tagged').textContent.trim() };
+    });
+    assert.deepEqual(result, { kept, shown: 'B2' });
   });
 }

@@ -506,16 +506,19 @@ let nativeFirst; // looked up on first use, so the module loads without a DOM
 const childRange = (parent) => ({ first: parent.firstChild, stop: null });
 
 /**
- * Where a part given to a child component sits in server markup: its one place, or, where the
- * child has the slot in more than one branch of a `zb-if` (`[{ path, slots }]`), the first whose
- * slot regions are filled slots (`<?zb [!?>`): the branch the server rendered.
+ * Where a part given to a child component sits in server markup: its one place, or, where that's
+ * in doubt (the child has the slot in more than one branch of a `zb-if`, or another slot where
+ * this one is), the first place (`[{ path, checks }]`) whose steps lead to what the compiler
+ * expects there, each `[from, kinds]`: a tag name, `[` for a region, `[!` for a filled slot's.
+ * That's the branch the server rendered; none (or no places): the element renders fresh.
  */
 const placed = (range, hydrate) =>
-  typeof hydrate[0] === 'number' ? hydrate
-    : hydrate.find(({ path, slots }) => slots.every((steps) => {
-      const region = walk(range, path.slice(0, steps));
-      return region !== null && marker(region) === '[!';
-    }))?.path ?? null;
+  hydrate[0]?.path
+    ? hydrate.find(({ path, checks }) => checks.every(([from, kinds]) => kinds.every((kind, step) => {
+      const node = walk(range, path.slice(0, from + step + 1));
+      return (node && (marker(node) ?? node.localName)) === kind;
+    })))?.path
+    : hydrate; // one place, or none (`[]`, which leads nowhere)
 
 /** The node for every part, or null if the markup doesn't have the template's shape. */
 function locate(range, parts, hydrating = false) {

@@ -1,0 +1,6 @@
+<!-- Two slots at the same place in two branches, inside different elements: the element says
+     which branch the server rendered. -->
+<slot-swap-tagged wide={false}>
+  <p zb-if={wide}><zb-slot name="left"></zb-slot></p>
+  <div zb-else><zb-slot name="right"></zb-slot></div>
+</slot-swap-tagged>
