@@ -411,6 +411,30 @@ fn collect_zb(path: &Path, files: &mut Vec<std::path::PathBuf>) -> std::io::Resu
     Ok(())
 }
 
+/// What `zubra check` checks under a folder: every component, in JSX too, by the rules `fmt`
+/// walks by (no hidden folder, `node_modules`, `dist` or `target`).
+fn collect_components(path: &Path, files: &mut Vec<String>) -> std::io::Result<()> {
+    let mut entries: Vec<_> = fs::read_dir(path)?.collect::<Result<_, _>>()?;
+    entries.sort_by_key(std::fs::DirEntry::path);
+    for entry in entries {
+        let entry_path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if entry_path.is_dir() {
+            if !(name.starts_with('.')
+                || ["node_modules", "dist", "target"].contains(&name.as_str()))
+            {
+                collect_components(&entry_path, files)?;
+            }
+        } else if [".zb", ".zb.jsx", ".zb.tsx"]
+            .iter()
+            .any(|extension| name.ends_with(extension))
+        {
+            files.push(entry_path.to_string_lossy().into_owned());
+        }
+    }
+    Ok(())
+}
+
 fn check(arguments: Vec<String>) -> Result<(), String> {
     let mut files = Vec::new();
     let mut json = false;
@@ -447,7 +471,27 @@ fn check(arguments: Vec<String>) -> Result<(), String> {
         }
     }
     if files.is_empty() || (stdin && files.len() != 1) {
-        return Err("usage: zubra check <component.zb>... [--format human|json] [--server] [--client] [--stdin (one path; source from standard input)]".into());
+        return Err("usage: zubra check <component.zb | folder>... [--format human|json] [--server] [--client] [--stdin (one path; source from standard input)]".into());
+    }
+    // A folder is every component under it. (With --stdin the one path names the text, and is
+    // never read.)
+    if !stdin {
+        let mut found = Vec::new();
+        for path in files {
+            if Path::new(&path).is_dir() {
+                let before = found.len();
+                collect_components(Path::new(&path), &mut found)
+                    .map_err(|error| format!("{path}: unable to read the folder: {error}"))?;
+                if found.len() == before {
+                    return Err(format!(
+                        "{path}: no components (.zb, .zb.jsx, .zb.tsx) in this folder"
+                    ));
+                }
+            } else {
+                found.push(path);
+            }
+        }
+        files = found;
     }
     let mut report = Vec::new();
     let mut errors = 0;

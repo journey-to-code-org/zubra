@@ -469,3 +469,84 @@ fn one_tag_has_one_definition_across_what_a_component_imports() {
     );
     fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn check_takes_a_folder_and_checks_every_component_under_it() {
+    let dir = temp_dir("check-folder");
+    let app = dir.join("components");
+    fs::create_dir_all(app.join("ui")).unwrap();
+    fs::create_dir_all(app.join("node_modules/pkg")).unwrap();
+    fs::create_dir_all(app.join(".hidden")).unwrap();
+    fs::write(
+        app.join("good.zb"),
+        "<zb-good label=\"x\"><p>{label}</p></zb-good>",
+    )
+    .unwrap();
+    fs::write(app.join("ui/deep.zb"), "<zb-deep><p>deep</p></zb-deep>").unwrap();
+    fs::write(
+        app.join("ui/framed.zb.jsx"),
+        "export default function ZbFramed({ label = 'x' }) {\n  return <p>{label}</p>;\n}\n",
+    )
+    .unwrap();
+    // Not components, and components that aren't the app's: none of these is read.
+    fs::write(app.join("notes.js"), "export const notes = [];").unwrap();
+    fs::write(
+        app.join("node_modules/pkg/theirs.zb"),
+        "<zb-theirs><p>{nope</p></zb-theirs>",
+    )
+    .unwrap();
+    fs::write(
+        app.join(".hidden/draft.zb"),
+        "<zb-draft><p>{nope</p></zb-draft>",
+    )
+    .unwrap();
+
+    let (ok, _, stderr) = zubra(&["check", app.to_str().unwrap()]);
+    assert!(ok, "{stderr}");
+    assert!(stderr.contains("checked 3 files: no errors"), "{stderr}");
+
+    // A folder beside a file, and an error in the folder: named with its own path.
+    let lone = dir.join("lone.zb");
+    fs::write(&lone, "<zb-lone><p>x</p></zb-lone>").unwrap();
+    fs::write(
+        app.join("ui/bad.zb"),
+        "<zb-bad label=\"x\">\n  <p>{lable}</p>\n</zb-bad>",
+    )
+    .unwrap();
+    let (ok, _, stderr) = zubra(&["check", lone.to_str().unwrap(), app.to_str().unwrap()]);
+    assert!(!ok);
+    assert!(
+        stderr.contains("error: unknown reference `lable`"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("{}:2:", app.join("ui/bad.zb").display())),
+        "{stderr}"
+    );
+    assert!(stderr.contains("1 file with errors"), "{stderr}");
+
+    // As JSON: one entry per finding, each with its file, as for files named one by one.
+    let (ok, stdout, _) = zubra(&["check", app.to_str().unwrap(), "--format", "json"]);
+    assert!(!ok);
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let files: Vec<_> = report
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["file"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        files,
+        vec![app.join("ui/bad.zb").to_string_lossy().into_owned()]
+    );
+
+    // A folder with no component in it is said, not passed as "checked 0 files".
+    let empty = dir.join("empty");
+    fs::create_dir_all(&empty).unwrap();
+    let (ok, _, stderr) = zubra(&["check", empty.to_str().unwrap()]);
+    assert!(!ok);
+    assert!(
+        stderr.contains("no components (.zb, .zb.jsx, .zb.tsx) in this folder"),
+        "{stderr}"
+    );
+}

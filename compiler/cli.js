@@ -7,7 +7,7 @@
 //   zubra add <component>... [--dir src/components] [--force]     copy registry components in
 //   zubra add --list
 //   zubra compile <file> [--emit js|html|css|dts|manifest] [--framework react|vue|svelte|solid] [--partial]
-//   zubra check <file>... [--server] [--client]  --server: what a server without JavaScript leaves out; --client: whether each needs its module in the browser
+//   zubra check <file | dir>... [--server] [--client]  --server: what a server without JavaScript leaves out; --client: whether each needs its module in the browser
 //   zubra check --types <file | dir>... [--format json]   the project's TypeScript checks scripts, templates, props and events
 //   zubra types [file | dir]... [--dir .zubra/types] [--framework react|vue|svelte|solid|none]   the typings @zubra/unplugin's dts: { dir } writes, without a build
 //   zubra fmt <file | dir>... [--check] [--indent <n> | --tabs] [--width <n>]   (--stdin: in to out)
@@ -93,15 +93,25 @@ function options(args) {
 }
 
 /** `.zb` files under `path` (or `path` itself), skipping node_modules, dist, target and dot-folders. */
-function componentsIn(path, found = []) {
+function componentsIn(path, found = [], extensions = ['.zb']) {
   if (!statSync(path).isDirectory()) return found.push(path), found;
   for (const name of readdirSync(path).sort()) {
     const child = join(path, name);
     if (statSync(child).isDirectory()) {
-      if (!name.startsWith('.') && !['node_modules', 'dist', 'target'].includes(name)) componentsIn(child, found);
-    } else if (name.endsWith('.zb')) found.push(child);
+      if (!name.startsWith('.') && !['node_modules', 'dist', 'target'].includes(name)) componentsIn(child, found, extensions);
+    } else if (extensions.some((extension) => name.endsWith(extension))) found.push(child);
   }
   return found;
+}
+
+/** What `zubra check` checks: each file named, and every component (in JSX too) under each folder. */
+function checkedIn(paths) {
+  return paths.flatMap((path) => {
+    if (!existsSync(path) || !statSync(path).isDirectory()) return [path];
+    const found = componentsIn(path, [], ['.zb', '.zb.jsx', '.zb.tsx']);
+    if (!found.length) throw new Error(`${path}: no components (.zb, .zb.jsx, .zb.tsx) in this folder`);
+    return found;
+  });
 }
 
 /** The frameworks typings can be for, by the npm package an app that uses one depends on. */
@@ -295,9 +305,10 @@ function main(argv) {
       process.exitCode = 1;
     } else console.log(`checked the types of ${checked} component${checked === 1 ? '' : 's'}: no errors`);
   } else if (command === 'compile' || command === 'check') {
-    if (!rest.length) throw new Error(`usage: zubra ${command} <file>${command === 'check' ? '...' : ''}`);
+    if (!rest.length) throw new Error(`usage: zubra ${command} <file${command === 'check' ? ' | folder>...' : '>'}`);
     let failed = false;
-    for (const file of command === 'check' ? rest : rest.slice(0, 1)) {
+    const files = command === 'check' ? checkedIn(rest) : rest.slice(0, 1);
+    for (const file of files) {
       const response = compileFile(file, {
         command, emit: flags.emit ?? 'html', framework: flags.framework, runtime: flags.runtime, partial: flags.partial, server: flags.server, client: flags.client,
         props: flags.props ? JSON.parse(readFileSync(flags.props, 'utf8')) : undefined,
@@ -316,7 +327,7 @@ function main(argv) {
         else process.stdout.write(response.output);
       }
     }
-    if (command === 'check' && !failed) console.log(`checked ${rest.length} file${rest.length === 1 ? '' : 's'}: no errors`);
+    if (command === 'check' && !failed) console.log(`checked ${files.length} file${files.length === 1 ? '' : 's'}: no errors`);
     if (failed) process.exitCode = 1;
   } else {
     const header = readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2);
