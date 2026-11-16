@@ -1,0 +1,6 @@
+<!-- Its slot in both branches of a zb-if, at different places: first in the link, after an
+     optional spinner in the button (as Zubra UI's action-button). -->
+<branch-slot href="" busy={false}>
+  <a zb-if={href} href={href}><zb-slot></zb-slot></a>
+  <button zb-else type="button"><span zb-if={busy}>…</span><zb-slot></zb-slot></button>
+</branch-slot>

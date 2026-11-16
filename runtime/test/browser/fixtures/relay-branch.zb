@@ -1,0 +1,9 @@
+<!-- In one branch its default slot goes on to <frame-box>'s; in the other its `x` slot sits in its
+     own elements, at the same position: what the steps lead to tells them apart. -->
+<script>
+  import './frame-box.zb'
+</script>
+<relay-branch framed={false}>
+  <frame-box zb-if={framed}><zb-slot></zb-slot></frame-box>
+  <div zb-else><div><p><zb-slot name="x"></zb-slot></p></div></div>
+</relay-branch>

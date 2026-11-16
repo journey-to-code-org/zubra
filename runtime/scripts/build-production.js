@@ -19,6 +19,17 @@ const check = process.argv.includes('--check');
 // Modules only development imports (from `// @dev` blocks): not in the production build at all.
 const DEV_ONLY = ['devhook.js', 'devtools.js'];
 
+// Fields of objects that never leave their module, by module: the production build gives them
+// short names (esbuild's `mangleProps`), where minifying alone keeps every property's name. A
+// name belongs here only if, in that file, it is read and written on those objects alone: the
+// signal graph's nodes (`Node`; `equals` is also an option's name, so it stays), and an effect's
+// owner (`Owner`, `Effect`; `disposed`, `paused`, `dispose`, `run`, `pause` and `resume` are its public
+// side). `private.test.js` checks each name's every use in `src/`.
+export const PRIVATE = {
+  'signal-impl.js': ['kind', 'wrapper', 'version', 'dirty', 'value', 'error', 'computation', 'notify', 'onWatched', 'onUnwatched', 'lastCleanEpoch', 'sinks', 'sinkSlots', 'sources', 'sourceVersions', 'sourceSlots', 'nextSource', 'pending', 'seen'],
+  'effect.js': ['parent', 'children', 'cleanup', 'computed', 'runCleanup', 'disposeChildren'],
+};
+
 export function production(source, file = 'module') {
   const lines = source.split('\n');
   const out = [];
@@ -50,6 +61,7 @@ export function minified(source, file = 'module') {
     target: 'esnext', // minify only: no syntax rewritten
     legalComments: 'none',
     sourcefile: `src/${file}`,
+    ...(PRIVATE[file] ? { mangleProps: new RegExp(`^(?:${PRIVATE[file].join('|')})$`) } : {}),
   });
   return `${header.replace('Do not edit.', 'Minified; read src/ instead. Do not edit.')}${code}`;
 }

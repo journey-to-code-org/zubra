@@ -209,7 +209,7 @@ test('a component whose CSS a bundler put in the page adopts it only into shadow
 test("a component whose CSS a bundler put in the page, and whose module has none, copies its rules from the page into a shadow root", async () => {
   const { page, messages } = await open('<div id="host"></div>', {
     beforeModules: `
-      import { $element, $pageStyles } from '@zubra/runtime';
+      import { $component, ABI, $pageStyles } from '@zubra/runtime';
       // What @zubra/unplugin emits for a light-DOM component (stylesFromPage): the stylesheet is
       // in the page, as the bundler wrote it, and the module has no copy of its text. Another
       // component's rules, a layer and a media query round it out.
@@ -221,7 +221,7 @@ test("a component whose CSS a bundler put in the page, and whose module has none
         }
         @media (min-width: 1px) { @layer components { @scope (paged-card) { p { font-weight: 700 } } } }
       </style>\`);
-      $element('paged-card', { abi: 4, props: {}, styled: true, stylesFromPage: $pageStyles, inPage: true, template: '<p>hi</p>', setup: () => [] });
+      $component('paged-card', { abi: ABI, props: {}, styled: true, stylesFromPage: $pageStyles, inPage: true, template: '<p>hi</p>', setup: () => [] });
     `,
   });
   const result = await page.evaluate(async () => {

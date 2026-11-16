@@ -36,7 +36,7 @@ const walk = (dir) => readdirSync(dir).sort().flatMap((entry) => {
 
 // Every module specifier: `import … from '…'`, `export … from '…'`, `import '…'` (each at the
 // start of a statement) and dynamic `import('…')` with a literal.
-const SPECIFIERS = /((?:^|[\n;])\s*(?:import|export)\b[^;'"`]*?\bfrom\s*|(?:^|[\n;])\s*import\s*|\bimport\s*\(\s*)(['"])([^'"\n]+)\2/g;
+const SPECIFIERS = /((?:^|[\n;}])\s*(?:import|export)\b[^;'"`]*?\bfrom\s*|(?:^|[\n;}])\s*import\s*|\bimport\s*\(\s*)(['"])([^'"\n]+)\2/g;
 
 /** The `@zubra/runtime` production build: the installed package, or this repository's. */
 export function runtimeDirectory(from = process.cwd()) {

@@ -815,12 +815,12 @@ function go() {}
   <a href={href} class="link {label}" hidden={off} onclick={go}>{count}</a>
 </zb-x>"#);
     assert!(module.contains(
-        "import { $element as $define, $r, $t, $hydrate } from \"@zubra/runtime\";\nimport { state } from '@zubra/runtime';"
+        "import { $component as $define, $r, $t, $url, $hydrate } from \"@zubra/runtime\";\nimport { state } from '@zubra/runtime';"
     ));
     assert!(module.contains(r#"template: "\n  <p>Hi <b>there</b><!----></p>\n  <a></a>\n","#));
     for part in [
         r#"{ path: [0, 1], anchor: () => " " + $t($p.label) + "!" }"#,
-        r#"{ path: [1], attribute: "href", url: true, value: () => $p.href }"#,
+        r#"{ path: [1], attribute: "href", url: $url, value: () => $p.href }"#,
         r#"{ path: [1], attribute: "class", value: () => "link " + $t($p.label) }"#,
         r#"{ path: [1], attribute: "hidden", boolean: true, value: () => $p.off }"#,
         r#"{ path: [1], on: "click", handler: () => $r(go) }"#,
@@ -922,12 +922,12 @@ fn js_output_compiles_regions_to_nested_blocks() {
     // Interface 4: the module imports the binders its parts name, and only those.
     assert!(
         module.contains(
-            "import { $element as $define, $r, $t, $when, $each, $hydrate } from \"@zubra/runtime\";"
+            "import { $component as $define, $r, $t, $when, $each, $hydrate } from \"@zubra/runtime\";"
         ),
         "{module}"
     );
     assert!(module.contains("export default $define(tag, {"), "{module}");
-    assert!(module.contains("  abi: 4,\n"), "{module}");
+    assert!(module.contains("  abi: 5,\n"), "{module}");
 }
 
 #[test]
@@ -1341,7 +1341,7 @@ fn binder_entries_import_each_binder_from_its_own_runtime_entry() {
     let split = module(true, "@zubra/runtime");
     assert!(
         split.contains(
-            "import { $element as $define, $r, $t } from \"@zubra/runtime\";\n\
+            "import { $component as $define, $r, $t } from \"@zubra/runtime\";\n\
              import { $when } from \"@zubra/runtime/when\";\n\
              import { $each } from \"@zubra/runtime/each\";\n\
              import { $slot, $slotted } from \"@zubra/runtime/slots\";\n\
@@ -1360,7 +1360,7 @@ fn binder_entries_import_each_binder_from_its_own_runtime_entry() {
     let together = module(false, "@zubra/runtime");
     assert!(
         together.contains(
-            "import { $element as $define, $r, $t, $when, $each, $slot, $slotted, $hydrate } from \"@zubra/runtime\";\n"
+            "import { $component as $define, $r, $t, $when, $each, $slot, $slotted, $hydrate } from \"@zubra/runtime\";\n"
         ),
         "{together}"
     );
@@ -1383,12 +1383,12 @@ fn a_listener_with_modifiers_names_its_binder_and_a_plain_one_does_not() {
         "{module}"
     );
     assert!(
-        module.contains("global: \"window\", binder: $modified, on: \"keydown\""),
+        module.contains("binder: $modified, global: \"window\", on: \"keydown\""),
         "{module}"
     );
     assert!(
         module.contains(
-            "import { $element as $define, $r, $t, $modified, $hydrate } from \"@zubra/runtime\";"
+            "import { $component as $define, $r, $t, $modified, $hydrate } from \"@zubra/runtime\";"
         ),
         "{module}"
     );
@@ -1406,7 +1406,7 @@ fn a_form_associated_component_imports_the_form_controls_api_and_others_do_not()
     );
     assert!(
         control.contains(
-            "import { $element as $define, $r, $t, $form, $hydrate } from \"@zubra/runtime\";"
+            "import { $component as $define, $r, $t, $form, $hydrate } from \"@zubra/runtime\";"
         ),
         "{control}"
     );
@@ -1442,7 +1442,7 @@ fn client_only_output_leaves_hydration_out() {
     );
     assert!(
         hydrating.contains(
-            "import { $element as $define, $r, $t, $each, $hydrate } from \"@zubra/runtime\";"
+            "import { $component as $define, $r, $t, $each, $hydrate } from \"@zubra/runtime\";"
         ),
         "{hydrating}"
     );
@@ -1450,10 +1450,38 @@ fn client_only_output_leaves_hydration_out() {
     let client = module(true);
     assert!(!client.contains("hydrat"), "{client}");
     assert!(
-        client.contains("import { $element as $define, $r, $t, $each } from \"@zubra/runtime\";"),
+        client.contains("import { $component as $define, $r, $t, $each } from \"@zubra/runtime\";"),
         "{client}"
     );
     // The parts are the same either way.
     let parts = |module: &str| module[module.find("setup(").unwrap()..].to_owned();
     assert_eq!(parts(&hydrating), parts(&client));
+}
+
+#[test]
+fn less_common_parts_and_the_shadow_path_are_named_where_used() {
+    let module = js(
+        r#"<zb-x shadow><zb-window onresize={() => 1}></zb-window><a href={1} class={2} class:on={3} style:width={4}>a</a><img srcset={5}><p class={6}>p</p></zb-x>"#,
+    );
+    for expected in [
+        "binder: $global, global: \"window\", on: \"resize\"",
+        "attribute: \"href\", url: $url,",
+        "binder: $classes, classes: () => 2",
+        "binder: $toggle, toggle: \"on\"",
+        "binder: $style, style: \"width\"",
+        "attribute: \"srcset\", srcset: $srcset,",
+        "\n  shadowing: $shadow,\n",
+        "import { $component as $define, $r, $t, $global, $classes, $toggle, $style, $url, $srcset, $hydrate, $shadow } from \"@zubra/runtime\";",
+    ] {
+        assert!(module.contains(expected), "`{expected}` in:\n{module}");
+    }
+    // A class without class: toggles is a plain attribute; a light-DOM component names no shadow path.
+    assert!(
+        module.contains("attribute: \"class\", value: () => 6"),
+        "{module}"
+    );
+    let light = js(r#"<zb-y><p class={1}>p</p></zb-y>"#);
+    for absent in ["$classes", "$shadow", "$url", "$global"] {
+        assert!(!light.contains(absent), "no `{absent}` in:\n{light}");
+    }
 }
