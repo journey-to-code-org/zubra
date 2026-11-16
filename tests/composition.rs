@@ -203,7 +203,7 @@ fn content_for_a_slot_in_two_branches_lists_both_places_to_check() {
     // link's [0], the button's [1]) → the text [0]. From the second step on, each place says what
     // it leads to in the branch that has it: the region, the <a> or <button>, a filled slot.
     assert!(
-        output.contains(r#"{ path: [0, 0], hydrate: [{ path: [0, 0, 0, 0, 0], checks: [[1, ["[", "a", "[!"]]] }, { path: [0, 0, 0, 1, 0], checks: [[1, ["[", "button", "[!"]]] }], anchor:"#),
+        output.contains(r#"{ path: [0, 0], hydrate: [{ path: [0, 0, 0, 0, 0], kinds: [, "[", "a", "[!"] }, { path: [0, 0, 0, 1, 0], kinds: [, "[", "button", "[!"] }], anchor:"#),
         "{output}"
     );
     // A slot with one place keeps one path, as before.
@@ -238,11 +238,11 @@ fn content_for_a_slot_that_shares_its_place_with_another_slot_is_checked_or_not_
     let tagged = js(USES, &files(&[("./slot-swap.zb", TAGGED)]), Some(".js")).unwrap();
     // One place each, checked: the only way to tell it from the other slot's.
     assert!(
-        tagged.contains(r#"{ path: [0, 0], hydrate: [{ path: [0, 0, 0, 0, 0], checks: [[1, ["[", "p", "[!"]]] }], text:"#),
+        tagged.contains(r#"{ path: [0, 0], hydrate: [{ path: [0, 0, 0, 0, 0], kinds: [, "[", "p", "[!"] }], text:"#),
         "{tagged}"
     );
     assert!(
-        tagged.contains(r#"{ path: [0, 1], hydrate: [{ path: [0, 0, 0, 0, 0], checks: [[1, ["[", "div", "[!"]]] }], text:"#),
+        tagged.contains(r#"{ path: [0, 1], hydrate: [{ path: [0, 0, 0, 0, 0], kinds: [, "[", "div", "[!"] }], text:"#),
         "{tagged}"
     );
 }

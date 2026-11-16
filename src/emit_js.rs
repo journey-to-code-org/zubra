@@ -772,7 +772,7 @@ impl JsPart {
         });
         match self.hydrate.as_deref() {
             // One place: its path, as every part with one has always been written.
-            Some([place]) if place.checks.is_empty() => format!(
+            Some([place]) if place.kinds.is_empty() => format!(
                 "{{ path: {}, hydrate: {}, {}{at} }}",
                 path_js(&self.path),
                 path_js(&place.path),
@@ -786,19 +786,13 @@ impl JsPart {
                 places
                     .iter()
                     .map(|place| format!(
-                        "{{ path: {}, checks: [{}] }}",
+                        "{{ path: {}, kinds: [{}] }}",
                         path_js(&place.path),
+                        // Unchecked steps are holes (`[, "[", "a"]`), which `every` skips.
                         place
-                            .checks
+                            .kinds
                             .iter()
-                            .map(|(from, kinds)| format!(
-                                "[{from}, [{}]]",
-                                kinds
-                                    .iter()
-                                    .map(|kind| json(kind))
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            ))
+                            .map(|kind| kind.as_deref().map(json).unwrap_or_default())
                             .collect::<Vec<_>>()
                             .join(", ")
                     ))
@@ -811,13 +805,13 @@ impl JsPart {
     }
 }
 
-/// A place a part can sit in server markup: its path, and checks that tell it from the child's
-/// other branches where that's in doubt: each `(from, kinds)`, what the steps of the path from
-/// `from` on must lead to (a tag name, `[` for a region, `[!` for a filled slot's region).
+/// A place a part can sit in server markup: its path, and, where that's in doubt, what some of
+/// its steps must lead to (`kinds[i]` for step `i`: a tag name, `[` for a region, `[!` for a
+/// filled slot's region; `None` for a step that isn't checked).
 #[derive(Clone)]
 struct Place {
     path: Vec<usize>,
-    checks: Vec<(usize, Vec<String>)>,
+    kinds: Vec<Option<String>>,
 }
 
 fn path_js(path: &[usize]) -> String {
@@ -1566,20 +1560,20 @@ impl<'a> Emitter<'a> {
                     let locals = part.hydrate.clone().unwrap_or_else(|| {
                         vec![Place {
                             path: part.path.clone(),
-                            checks: Vec::new(),
+                            kinds: Vec::new(),
                         }]
                     });
                     let mut hydrate = Vec::new();
                     // Whether a place has to be checked against the markup: when this part had
                     // checks of its own, or the child has the slot in more than one place, or
                     // another of its slots at the same place (in another branch).
-                    let mut checked = locals.iter().any(|local| !local.checks.is_empty());
+                    let mut checked = locals.iter().any(|local| !local.kinds.is_empty());
                     for local in locals {
                         let Some((first, rest)) = local.path.split_first() else {
                             // A part bound to the content's own parent: can't happen at block top.
                             hydrate.push(Place {
                                 path: path.to_vec(),
-                                checks: Vec::new(),
+                                kinds: Vec::new(),
                             });
                             continue;
                         };
@@ -1620,15 +1614,12 @@ impl<'a> Emitter<'a> {
                             if others(place).contains(&place.trail) {
                                 continue;
                             }
-                            let prefix = path.len() + place.path.len();
-                            // The local path's first step became the region and the position.
-                            let mut checks = vec![(path.len(), place.trail.clone())];
-                            checks.extend(
-                                local
-                                    .checks
-                                    .iter()
-                                    .map(|(from, kinds)| (from + prefix, kinds.clone())),
-                            );
+                            // This component's steps unchecked, then the child's to its slot, then
+                            // the content's own (the local path's first step became the region's
+                            // and the position).
+                            let mut kinds: Vec<Option<String>> = vec![None; path.len()];
+                            kinds.extend(place.trail.iter().cloned().map(Some));
+                            kinds.extend(local.kinds.iter().cloned());
                             hydrate.push(Place {
                                 path: path
                                     .iter()
@@ -1637,14 +1628,14 @@ impl<'a> Emitter<'a> {
                                     .chain(std::iter::once(*position))
                                     .chain(rest.iter().copied())
                                     .collect(),
-                                checks,
+                                kinds,
                             });
                         }
                     }
                     // Nothing in doubt: the one place, unchecked, as parts have always been written.
                     if !checked {
                         for place in &mut hydrate {
-                            place.checks.clear();
+                            place.kinds.clear();
                         }
                     }
                     // (Pushed as is: the part keeps where its own markup was written.)
