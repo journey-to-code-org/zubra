@@ -55,7 +55,11 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   };
   const pathOf = (name) => {
     const path = files.get(name) ?? files.get(byTag().get(name));
-    if (!path) throw new Error(`@zubra/server: no component "${name}" in ${where} (have: ${[...files.keys()].join(', ')})`);
+    if (!path) {
+      // The nearest name, if one is a slip away (a letter or two).
+      const near = [...files.keys()].map((have) => [distance(name, have), have]).filter(([far]) => far <= 2).sort(([a], [b]) => a - b)[0]?.[1];
+      throw new Error(`@zubra/server: no component "${name}" in ${where}${near ? `: did you mean "${near}"?` : ''} (have: ${[...files.keys()].join(', ')})`);
+    }
     return path;
   };
   const sourcesOf = (path) => once(`sources:${path}`, () => readSources(path));
@@ -700,6 +704,17 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     head: (names = [...files.keys()], options) => head(names, options),
     scripts: (names = [...files.keys()], options) => scripts(names, false, options),
   };
+}
+
+/** How many single-character edits turn `a` into `b`. */
+function distance(a, b) {
+  let row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length];
 }
 
 /** An async iterable of strings as a web ReadableStream of UTF-8 bytes. */

@@ -934,3 +934,11 @@ test('in production a finished page is not read for strangers', () => {
   zubra.page().finish(layout(zubra.page().render('hello-there', { name: 'Ada' })));
   assert.deepEqual(warned, []);
 });
+
+test('a misspelt component name is answered with the nearest one, before the list', () => {
+  const zubra = createZubra({ components, warn: () => {} });
+  assert.throws(() => zubra.page().render('hello-ther'), /no component "hello-ther" in .*: did you mean "hello-there"\? \(have: .*hello-there/);
+  assert.throws(() => zubra.page().render('count-steper', {}), /did you mean "count-stepper"\?/);
+  // Nothing near: the list alone, as before.
+  assert.throws(() => zubra.page().render('order-panel'), (error) => /no component "order-panel" in /.test(error.message) && !/did you mean/.test(error.message) && /\(have: /.test(error.message));
+});
