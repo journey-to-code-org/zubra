@@ -32,6 +32,11 @@ const eventually = async (read, expected) => {
   assert.deepEqual(actual, expected);
 };
 
+// Every custom element in the page is defined: the elements have started. Lit's and Stencil's
+// controls only reach the form (through ElementInternals) once they have, so typing before then
+// is lost, and a busy CI machine starts them late.
+const started = (page) => page.waitForFunction(() => !document.querySelector(':not(:defined)'));
+
 after(cleanup);
 
 for (const impl of impls) {
@@ -40,14 +45,21 @@ for (const impl of impls) {
       const server = await start(impl);
       const { page, problems, close } = await open(server.url);
       after(() => (close(), server.close()));
+      await started(page);
       await eventually(() => rowIds(page), ['1001', '1002', '1003']);
       await page.getByRole('columnheader', { name: 'Total' }).getByRole('button').click();
       await eventually(() => rowIds(page), ['1002', '1003', '1001']);
       await page.getByRole('button', { name: 'Increase Quantity' }).click();
       await eventually(() => page.getByLabel('Quantity', { exact: true }).inputValue(), '2');
       await eventually(() => page.getByRole('button', { name: 'Decrease Quantity' }).isDisabled(), false);
-      // An empty customer comes back with the error in the control.
-      await Promise.all([page.waitForLoadState('load'), page.getByRole('button', { name: 'Add order' }).click()]);
+      // An empty customer comes back with the error in the control: a new page, whose elements
+      // start again. (Waiting for 'load' alone returned at once, the old page being loaded.)
+      await Promise.all([
+        page.waitForResponse((response) => response.request().method() === 'POST' && response.status() === 422),
+        page.getByRole('button', { name: 'Add order' }).click(),
+      ]);
+      await page.waitForLoadState('load');
+      await started(page);
       await eventually(() => page.getByRole('alert').allTextContents(), ['Customer is required']);
       await page.getByLabel('Customer').fill('Ada');
       await page.getByRole('button', { name: 'Increase Quantity' }).click();
