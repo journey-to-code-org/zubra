@@ -10,7 +10,7 @@ import { useBrowser, open, here, compiler, runtimeOnly } from './harness.js';
 
 const fixture = (name) => join(here, `fixtures/${name}.zb`);
 const fills = fixture('fills-branch-slot');
-useBrowser(Object.fromEntries(['fills-branch-slot', 'branch-slot', 'fills-slot-swap', 'slot-swap', 'fills-slot-swap-tagged', 'slot-swap-tagged'].map((name) => [name, fixture(name)])));
+useBrowser(Object.fromEntries(['fills-branch-slot', 'branch-slot', 'fills-slot-swap', 'slot-swap', 'fills-slot-swap-tagged', 'slot-swap-tagged', 'frame-box', 'relay-box', 'fills-relay-box', 'relay-branch', 'fills-relay-branch'].map((name) => [name, fixture(name)])));
 
 let rendered = 0;
 const server = (props, source = fills) => {
@@ -79,5 +79,42 @@ for (const [branch, wide, kept] of [['its own branch', false, true], ['the other
       return { kept, shown: host.querySelector('slot-swap-tagged').textContent.trim() };
     });
     assert.deepEqual(result, { kept, shown: 'B2' });
+  });
+}
+
+// A slot a component forwards to a child of its own: content for it sits where that child puts it.
+test('content for a slot its component forwards to another component is taken over where that one put it', { skip: runtimeOnly }, async () => {
+  const { page, messages } = await open(server({ label: 'Go' }, fixture('fills-relay-box')), {
+    beforeModules: "window.serverInner = document.querySelector('fills-relay-box b');",
+    modules: ['frame-box', 'relay-box', 'fills-relay-box'],
+  });
+  const result = await page.evaluate(async () => {
+    const host = document.querySelector('fills-relay-box');
+    await host.updateComplete;
+    const kept = host.querySelector('b') === window.serverInner;
+    host.label = 'Stop';
+    await host.updateComplete;
+    return { kept, text: host.querySelector('b').textContent, count: host.querySelectorAll('b').length, framed: !!host.querySelector('.frame b') };
+  });
+  assert.deepEqual(result, { kept: true, text: 'Stop', count: 1, framed: true });
+  assert.deepEqual(messages, []);
+});
+
+for (const [branch, framed, kept] of [['its own branch (forwarded)', true, true], ['the other branch (another slot at the same position)', false, false]]) {
+  test(`content for a forwarded slot that shares its position with another slot: server markup with ${branch} is ${kept ? 'taken over' : 'rendered fresh'}`, { skip: runtimeOnly }, async () => {
+    const { page } = await open(server({ label: 'Go', framed }, fixture('fills-relay-branch')), {
+      beforeModules: "window.serverInner = document.querySelector('fills-relay-branch relay-branch');",
+      modules: ['frame-box', 'relay-branch', 'fills-relay-branch'],
+    });
+    const result = await page.evaluate(async () => {
+      const host = document.querySelector('fills-relay-branch');
+      await host.updateComplete;
+      const kept = host.querySelector('relay-branch') === window.serverInner;
+      host.label = 'Stop';
+      host.framed = true;
+      await host.updateComplete;
+      return { kept, text: host.querySelector('.frame b')?.textContent ?? null };
+    });
+    assert.deepEqual(result, { kept, text: 'Stop' });
   });
 }

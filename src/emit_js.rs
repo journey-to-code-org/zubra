@@ -1655,6 +1655,72 @@ impl<'a> Emitter<'a> {
                         at: part.at,
                     });
                 }
+                // This component's own slots inside the content (a slot it forwards to the child):
+                // where they sit in server markup is where the child projects that content, so
+                // they're recorded there, with what each step leads to (this component's elements,
+                // the child host, the child's own steps to its slot, then the content's).
+                let host = self.trail.len();
+                let at_host: Vec<String> = self
+                    .trail
+                    .iter()
+                    .cloned()
+                    .chain([element.name.to_ascii_lowercase()])
+                    .collect();
+                for forwarded in std::mem::take(&mut content.slot_paths) {
+                    // Only the default slot, for now: content for a named slot keeps its `slot`
+                    // attribute, which the child routes by, and it has no slot of that name, so
+                    // a parent of this component is still told it has no such slot.
+                    if forwarded.name != "default" {
+                        continue;
+                    }
+                    let local = &forwarded.path[self.base.len()..];
+                    let kinds = &forwarded.trail[host..];
+                    let (Some((first, rest)), Some((_, rest_kinds))) =
+                        (local.split_first(), kinds.split_first())
+                    else {
+                        continue;
+                    };
+                    let Some((slot, position)) = units.get(*first) else {
+                        return Err(Diagnostic::new(
+                            element.span,
+                            "internal error: slot content position out of range",
+                        ));
+                    };
+                    let mut found = false;
+                    let mut seen: Vec<&Vec<usize>> = Vec::new();
+                    for place in info.slot_paths.iter().filter(|place| place.name == *slot) {
+                        if seen.contains(&&place.path) {
+                            continue;
+                        }
+                        seen.push(&place.path);
+                        found = true;
+                        self.slot_paths.push(SlotPlace {
+                            name: forwarded.name.clone(),
+                            path: self
+                                .base
+                                .iter()
+                                .chain(path)
+                                .chain(&place.path)
+                                .copied()
+                                .chain(std::iter::once(*position))
+                                .chain(rest.iter().copied())
+                                .collect(),
+                            trail: at_host
+                                .iter()
+                                .chain(&place.trail)
+                                .chain(&kinds[..1])
+                                .chain(rest_kinds)
+                                .cloned()
+                                .collect(),
+                        });
+                    }
+                    if !found {
+                        return Err(Diagnostic::new(
+                            element.span,
+                            format!("<{}> has no slot named `{slot}`", element.name),
+                        ));
+                    }
+                }
             }
             _ => {
                 self.trail.push(element.name.to_ascii_lowercase());

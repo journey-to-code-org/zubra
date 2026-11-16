@@ -248,6 +248,43 @@ fn content_for_a_slot_that_shares_its_place_with_another_slot_is_checked_or_not_
 }
 
 #[test]
+fn content_for_a_slot_its_component_forwards_sits_where_the_next_component_put_it() {
+    const FRAME: &str = "<frame-box><div class=\"frame\"><zb-slot></zb-slot></div></frame-box>";
+    const RELAY: &str = "<script>import './frame-box.zb'</script>\n<relay-box><frame-box><zb-slot></zb-slot></frame-box></relay-box>";
+    const SENDS: &str = "<script>import './relay-box.zb'</script>\n<sends-it label=\"Go\"><relay-box><b>{label}</b></relay-box></sends-it>";
+    let sends = js(
+        SENDS,
+        &files(&[("./relay-box.zb", RELAY), ("./frame-box.zb", FRAME)]),
+        Some(".js"),
+    )
+    .unwrap();
+    // relay-box [0] → frame-box [0] → its <div> [0] → its slot's region [0] → relay-box's slot's
+    // region [0] → the <b> [0]: one place, nothing else there, so one path.
+    assert!(
+        sends.contains("{ path: [0, 0], hydrate: [0, 0, 0, 0, 0, 0], text:"),
+        "{sends}"
+    );
+
+    // A named slot forwarded isn't offered yet (its content's `slot` attribute would send it to
+    // the next component's slot of that name): a parent is told so, as before.
+    const NAMED: &str = "<script>import './frame-box.zb'</script>\n<named-relay><frame-box><zb-slot name=\"y\"></zb-slot></frame-box></named-relay>";
+    const FILLS: &str = "<script>import './named-relay.zb'</script>\n<fills-it label=\"B\"><named-relay><b slot=\"y\">{label}</b></named-relay></fills-it>";
+    let error = js(
+        FILLS,
+        &files(&[("./named-relay.zb", NAMED), ("./frame-box.zb", FRAME)]),
+        Some(".js"),
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("<named-relay> has no slot named `y`"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn a_bundler_keeps_zb_import_specifiers() {
     let output = js(INBOX, &files(&[("./badge.zb", BADGE)]), None).unwrap();
     assert!(output.contains("import './badge.zb'"), "{output}");
