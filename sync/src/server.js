@@ -238,7 +238,11 @@ export const allowAnyone = () => true;
 const readsOnly = ({ write }) => !write;
 const NO_AUTHORIZE = 'This sync server takes no writes from pages until it is told who may make them: pass createSyncServer({ authorize }) (or authorize: allowAnyone, for a page anyone may edit). See docs/sync.md, "Who may write".';
 
-export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: given, scope: serverScope = () => null, origins = [], heartbeat = 15_000, device = 'server', maxSkew = 60_000, maxBytes = 1 << 20, maxChanges = 1000 } = {}) {
+// Where there is a `process.env` to say so (Node, Bun, Deno) and it doesn't say production. A
+// Worker has none, and is somebody's production: nothing is logged there unless `warn` is given.
+const development = () => typeof globalThis.process?.env === 'object' && globalThis.process.env.NODE_ENV !== 'production';
+
+export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: given, scope: serverScope = () => null, origins = [], heartbeat = 15_000, device = 'server', maxSkew = 60_000, maxBytes = 1 << 20, maxChanges = 1000, warn = development() ? (message) => console.warn(message) : false } = {}) {
   if (!/^[\w-]{1,40}$/.test(device)) throw new Error('createSyncServer: `device` names the server in its clocks: letters, digits, - and _');
   if (given !== undefined && typeof given !== 'function') throw new TypeError('createSyncServer: `authorize` is a function ({ request, collection, key, field, value, write, kind }) => boolean');
   const authorize = given ?? readsOnly;
@@ -336,6 +340,30 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
       if (asked.get(doc)) shown.push(change);
     }
     return shown;
+  }
+  /**
+   * `warn` (development): a page that read the log from its start and was shown nothing of a
+   * collection that has documents. The page can't tell that from an empty collection (and isn't
+   * told: whether a document exists may be what `authorize` hides), so its components show their
+   * defaults for good, with nothing in its console, no failed request and nothing here. Said once
+   * per collection, to whoever runs the server, with which of the two refused: the server's
+   * `scope`, or `authorize`. Only for a read from the start (later batches hold other people's
+   * changes as a matter of course) and a collection the page's own scope doesn't leave out.
+   */
+  const noticed = new Set();
+  function notice({ request, scopes: [server, page] }, changes, shown) {
+    if (!warn) return;
+    const all = new Map();
+    for (const change of changes) all.set(change.collection, (all.get(change.collection) ?? new Set()).add(change.key));
+    const some = new Set(shown.map((change) => change.collection));
+    for (const [collection, keys] of all) {
+      if (some.has(collection) || noticed.has(collection)) continue;
+      if (![...keys].some((key) => inScope(page, collection, key))) continue;
+      noticed.add(collection);
+      const scoped = ![...keys].some((key) => inScope(server, collection, key));
+      const path = new URL(request.url).pathname;
+      warn(`@zubra/sync: a page read "${collection}" (GET ${path}) and was sent none of its ${keys.size} document${keys.size === 1 ? '' : 's'}: ${scoped ? "the server's `scope` for that request leaves them all out" : '`authorize` refused every read'}. To the page that is an empty collection, so its components show their defaults and nothing says why. If this request shouldn't see them, there is nothing to do (said once per collection; \`warn: false\` turns it off).`);
+    }
   }
   /** The server's scope for a request and the page's (`?scope=`), or a Response refusing it. */
   async function scopesOf(request, url) {
@@ -549,13 +577,20 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
           // (One event even when there's nothing, so the client learns the cursor; no empty event
           // after the last full page.)
           let from = since;
+          // From the start of the log, the whole backlog and what of it this stream was shown,
+          // for `notice`.
+          const whole = warn && String(since) === '0' ? { changes: [], shown: [] } : null;
           for (let first = true; ; first = false) {
             const backlog = await log.after(from);
             if (!backlog.changes.length && !first) break;
-            listener.send('changes', { changes: await visible(listener, backlog.changes), cursor: backlog.cursor, ...(reset && first ? { reset: true } : {}) });
+            const shown = await visible(listener, backlog.changes);
+            whole?.changes.push(...backlog.changes);
+            whole?.shown.push(...shown);
+            listener.send('changes', { changes: shown, cursor: backlog.cursor, ...(reset && first ? { reset: true } : {}) });
             if (!backlog.changes.length || String(backlog.cursor) === String(from)) break;
             from = backlog.cursor;
           }
+          if (whole) notice(listener, whole.changes, whole.shown);
           timer = setInterval(() => write(': keep-alive\n\n'), heartbeat);
           timer.unref?.();
         },
@@ -570,7 +605,11 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
       if (scopes instanceof Response) return scopes;
       const { since, reset } = await startFrom(url.searchParams.get('since') ?? '0');
       const { changes, cursor } = await log.after(since);
-      return json(200, { changes: await visible({ request, scopes }, changes), cursor, ...(reset ? { reset: true } : {}) });
+      const shown = await visible({ request, scopes }, changes);
+      // (Only when this page is the whole log: a longer one comes in several pulls, and the
+      // documents this request may see can be in a later one.)
+      if (warn && String(since) === '0' && !(await log.after(cursor)).changes.length) notice({ request, scopes }, changes, shown);
+      return json(200, { changes: shown, cursor, ...(reset ? { reset: true } : {}) });
     }
     if (url.pathname.startsWith(`${base}/`)) return json(404, { error: 'Not found' });
     return null;

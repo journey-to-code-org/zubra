@@ -70,6 +70,13 @@ export function createSyncServer(options?: {
    */
   scope?: (from: { request: Request }) => Scope | null | Promise<Scope | null>;
   origins?: string[];
+  /**
+   * Told, once per collection, when a page read the whole log and was sent none of a collection
+   * that has documents (`authorize` refused every read, or `scope` left them all out): to the
+   * page that is an empty collection. By default `console.warn` where `process.env.NODE_ENV`
+   * exists and isn't `production`, and nothing elsewhere; `false` turns it off.
+   */
+  warn?: ((message: string) => void) | false;
   /** How often the live stream sends a keep-alive comment (ms, default 15000). */
   heartbeat?: number;
   /** The server's name in the clocks of its own writes (default `server`). */
