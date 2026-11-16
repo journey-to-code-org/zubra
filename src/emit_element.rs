@@ -556,6 +556,9 @@ pub fn emit(
         "  // The props, each starting at its default; #given has the ones set from outside.\n  #props = {{ {} }};\n  #given = new Set();\n",
         defaults.join(", ")
     ));
+    if !interface.props.is_empty() {
+        out.push_str("  // Attributes whose replay at upgrade a property set before then outranks (see the constructor).\n  #early = null;\n");
+    }
     out.push_str("  // What brings the DOM up to date: one function for each spot that changes.\n  #updates = [];\n  #pending = null;\n  #started = false;\n");
     if members.contains("effects") {
         out.push_str("  #effects = [];\n");
@@ -589,10 +592,10 @@ pub fn emit(
         let list: Vec<String> = interface
             .props
             .iter()
-            .map(|prop| json(&prop.name))
+            .map(|prop| format!("[{}, {}]", json(&prop.name), json(&prop.attribute)))
             .collect();
         out.push_str(&format!(
-            "    // A property set before this class was defined sits on the element itself, hiding the\n    // accessor below: take it over.\n    for (const prop of [{}]) {{\n      if (Object.hasOwn(this, prop)) {{\n        const value = this[prop];\n        delete this[prop];\n        this[prop] = value;\n      }}\n    }}\n",
+            "    // A property set before this class was defined sits on the element itself, hiding the\n    // accessor below: take it over. The upgrade then replays the attributes already on the\n    // element, which a server writes for a prop that isn't its default: that replay is older\n    // than the property, so it's skipped (once). A later setAttribute still applies.\n    for (const [prop, attribute] of [{}]) {{\n      if (Object.hasOwn(this, prop)) {{\n        const value = this[prop];\n        delete this[prop];\n        this[prop] = value;\n        if (this.hasAttribute(attribute)) (this.#early ??= new Set()).add(attribute);\n      }}\n    }}\n",
             list.join(", ")
         ));
     }
@@ -627,7 +630,7 @@ pub fn emit(
     if !interface.props.is_empty() {
         let mut from_json = None;
         let mut from_enum = None;
-        out.push_str("\n  attributeChangedCallback(name, previous, raw) {\n    // raw is the attribute's text, or null once it's removed.\n    switch (name) {\n");
+        out.push_str("\n  attributeChangedCallback(name, previous, raw) {\n    if (this.#early?.delete(name)) return; // the upgrade's replay of an attribute a property outranks\n    // raw is the attribute's text, or null once it's removed.\n    switch (name) {\n");
         for prop in &interface.props {
             let default = prop
                 .default

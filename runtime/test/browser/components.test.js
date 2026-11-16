@@ -8,6 +8,7 @@ import { useBrowser, open, compiler, here, repo, site, runtimeOnly, reported, pr
 useBrowser({
   filters: join(here, 'fixtures/live-filters.zb'),
   header: join(repo, 'examples/header.zb'),
+  'stock-line': join(here, 'fixtures/stock-line.zb'),
   counter: join(here, 'fixtures/counter.zb'),
   link: join(here, 'fixtures/link.zb'),
   srcset: join(here, 'fixtures/srcset.zb'),
@@ -107,6 +108,45 @@ test('keeps properties set before the element was defined', async () => {
     modules: ['header'],
   });
   assert.equal(await page.$eval('zb-header h1', (h1) => h1.textContent), 'Set early');
+  await page.close();
+});
+
+// #326: the server writes a prop as an attribute when it isn't the default. The upgrade replays
+// that attribute after the constructor took over the early property; the property, set later,
+// wins. An attribute set after the upgrade still applies.
+test('a property set before the element was defined wins over the attribute already on it', async () => {
+  const { page } = await open('<stock-line left-now="5"></stock-line>', {
+    beforeModules: `document.querySelector('stock-line').leftNow = 1;`,
+    modules: ['stock-line'],
+  });
+  assert.equal(await page.$eval('stock-line p', (p) => p.textContent), '1');
+  assert.equal(await page.evaluate(async () => {
+    const el = document.querySelector('stock-line');
+    el.setAttribute('left-now', '7');
+    await el.updateComplete;
+    return el.querySelector('p').textContent;
+  }), '7', 'an attribute set after the upgrade applies');
+  await page.close();
+});
+
+test('an early property with no attribute on the element: a later attribute still applies', async () => {
+  const { page } = await open('<stock-line></stock-line>', {
+    beforeModules: `document.querySelector('stock-line').leftNow = 1;`,
+    modules: ['stock-line'],
+  });
+  assert.equal(await page.$eval('stock-line p', (p) => p.textContent), '1');
+  assert.equal(await page.evaluate(async () => {
+    const el = document.querySelector('stock-line');
+    el.setAttribute('left-now', '7');
+    await el.updateComplete;
+    return el.querySelector('p').textContent;
+  }), '7');
+  await page.close();
+});
+
+test('with no early property, the attribute on the element applies at upgrade', async () => {
+  const { page } = await open('<stock-line left-now="5"></stock-line>', { modules: ['stock-line'] });
+  assert.equal(await page.$eval('stock-line p', (p) => p.textContent), '5');
   await page.close();
 });
 

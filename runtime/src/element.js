@@ -1149,6 +1149,7 @@ function defineElement(tag, definition) {
     #context = null;
     #signals = {};
     #given = new Set(); // props set from outside (property, attribute, or before upgrade)
+    #early = null; // attributes whose upgrade replay a property set before the upgrade outranks
     #scope = null;
     #starting = null; // the wait for remark.js, while the element hasn't rendered yet
     #hooks = null;
@@ -1189,11 +1190,16 @@ function defineElement(tag, definition) {
           delete this[name];
           this.#given.add(name);
           this.#signals[name].set(value);
+          // The upgrade replays the attributes already on the element after this, and the
+          // server writes a prop's attribute when it isn't the default: that replay is older
+          // than the property, so it's skipped (once). A later setAttribute still applies.
+          if (this.hasAttribute(spec.attribute)) (this.#early ??= new Set()).add(spec.attribute);
         }
       }
     }
 
     attributeChangedCallback(attribute, _old, value) {
+      if (this.#early?.delete(attribute)) return;
       const name = byAttribute[attribute];
       this[name] = parseAttribute(props[name], value);
     }

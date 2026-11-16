@@ -1066,6 +1066,27 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
     }
 
     #[test]
+    fn rendered_slot_html_is_kept_as_written_even_with_a_tag_the_component_imports() {
+        // #300: a router renders the page, then gives that HTML to its layout's slot. A component
+        // the layout imports too was expanded a second time inside its own rendered markup.
+        let button =
+            "<my-button>\n  <button type=\"button\"><zb-slot></zb-slot></button>\n</my-button>";
+        let app = "<script>\n  import './my-button.zb'\n</script>\n<x-app>\n  <my-button>In the shell</my-button>\n  <main><zb-slot></zb-slot></main>\n</x-app>";
+        let files = json!({ "/app/my-button.zb": button, "/app/app.zb": app });
+        let page = "<home-page>\n  <my-button data-zb-filled=\"default\">\n  <button type=\"button\"><?zb [!?>In the page<?zb ]?></button>\n</my-button>\n</home-page>";
+        let response = call(
+            json!({ "path": "/app/app.zb", "files": files, "emit": "html", "partial": true, "slots": { "default": page }, "slotSource": "html" }),
+        );
+        let html = response["output"].as_str().expect("html");
+        assert!(html.contains(page), "the page as given: {html}");
+        assert_eq!(html.matches("<button").count(), 2, "{html}");
+        assert!(
+            html.contains("<button type=\"button\"><?zb [!?>In the shell<?zb ]?></button>"),
+            "the layout's own use is still expanded: {html}"
+        );
+    }
+
+    #[test]
     fn a_light_dom_host_with_slots_names_the_slots_the_server_filled() {
         // Whether `hasSlot` asks or not: the element tells its own markup from the page's
         // content for a slot by this attribute, when the markers were stripped (#267).

@@ -434,3 +434,24 @@ test("a load that throws: onError is told the route, the component and its file,
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a component the layout and its page both import is rendered once in the page (#300)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-router-twice-'));
+  try {
+    writeFileSync(join(dir, 'my-button.zb'), '<my-button>\n  <button type="button"><zb-slot></zb-slot></button>\n</my-button>\n');
+    writeFileSync(join(dir, 'app.zb'), "<script>\n  import './my-button.zb'\n</script>\n<x-app>\n  <my-button>In the shell</my-button>\n  <main><zb-slot></zb-slot></main>\n</x-app>\n");
+    writeFileSync(join(dir, 'home-page.zb'), "<script>\n  'use route /'\n  import './my-button.zb'\n</script>\n<home-page>\n  <my-button>In the page</my-button>\n</home-page>\n");
+    writeFileSync(join(dir, 'error.zb'), "<script>\n  import './my-button.zb'\n</script>\n<error-page status={500}>\n  <my-button>Back</my-button>\n</error-page>\n");
+    writeFileSync(join(dir, 'boom-page.zb'), "<script>\n  'use route /boom'\n  export function load() { throw new Error('boom') }\n</script>\n<boom-page></boom-page>\n");
+    const twice = await createRouter({ zubra: createZubra({ components: dir }), components: dir, cacheDir: join(dir, '.cache'), onError: () => {} });
+    // The page in the shell's slot, and error.zb there when a load throws.
+    for (const [path, words] of [['/', 'In the page'], ['/boom', 'Back']]) {
+      const html = await (await twice.fetch(new Request(`http://localhost${path}`))).text();
+      assert.equal(html.match(/<button type="button">/g).length, 2, `the shell's button and the page's, once each: ${html}`);
+      assert.match(html, new RegExp(`<my-button data-zb-filled="default">\\s*<button type="button"><\\?zb \\[!\\?>${words}<\\?zb \\]\\?></button>`));
+      assert.doesNotMatch(html, /data-zb-filled="default" data-zb-filled/);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

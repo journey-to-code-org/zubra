@@ -93,7 +93,7 @@ new EventSource('/live').onmessage = (event) => {
 };
 ```
 
-A value set before the component's module has loaded is taken over when the element starts, with one exception today: if the server wrote that prop as an attribute on the tag (it does whenever the value isn't the default), the attribute is applied afterwards and wins ([#326](https://github.com/journey-to-code-org/zubra/issues/326)). A script that may run that early can wait: `await customElements.whenDefined('stock-line')` before its first update.
+A value set before the component's module has loaded is taken over when the element starts, and wins over the attribute the server wrote for that prop (it writes one whenever the value isn't the default): the property was set later. An attribute set after the element starts applies as usual.
 
 What follows the new value depends on how the script read the prop:
 
