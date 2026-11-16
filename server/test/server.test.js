@@ -865,7 +865,7 @@ test('finishing a page with a different page object than rendered it says so, on
   const html = zubra.page().finish(layout(body));
   assert.doesNotMatch(html, /components\/hello-there\.js/, 'the module is missing, which is the problem');
   assert.equal(warned.length, 1);
-  assert.match(warned[0], /the page has <hello-there>, but the page object that finished it didn't render it/);
+  assert.match(warned[0], /the page has <hello-there>, but nothing this page object rendered loads it/);
   assert.match(warned[0], /page\.render\('hello-there', props\); page\.finish\(html\)/);
   zubra.page().finish(layout(body));
   assert.equal(warned.length, 1, 'said once per tag');
@@ -886,6 +886,31 @@ test('a page finished by the object that rendered it, a child its component impo
   // A tag the page wrote for an element whose module it loads itself.
   zubra.page().finish(layout('<hello-there name="Bo"></hello-there><script type="module" src="/_zubra/components/hello-there.js"></script>'));
   assert.deepEqual(warned.filter((message) => message.includes('page object')), []);
+});
+
+test("a component that uses a sibling's tag without importing it is named, with the import to add", () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-unimported-'));
+  try {
+    writeFileSync(join(dir, 'price-tag.zb'), '<price-tag cents={0}><b>{cents}</b></price-tag>\n');
+    writeFileSync(join(dir, 'menu-row.zb'), '<menu-row name=""><span>{name}</span><price-tag cents={250}></price-tag></menu-row>\n');
+    writeFileSync(join(dir, 'menu-card.zb'), "<script>import './price-tag.zb'</script>\n<menu-card name=\"\"><span>{name}</span><price-tag cents={250}></price-tag></menu-card>\n");
+    const warned = [];
+    const zubra = createZubra({ components: dir, production: false, warn: (message) => warned.push(message) });
+    // Without the import the compiler takes <price-tag> for someone else's element: it's left
+    // empty in the HTML, and its module isn't the row's to load.
+    const row = zubra.page();
+    const html = row.finish(layout(row.render('menu-row', { name: 'Bun' })));
+    assert.match(html, /<price-tag cents="250"><\/price-tag>/);
+    assert.equal(warned.length, 1);
+    assert.match(warned[0], /a component's template uses <price-tag> without importing it \(add its import to that component's script: import '\.\/price-tag\.zb'/);
+    // With it, the tag is rendered and loaded, and nothing is said.
+    warned.length = 0;
+    const card = zubra.page();
+    assert.match(card.finish(layout(card.render('menu-card', { name: 'Bun' }))), /<price-tag cents="250">\s*<b>250<\/b>/);
+    assert.deepEqual(warned, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("the check for strangers never fails a page: a folder where two files have one tag still finishes", () => {

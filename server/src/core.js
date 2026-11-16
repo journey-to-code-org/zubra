@@ -513,9 +513,10 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
      * `checkPages` (development): a component's tag in the page that this page object didn't
      * render, and that none it rendered imports. What `finish()` adds is for the components this
      * object rendered, so that one gets no CSS and no module: it shows the server's HTML and
-     * never starts, with nothing in the console. The usual cause is a second `zubra.page()`
-     * (one to render, another to finish), so the warning says which tag and what to do. A page
-     * that loads the module itself (its URL is in the HTML) is left alone. Said once per tag.
+     * never starts, with nothing in the console. The usual causes are a second `zubra.page()`
+     * (one to render, another to finish) and a component whose template uses a sibling's tag
+     * without importing it, so the warning says which tag and what to do for each. A page that
+     * loads the module itself (its URL is in the HTML) is left alone. Said once per tag.
      */
     function strangers(html) {
       if (!checkPages) return;
@@ -530,7 +531,7 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
         const name = tags.get(tag);
         known ??= new Set(componentSet(used));
         if (known.has(name) || html.includes(componentUrl(name))) continue;
-        const message = `@zubra/server: the page has <${tag}>, but the page object that finished it didn't render it, so its CSS and module aren't in the page and the element won't start in the browser. Render and finish with one object per request: const page = zubra.page(); page.render('${tag}', props); page.finish(html). (A second zubra.page(), or zubra.render(), doesn't tell this one what the page uses.)`;
+        const message = `@zubra/server: the page has <${tag}>, but nothing this page object rendered loads it, so its CSS and module aren't in the page and the element won't start in the browser. The two usual causes: it was rendered by another page object or by zubra.render() (render and finish with one object per request: const page = zubra.page(); page.render('${tag}', props); page.finish(html)), or a component's template uses <${tag}> without importing it (add its import to that component's script: import './${name.split('/').pop()}.zb'; without it the server leaves the tag empty as well).`;
         if (warned.has(message)) continue;
         warned.add(message);
         warn(message);
