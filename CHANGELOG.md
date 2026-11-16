@@ -7,6 +7,7 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 ### Changed
 
 - **`@zubra/sync/connect` loads `webrtc.js` only for a page that asks for it** (`connect({ webrtc })`). It was imported by every connected page, peer-to-peer or not: 2.2 KB gzipped on a page that only reads. A page with `webrtc` loads it while its first pull runs, and its live stream (which brings the peers and their signals) opens once it's there, so peers connect as before.
+- **`@zubra/server` sends `@zubra/sync` minified in production.** It sent sync's source, comments and all, beside the runtime's minified production build. `@zubra/sync` now has one too (`dist/production`, its browser modules minified by `npm run build`, checked current by its tests), and `@zubra/server` sends it in production, as it does the runtime's. A read-only menu page: `connect.js` 5.38 to 2.55 KB gzipped, `index.js` 5.02 to 2.37 KB; with `webrtc.js` left out (above), sync goes from 12.56 KB in three files to 4.92 KB in two. Development and bundlers are unchanged. In production `/_zubra/sync/` serves those browser modules only (it also served sync's other source files, `server.js` among them, which no page imports).
 
 ## 5.19.0 — 2026-11-15
 

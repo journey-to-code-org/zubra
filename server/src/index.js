@@ -71,8 +71,10 @@ export function createZubra({ components = 'components', packages = [], prefix =
 
   // @zubra/sync, for components that start with 'use collection': found from the components
   // folder (the app's own node_modules), served under <prefix>/sync/ and put in the import map,
-  // so a page needs no setup for it. Not installed: such a component says so (`needs()`).
-  const syncDir = (() => {
+  // so a page needs no setup for it. Not installed: such a component says so (`needs()`). In
+  // production its browser modules come from its production build (`dist/production`, minified,
+  // as the runtime's), where the installed version has one; its source otherwise.
+  const syncSource = (() => {
     for (const from of [join(root, 'noop.js'), join(process.cwd(), 'noop.js')]) {
       try {
         return dirname(createRequire(pathToFileURL(from)).resolve('@zubra/sync'));
@@ -80,6 +82,8 @@ export function createZubra({ components = 'components', packages = [], prefix =
     }
     return null;
   })();
+  const syncProduction = syncSource && join(syncSource, '..', 'dist', 'production');
+  const syncDir = syncSource && production && existsSync(join(syncProduction, 'connect.js')) ? syncProduction : syncSource;
   // @zubra/router, for components that start with 'use route' or 'use layout': nothing in the
   // browser needs it, but without it such a component is a page nothing serves, so say so.
   const routerInstalled = (() => {
