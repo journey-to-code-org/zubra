@@ -4,6 +4,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Fixed
+
+- **A component compiled by 5.18 keeps its event modifiers, form association and hydration on this runtime.** 5.19.0 moved those out of every element: a component compiled by 5.19.0 names them (`binder: $modified`, `forming: $form`, `hydrating: $hydrate`), but one compiled by 5.18 said the same interface (`abi: 4`) without naming them, so on 5.19.0's runtime its key filters and `.prevent` did nothing, it wasn't form-associated, and it rendered over its server markup instead of taking it over. Apps compile their components with the runtime they ship, so this reached only components compiled ahead of time by 5.18 (a library built with `zubra build --lib`, say). Compiled output is now interface 5 (`abi: 5`, calling the runtime's `$component`); interface 4 output calls `$element`, which now fills in what it doesn't name, as `$define` does for interfaces 2 and 3, and a component compiled by 5.18.0 is checked in and tested beside the current output (`since-4.test.js`). The runtime still runs every interface from 2. A module compiled by 5.19.1 needs a runtime of 5.19.1 or later, as each new interface does.
+
 ## 5.19.0 — 2026-11-15
 
 ### Security
