@@ -41,7 +41,7 @@ Every npm package entry and command below has a tier; `docs/test/stability.test.
 | The `zubra request` / `zubra serve` JSON protocol | Supported | What the server clients speak |
 | The compiler's error and warning text | Supported | Tools should read `--format json` codes, not the prose |
 
-The compiled ABI runs one way: a runtime runs what its own and older compilers wrote, not what a later one writes. So an app's `@zubra/compiler` is never a later release than its `@zubra/runtime`; install the two, and `@zubra/server`, at one version. npm doesn't enforce this (the peer ranges are `^`, so pinning the runtime alone leaves the compiler on the latest), and `@zubra/server` warns when it starts with a compiler ahead of its runtime.
+The compiled ABI runs one way: a runtime runs what its own and older compilers wrote, not what a later one writes. So an app's `@zubra/compiler` is never a later release than its `@zubra/runtime`; install the two, and `@zubra/server`, at one version. From the release after 5.19.0 npm enforces it: `@zubra/compiler` has an optional peer on `@zubra/runtime` no older than itself, so installing a compiler ahead of the runtime is refused (`ERESOLVE`) where it used to succeed, and the compiler alone still installs no runtime. 5.19.0 and earlier have no such peer (pinning the runtime alone leaves the compiler on the latest), which is what `@zubra/server`'s warning at start is for.
 
 ## npm packages
 

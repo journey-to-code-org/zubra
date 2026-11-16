@@ -25,4 +25,11 @@ range="^$(echo "$v" | sed -E 's/^([0-9]+\.[0-9]+)\..*/\1.0/')"
 for f in plugin/package.json plugin/package-lock.json server/package.json server/package-lock.json actions/package.json actions/package-lock.json sync/package.json sync/package-lock.json router/package.json router/package-lock.json; do
   sed -i -E "s#(\"@zubra/(compiler|runtime|server)\": \")\^[0-9.]+\"#\1$range\"#g" "$f"
 done
+# The compiler asks, where a runtime is installed at all, for one no older than itself: a module
+# is compiled for its compiler's release (a patch can add to the interface), and a runtime runs
+# what older compilers wrote, never what a later one writes. Optional, so the compiler alone
+# (`zubra compile`, a server in another language) installs no runtime.
+for f in compiler/package.json compiler/package-lock.json; do
+  sed -i -E "s#(\"@zubra/runtime\": \")>=[0-9.]+\"#\\1>=$v\"#" "$f"
+done
 echo "version $v"
