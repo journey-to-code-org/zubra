@@ -14,7 +14,6 @@
 // Merging is last-writer-wins per field, by clock. A device that was offline pushes what it
 // wrote when it's back; whichever write has the later clock wins, on every device alike.
 import { onWrite, receive, currentStore, onPresence, receivePresence, peerId, newPeerId, startingPull } from './index.js';
-import { mesh } from './webrtc.js';
 
 const CLOCKS = '$clocks';
 const pad = (number, width) => String(number).padStart(width, '0');
@@ -289,20 +288,27 @@ export function connect({ url = '/_zb/sync', interval = 2000, live = true, webrt
 
   // Presence goes straight out, unqueued: an old cursor position is worth nothing later.
   // With webrtc, presence goes over data channels to the peers that have one; the server carries
-  // it only while someone in the room doesn't (and always carries goodbyes).
-  const rtc =
+  // it only while someone in the room doesn't (and always carries goodbyes). webrtc.js is loaded
+  // only for a page that asks for it, while the first pull runs; the live stream, which brings the
+  // peers and their signals, opens once it's here (below), so none arrives before the mesh. Until
+  // then presence goes through the server, as it does to any peer without a channel.
+  let rtc = null;
+  const meshing =
     webrtc && typeof RTCPeerConnection !== 'undefined'
-      ? mesh({
-          self: peerId, // read each time: a tab can be given a new one
-          iceServers: webrtc.iceServers ?? [],
-          deliver: receivePresence,
-          signal: (room, to, data) =>
-            fetch(`${base}/signal`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ room, from: peerId(), to, data, key }),
-            }).catch(() => {}),
-        })
+      ? import('./webrtc.js').then(({ mesh }) => {
+          if (stopped) return;
+          rtc = mesh({
+            self: peerId, // read each time: a tab can be given a new one
+            iceServers: webrtc.iceServers ?? [],
+            deliver: receivePresence,
+            signal: (room, to, data) =>
+              fetch(`${base}/signal`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ room, from: peerId(), to, data, key }),
+              }).catch(() => {}),
+          });
+        }, (error) => console.error('@zubra/sync: couldn\'t load webrtc.js; presence goes through the server', error))
       : null;
 
   const offPresence = onPresence((message) => {
@@ -344,7 +350,7 @@ export function connect({ url = '/_zb/sync', interval = 2000, live = true, webrt
   // Components wait for this first pull before applying what's stored (index.js: fresh first).
   const first = (applying = applying.then(replay).catch(() => {})).then(flush).then(pull);
   startingPull(first);
-  first.then(listen);
+  first.then(() => meshing).then(listen);
   return {
     flush,
     pull,
