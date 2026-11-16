@@ -116,6 +116,9 @@ for (const name of ['outlet-react19', 'outlet-react18']) {
 
     await page.evaluate(() => window.update((set) => set.setItems([])));
     await expectRows(page, { rows: [], summary: '0 rows' });
+    // A row's useEffect cleanup is passive: React runs it after the commit that took the rows
+    // out of the DOM, sometimes a frame or more later (WebKit, on CI). Wait for it, as for rows.
+    await page.waitForFunction(() => window.mounted.size === 0, null, { timeout: 5000 }).catch(() => {});
     assert.deepEqual(await page.evaluate(() => [...window.mounted]), [], 'the rows of removed outlets are unmounted');
     await page.evaluate(() => window.unmount());
     assert.deepEqual(messages.filter((m) => !m.includes('React DevTools')), []);
