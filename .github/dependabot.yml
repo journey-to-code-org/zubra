@@ -1,0 +1,11 @@
+# The workflows' actions are pinned to commits (release.yml publishes with trusted publishing, so
+# nothing it runs moves on its own); this keeps the pins current, one reviewable pull request a week.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
