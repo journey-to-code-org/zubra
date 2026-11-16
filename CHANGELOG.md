@@ -4,6 +4,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Added
+
+- **A hydration mismatch says where.** `zubra: <checkout-form>'s markup doesn't match its template; rendering it fresh` named the element and nothing else, and the element has one template and many parts. The development build's warning now goes on with the first difference: the two top-level shapes (`the template's top level is <h3> <p> <form>, and the markup's is <p> <form>`), or the first binding whose place in the markup holds something else, with what the template expects, the elements on the way to it, the position, and what is there (`the template expects a zb-if region in <menu-item> › <p>, at position 2, and the markup has <span>`; `… an element (for its disabled binding) in <menu-item> › <form>, at position 3, and the markup has nothing`). Only shape can mismatch (a different attribute value or text is written, not refused), so that is all there is to say. Nothing changes in what is taken over or rendered fresh, and the production build, which has no messages, is byte for byte the same. Found on Potomac Solutions' Counter, whose checkout page logged the bare line (#320).
+
 ### Changed
 
 - **`@zubra/sync/connect` loads `webrtc.js` only for a page that asks for it** (`connect({ webrtc })`). It was imported by every connected page, peer-to-peer or not: 2.2 KB gzipped on a page that only reads. A page with `webrtc` loads it while its first pull runs, and its live stream (which brings the peers and their signals) opens once it's there, so peers connect as before.
