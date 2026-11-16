@@ -1,0 +1,4 @@
+<!-- A light-DOM component with one slot, inside a <div>. -->
+<frame-box>
+  <div class="frame"><zb-slot></zb-slot></div>
+</frame-box>

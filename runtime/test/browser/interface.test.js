@@ -1,4 +1,4 @@
-// Interface 4 beside interface 3: a component compiled now (`$element`, parts that name their
+// Interface 5 beside interface 3: a component compiled now (`$component`, parts that name their
 // binder) and the same component compiled by 5.16.0 (`$define`, parts the runtime fills a binder
 // in for) render the same DOM through every change. `npm run test:browser`.
 import { test } from 'node:test';

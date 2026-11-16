@@ -238,7 +238,7 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   // `/_zubra/` from somewhere else, rewriting only its pages), or by the address `imports` gave.
   const bindersFor = (name) => {
     const beside = (file) => (imports['@zubra/runtime'] ? runtimeUrl.replace(/[^/]*$/, file) : `${'../'.repeat(name.split('/').length)}runtime/${file}`);
-    return { '@zubra/runtime/when': '@zubra/runtime', '@zubra/runtime/each': '@zubra/runtime', '@zubra/runtime/modifiers': '@zubra/runtime', '@zubra/runtime/form': '@zubra/runtime', '@zubra/runtime/hydrate': '@zubra/runtime', '@zubra/runtime/await': beside('await.js'), '@zubra/runtime/slots': beside('slots.js') };
+    return { '@zubra/runtime/when': '@zubra/runtime', '@zubra/runtime/each': '@zubra/runtime', '@zubra/runtime/modifiers': '@zubra/runtime', '@zubra/runtime/form': '@zubra/runtime', '@zubra/runtime/hydrate': '@zubra/runtime', '@zubra/runtime/parts': '@zubra/runtime', '@zubra/runtime/shadow': '@zubra/runtime', '@zubra/runtime/await': beside('await.js'), '@zubra/runtime/slots': beside('slots.js') };
   };
   const mapping = () => ({ '@zubra/runtime': runtimeUrl, '@zubra/runtime/spread': `${base}/runtime/spread.js`, '@zubra/runtime/primitives': `${base}/runtime/primitives.js`, '@zubra/runtime/motion': `${base}/runtime/motion.js`, '@zubra/runtime/track': `${base}/runtime/track.js`, ...syncImports, ...imports });
   /**

@@ -37,8 +37,11 @@ const BUDGETS = {
   // what @zubra/unplugin's light-DOM components import in place of their CSS as text, which
   // takes 0.55 KB off each of the comparison's hosts. Event modifiers in a module of their own,
   // modifiers.js, about 90 B here, to 17.75 KB: a component whose listeners have none no longer
-  // carries them, 0.34 KB off the comparison's six.)
-  'src/index.js': { gzip: 17.75 * 1024 },
+  // carries them, 0.34 KB off the comparison's six. Window listeners, class lists and toggles,
+  // style properties and URL checks (parts.js) and the shadow path (shadow.js) named by the output
+  // that has them, about 90 B here, to 18 KB: this entry has them all, and each of the
+  // comparison's hosts is 0.42 to 0.46 KB smaller.)
+  'src/index.js': { gzip: 18 * 1024 },
   // The production build (the `production` export condition): the same, without hot reloading
   // (12.5 KB until 3.2, 13 KB until 4.2, 13.5 KB until `animate`, 14 KB until the list work,
   // 14.25 KB until the faster Signals core, 14.75 KB until rows without markers, 15 KB until
@@ -48,8 +51,13 @@ const BUDGETS = {
   // with slots now imports, about 170 B here: this entry has both, an app with no slotted
   // component ships about 1.2 KB less; 15.5 KB until $pageStyles and modifiers.js, optional modules
   // in this entry, about 0.25 KB together, which take 0.55 and 0.34 KB off the apps that don't use
-  // what they replace).
-  'dist/production/index.js': { gzip: 15.75 * 1024 },
+  // what they replace; 15.75 KB until parts.js and shadow.js, about 90 B here, 0.42 to 0.46 KB
+  // off each of the comparison's hosts; 16 KB until the signal graph's and an effect owner's
+  // private fields got short names in this build, about 150 B, which brought it back under; 15.75
+  // KB until content given to a slot a child has in more than one branch was checked against the
+  // branch the server rendered, about 70 B, 3 B over: this entry has every optional module, and
+  // what a server sends, zubra.js, stays under its own budget).
+  'dist/production/index.js': { gzip: 16 * 1024 },
   // An app that only uses Signals and effects.
   'src/effect.js': { gzip: 4 * 1024 },
   // `animate`'s leave() and glide(), loaded only by components that animate.
@@ -125,7 +133,10 @@ for (const [entry, budget] of Object.entries(ADAPTERS)) {
 // once event modifiers and form controls were modules of their own too (so a bundler leaves them
 // out), two more files in the core's graph. @zubra/server sends the core as one file in
 // production (dist/bundled/zubra.js), so this is for a server without a bundler that doesn't.
-const SERVED = 18.75 * 1024;
+// 18.75 KB until parts.js and shadow.js (the less common parts and the shadow path, 5.20), two
+// more files in the core's graph: element.js 0.4 KB smaller, the two 1.1 KB, since small files
+// compress worse on their own (as one file, zubra.js, they cost 60 B).
+const SERVED = 19.5 * 1024;
 
 test('dist/production as served fits its budget', (t) => {
   const dir = join(here, '../../dist/production');
@@ -146,7 +157,10 @@ test('dist/production as served fits its budget', (t) => {
 // The same as one file (`dist/bundled/zubra.js`, what `@zubra/server` sends with `bundle`): the
 // modules compress together. 18.6 KB file by file, 16.0 KB as one (5.15); 13.6 KB once zb-await's
 // binder, the slot router and $define were files of their own (5.18), which a page loads only if
-// its components use them.
+// its components use them. 14 KB until parts.js and shadow.js (5.20): what a component names
+// instead of every element carrying it, about 60 B here, where the core has them all, for 0.42 to
+// 0.46 KB off a bundled app. 14.25 KB until private fields got short names in the production
+// build, about 145 B.
 const BUNDLED = 14 * 1024;
 
 test('dist/bundled/zubra.js fits its budget, under the file-by-file build', (t) => {
