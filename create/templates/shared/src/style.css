@@ -1,0 +1,28 @@
+/* The page's own styles. Components carry theirs (each .zb file's <style>, scoped to it) and
+   read these custom properties, so changing a colour here changes it everywhere. */
+:root {
+  color-scheme: light dark;
+  --text: #1d2130;
+  --muted: #5d6375;
+  --line: #d5d9e3;
+  --panel: #ffffff;
+  --code: #e9ebf3;
+  --accent: #4f5df5;
+  --page: #f5f6fa;
+  font: 1rem/1.5 system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #e7e9f1;
+    --muted: #a2a8ba;
+    --line: #353b4e;
+    --panel: #1b1f2b;
+    --code: #262b3a;
+    --accent: #8b95ff;
+    --page: #12151d;
+  }
+}
+body { margin: 0; color: var(--text); background: var(--page); }
+main { display: grid; gap: 2.5rem; justify-items: center; max-width: 60rem; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
+.try { display: grid; gap: 0.75rem; justify-items: center; text-align: center; }
+.try p { margin: 0; color: var(--muted); }

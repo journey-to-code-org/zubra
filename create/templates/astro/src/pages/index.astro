@@ -1,5 +1,7 @@
 ---
 import HelloCounter from '../components/hello-counter.zb';
+import ZubraWelcome from '../components/zubra-welcome.zb';
+import ZubraExamples from '../components/zubra-examples.zb';
 import '../style.css';
 ---
 <html lang="en">
@@ -10,9 +12,12 @@ import '../style.css';
   </head>
   <body>
     <main>
-      <h1>{{title}}</h1>
-      <HelloCounter label="Clicks" client:load />
-      <p>The page sees <span id="seen">0</span></p>
+      <ZubraWelcome heading="{{title}}" framework="Astro" />
+      <section class="try">
+        <HelloCounter label="Clicks" client:load />
+        <p>The page sees <span id="seen">0</span></p>
+      </section>
+      <ZubraExamples client:load />
     </main>
     <script>
       document.querySelector('hello-counter').addEventListener('countchange', (event) => {

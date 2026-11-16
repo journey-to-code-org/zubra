@@ -1,0 +1,38 @@
+<!--
+  A star rating that is a real form control.
+
+  - `form-associated` on the host puts the element in its `<form>`: it submits its value under
+    its `name`, resets with the form and takes part in validation, like an `<input>`.
+  - With one `:model` prop, that prop is the submitted value.
+  - `validity(() => message)` blocks the form while it returns a message; `''` is valid.
+  @fires valuechange - The rating changed; `detail` is the new rating.
+-->
+<script>
+  import { validity } from '@zubra/runtime'
+
+  let hovered = null
+  const shown = hovered ?? value
+  const stars = [1, 2, 3, 4, 5].slice(0, max)
+
+  validity(() => (required && !value ? 'Pick a rating' : ''))
+</script>
+<style>
+  :host { display: inline-flex; align-items: center; gap: 0.15rem; }
+  button { padding: 0 0.1rem; border: 0; background: none; font-size: 1.5rem; line-height: 1; color: var(--line, #c9cdd6); cursor: pointer; }
+  button.lit { color: #f5a623; }
+  output { margin-left: 0.5rem; font-size: 0.9rem; color: var(--muted, #5d6375); }
+</style>
+<rating-input form-associated value:model={0} max={5} required={false}>
+  <zb-each items={stars} as="star" key={star}>
+    <button
+      type="button"
+      aria-label="{star} of {max}"
+      aria-pressed={star === value ? 'true' : 'false'}
+      class:lit={star <= shown}
+      onclick={() => (value = star)}
+      onmouseenter={() => (hovered = star)}
+      onmouseleave={() => (hovered = null)}
+    >★</button>
+  </zb-each>
+  <output>{value} of {max}</output>
+</rating-input>
