@@ -191,6 +191,100 @@ fn javascript_passes_child_props_as_properties_and_finds_slotted_content_when_hy
 }
 
 #[test]
+fn content_for_a_slot_in_two_branches_lists_both_places_to_check() {
+    // The slot is first in the link, and second (after a spinner's region) in the button.
+    const TWO_WAYS: &str = r#"<two-ways href="" busy={false}>
+  <a zb-if={href} href={href}><zb-slot></zb-slot></a>
+  <button zb-else type="button"><span zb-if={busy}>…</span><zb-slot></zb-slot></button>
+</two-ways>"#;
+    const USES: &str = "<script>import './two-ways.zb'</script>\n<uses-it label=\"Go\" href=\"\"><two-ways href={href}>{label}</two-ways></uses-it>";
+    let output = js(USES, &files(&[("./two-ways.zb", TWO_WAYS)]), Some(".js")).unwrap();
+    // two-ways [0] → its zb-if region [0] → the branch's element [0] → the slot's region (the
+    // link's [0], the button's [1]) → the text [0]. From the second step on, each place says what
+    // it leads to in the branch that has it: the region, the <a> or <button>, a filled slot.
+    assert!(
+        output.contains(r#"{ path: [0, 0], hydrate: [{ path: [0, 0, 0, 0, 0], kinds: [, "[", "a", "[!"] }, { path: [0, 0, 0, 1, 0], kinds: [, "[", "button", "[!"] }], anchor:"#),
+        "{output}"
+    );
+    // A slot with one place keeps one path, as before.
+    let one = js(INBOX, &files(&[("./badge.zb", BADGE)]), Some(".js")).unwrap();
+    assert!(one.contains("hydrate: [0, 0, 0, 0], text:"), "{one}");
+    assert!(!one.contains("hydrate: [{"), "{one}");
+}
+
+#[test]
+fn content_for_a_slot_that_shares_its_place_with_another_slot_is_checked_or_not_offered() {
+    // The same steps to both slots: nothing in the markup says which the server rendered.
+    const SAME: &str = r#"<slot-swap wide={false}>
+  <p zb-if={wide}><zb-slot name="left"></zb-slot></p>
+  <p zb-else><zb-slot name="right"></zb-slot></p>
+</slot-swap>"#;
+    // Different elements: the element does.
+    const TAGGED: &str = r#"<slot-swap wide={false}>
+  <p zb-if={wide}><zb-slot name="left"></zb-slot></p>
+  <div zb-else><zb-slot name="right"></zb-slot></div>
+</slot-swap>"#;
+    const USES: &str = "<script>import './slot-swap.zb'</script>\n<uses-it a=\"A\" b=\"B\"><slot-swap><b slot=\"left\">{a}</b><i slot=\"right\">{b}</i></slot-swap></uses-it>";
+    let same = js(USES, &files(&[("./slot-swap.zb", SAME)]), Some(".js")).unwrap();
+    // No place to offer: the element renders fresh rather than bind one slot's content to the other's.
+    assert!(
+        same.contains("{ path: [0, 0], hydrate: [], text:"),
+        "{same}"
+    );
+    assert!(
+        same.contains("{ path: [0, 1], hydrate: [], text:"),
+        "{same}"
+    );
+    let tagged = js(USES, &files(&[("./slot-swap.zb", TAGGED)]), Some(".js")).unwrap();
+    // One place each, checked: the only way to tell it from the other slot's.
+    assert!(
+        tagged.contains(r#"{ path: [0, 0], hydrate: [{ path: [0, 0, 0, 0, 0], kinds: [, "[", "p", "[!"] }], text:"#),
+        "{tagged}"
+    );
+    assert!(
+        tagged.contains(r#"{ path: [0, 1], hydrate: [{ path: [0, 0, 0, 0, 0], kinds: [, "[", "div", "[!"] }], text:"#),
+        "{tagged}"
+    );
+}
+
+#[test]
+fn content_for_a_slot_its_component_forwards_sits_where_the_next_component_put_it() {
+    const FRAME: &str = "<frame-box><div class=\"frame\"><zb-slot></zb-slot></div></frame-box>";
+    const RELAY: &str = "<script>import './frame-box.zb'</script>\n<relay-box><frame-box><zb-slot></zb-slot></frame-box></relay-box>";
+    const SENDS: &str = "<script>import './relay-box.zb'</script>\n<sends-it label=\"Go\"><relay-box><b>{label}</b></relay-box></sends-it>";
+    let sends = js(
+        SENDS,
+        &files(&[("./relay-box.zb", RELAY), ("./frame-box.zb", FRAME)]),
+        Some(".js"),
+    )
+    .unwrap();
+    // relay-box [0] → frame-box [0] → its <div> [0] → its slot's region [0] → relay-box's slot's
+    // region [0] → the <b> [0]: one place, nothing else there, so one path.
+    assert!(
+        sends.contains("{ path: [0, 0], hydrate: [0, 0, 0, 0, 0, 0], text:"),
+        "{sends}"
+    );
+
+    // A named slot forwarded isn't offered yet (its content's `slot` attribute would send it to
+    // the next component's slot of that name): a parent is told so, as before.
+    const NAMED: &str = "<script>import './frame-box.zb'</script>\n<named-relay><frame-box><zb-slot name=\"y\"></zb-slot></frame-box></named-relay>";
+    const FILLS: &str = "<script>import './named-relay.zb'</script>\n<fills-it label=\"B\"><named-relay><b slot=\"y\">{label}</b></named-relay></fills-it>";
+    let error = js(
+        FILLS,
+        &files(&[("./named-relay.zb", NAMED), ("./frame-box.zb", FRAME)]),
+        Some(".js"),
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("<named-relay> has no slot named `y`"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn a_bundler_keeps_zb_import_specifiers() {
     let output = js(INBOX, &files(&[("./badge.zb", BADGE)]), None).unwrap();
     assert!(output.contains("import './badge.zb'"), "{output}");

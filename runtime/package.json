@@ -55,6 +55,16 @@
       "production": "./dist/production/hydrate.js",
       "default": "./src/hydrate.js"
     },
+    "./parts": {
+      "types": "./types/binders.d.ts",
+      "production": "./dist/production/parts.js",
+      "default": "./src/parts.js"
+    },
+    "./shadow": {
+      "types": "./types/binders.d.ts",
+      "production": "./dist/production/shadow.js",
+      "default": "./src/shadow.js"
+    },
     "./signal": {
       "types": "./types/signal.d.ts",
       "production": "./dist/production/signal.js",

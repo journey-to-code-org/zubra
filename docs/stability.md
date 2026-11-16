@@ -34,7 +34,7 @@ Every npm package entry and command below has a tier; `docs/test/stability.test.
 | Contract | Tier | Notes |
 |---|---|---|
 | The `.zb` format and `.zb.jsx` / `.zb.tsx` front ends | Stable | The README's rules are the reference |
-| The compiled ABI (`abi: 4`) | Stable | The runtime still runs `abi: 2` and `abi: 3` output (through `$define`) |
+| The compiled ABI (`abi: 5`) | Stable | The runtime still runs `abi: 2` and `abi: 3` output (through `$define`) and `abi: 4` output (through `$element`), filling in what they don't name; `since-4.test.js` runs 5.18.0's output |
 | CLI commands, flags and exit codes | Stable | Except the commands marked below |
 | The Custom Elements Manifest and typings the compiler writes | Stable | |
 | Hydration markers (processing instructions) | Stable | The runtime still reads 4.x comment markers |
@@ -68,6 +68,8 @@ Every npm package entry and command below has a tier; `docs/test/stability.test.
 | `@zubra/runtime/server` | Stable | Runtime; meta-framework examples | Next.js, Nuxt, SvelteKit, SolidStart |
 | `@zubra/runtime/bridge` | Supported | Runtime (React 19, 18, Vue 3) | Nothing outside its tests yet |
 | `@zubra/runtime/context` | Supported | Runtime (plain HTML, React 19, 18, Vue 3) | Nothing outside its tests yet |
+| `@zubra/runtime/parts` | Supported | Runtime (`since-4.test.js`, every class, style, window-listener and URL test) | The compiled-code interface: window listeners, class lists and toggles, style properties and URL checks (`binder: $classes`, `url: $url`), for modules compiled with `--binder-entries` |
+| `@zubra/runtime/shadow` | Supported | Runtime (every shadow-DOM test) | The compiled-code interface: a shadow component's root, sheets and slot following (`shadowing: $shadow`), for modules compiled with `--binder-entries` |
 | `@zubra/runtime/hydrate` | Supported | Runtime (`client-only.test.js`, every hydration test); Server (`preload.test.js`) | The compiled-code interface: taking over server markup (`hydrating: $hydrate`), which every component compiled without `--client-only` imports; its own entry for modules compiled with `--binder-entries` |
 | `@zubra/runtime/forms` | Supported | Runtime (four form libraries) | Nothing outside its tests yet |
 | `@zubra/runtime/navigation` | Supported | Runtime (React Router, Vue Router) | Nothing outside its tests yet |

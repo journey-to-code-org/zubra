@@ -1,0 +1,7 @@
+<!-- Fills <relay-branch>'s default slot only. -->
+<script>
+  import './relay-branch.zb'
+</script>
+<fills-relay-branch label="Go" framed={false}>
+  <relay-branch framed={framed}><b>{label}</b></relay-branch>
+</fills-relay-branch>

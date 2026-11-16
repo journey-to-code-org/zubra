@@ -59,6 +59,8 @@ export function isSafeSrcset(value) {
   const urls = String(value).split(',').map((candidate) => candidate.trim().split(/\s+/)[0]).filter(Boolean);
   return urls.length > 0 && urls.every(isSafeUrl);
 }
+/** @internal The URL checks as interface 5 output names them (`url: $url`, `srcset: $srcset`). */
+export { isSafeUrl as $url, isSafeSrcset as $srcset };
 
 const clone = (value) => (value && typeof value === 'object' ? structuredClone(value) : value);
 
@@ -503,12 +505,28 @@ let nativeFirst; // looked up on first use, so the module loads without a DOM
 
 const childRange = (parent) => ({ first: parent.firstChild, stop: null });
 
+/**
+ * Where a part given to a child component sits in server markup: its one place, or, where that's
+ * in doubt (the child has the slot in more than one branch of a `zb-if`, or another slot where
+ * this one is), the first place (`[{ path, kinds }]`) whose steps lead to what the compiler
+ * expects there: `kinds[i]` for step `i`, a tag name, `[` for a region, `[!` for a filled slot's
+ * (a hole for a step it doesn't check). That's the branch the server rendered; none (or no
+ * places): `[]`, which leads nowhere, so the element renders fresh.
+ */
+const placed = (range, hydrate) =>
+  hydrate[0]?.path
+    ? hydrate.find(({ path, kinds }) => kinds.every((kind, step) => {
+      const node = walk(range, path.slice(0, step + 1));
+      return (node && (marker(node) ?? node.localName)) === kind;
+    }))?.path ?? []
+    : hydrate;
+
 /** The node for every part, or null if the markup doesn't have the template's shape. */
 function locate(range, parts, hydrating = false) {
   const nodes = [];
   for (const part of parts) {
     // In server markup, content given to a child component sits where the child projected it.
-    const node = walk(range, hydrating && part.hydrate ? part.hydrate : part.path);
+    const node = walk(range, hydrating && part.hydrate ? placed(range, part.hydrate) : part.path);
     const fits = !node ? false
       : part.when || part.each || part.slot || part.await ? isOpen(node) && matchingClose(node) !== null
       : part.anchor || part.global ? marker(node) === ''
@@ -618,9 +636,9 @@ function bind(part, node, hydrating, context) {
   if (part.on && !part.global) devListened(part, node);
   // @dev-end
   if (part.binder) {
-    // A block (`zb-if`, `zb-await`, `zb-each`), a slot or a listener with modifiers: interface 4
-    // output imports the binder for each kind it has, so a bundler leaves out the ones an app
-    // doesn't use.
+    // A block (`zb-if`, `zb-await`, `zb-each`), a slot, a listener with modifiers or a window
+    // listener, a class list or toggle, a style property: interface 5 output imports the binder
+    // for each kind it has, so a bundler leaves out the ones an app doesn't use.
     part.binder(part, node, hydrating, context);
   } else if (part.text) {
     effect(() => {
@@ -642,40 +660,12 @@ function bind(part, node, hydrating, context) {
       }
       if (target.data !== text) target.data = text;
     });
-  } else if (part.global) {
-    // <zb-window>/<zb-document>: listening while this part of the template is rendered.
-    const target = part.global === 'window' ? window : document;
-    effect(() => {
-      const listener = listen(part, target);
-      target.addEventListener(part.on, listener);
-      return () => target.removeEventListener(part.on, listener);
-    });
   } else if (part.on) {
     node.addEventListener(part.on, listen(part, node));
   } else if (part.bind) {
     // A part whose code lives in its own entry (`{...spread}`: @zubra/runtime/spread), so
     // components that don't use it don't load it.
     part.bind(part, node);
-  } else if (part.classes) {
-    // A computed class beside class: toggles: token by token, leaving the toggles' alone.
-    let previous = [];
-    effect(() => {
-      const next = String($r(part.classes()) ?? '').split(/\s+/).filter(Boolean);
-      for (const token of previous) if (!next.includes(token)) node.classList.remove(token);
-      for (const token of next) node.classList.add(token);
-      previous = next;
-    });
-  } else if (part.toggle) {
-    effect(() => {
-      node.classList.toggle(part.toggle, !!$r(part.value()));
-    });
-  } else if (part.style) {
-    // One property at a time, through the CSSOM: a value can't add declarations.
-    effect(() => {
-      const value = $r(part.value());
-      if (value == null || value === false) node.style.removeProperty(part.style);
-      else if (node.style.getPropertyValue(part.style) !== String(value)) node.style.setProperty(part.style, String(value));
-    });
   } else if (part.ref) {
     effect(() => {
       const assign = $r(part.ref());
@@ -895,16 +885,12 @@ function bindAttribute(part, node, hydrating = false) {
       return node.removeAttribute(name);
     }
     const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
-    // No URL yet (a prop's "" default, before the app sets it): no attribute, and nothing to report.
-    if (part.url && text.trim() === '') return node.removeAttribute(name);
-    if (part.srcset && text.trim() === '') return node.removeAttribute(name);
-    if (part.srcset && !isSafeSrcset(text)) {
-      // @dev
-      console.error(`zubra: blocked an unsafe URL in "${name}"${see('safety')}:`, text);
-      // @dev-end
-      return node.removeAttribute(name);
-    }
-    if (part.url && !isSafeUrl(text)) {
+    // A URL attribute's check (`url: $url`, `srcset: $srcset`: isSafeUrl and isSafeSrcset, which
+    // interface 5 output imports where it has one, and legacy.js fills in for older output). No
+    // URL yet (a prop's "" default, before the app sets it): no attribute, and nothing to report.
+    const safe = part.url ?? part.srcset;
+    if (safe && text.trim() === '') return node.removeAttribute(name);
+    if (safe && !safe(text)) {
       // @dev
       console.error(`zubra: blocked an unsafe URL in "${name}"${see('safety')}:`, text);
       // @dev-end
@@ -925,11 +911,9 @@ const fired = new WeakMap(); // event → the component that dispatched it
 //
 // A component's stylesheet is one constructed CSSStyleSheet shared by every instance: adopted
 // by each shadow root of a shadow component, and, for a light-DOM component, by the document (or
-// the shadow root it lives in). `adoptStyles()` adds app-wide sheets — Tailwind's output, a
-// design system — to every zubra shadow root, since page CSS doesn't reach inside them.
+// the shadow root it lives in). `adoptStyles()` (shadow.js) adds app-wide sheets — Tailwind's
+// output, a design system — to every zubra shadow root, since page CSS doesn't reach inside them.
 
-const globalSheets = [];
-const shadowRoots = new Set(); // WeakRef<ShadowRoot>
 const adopted = new WeakMap(); // Document | ShadowRoot → Set<CSSStyleSheet>
 
 function toSheet(css) {
@@ -956,22 +940,6 @@ function adopt(root, sheets) {
   const added = sheets.filter((sheet) => !has.has(sheet));
   for (const sheet of added) has.add(sheet);
   if (added.length) root.adoptedStyleSheets = [...root.adoptedStyleSheets, ...added];
-}
-
-/**
- * Add stylesheets (CSS text or `CSSStyleSheet`s) to every zubra shadow root, now and later — for
- * app-wide CSS such as Tailwind's output, which page styles can't carry into shadow DOM.
- * Light-DOM components already get page CSS. Returns the sheets.
- */
-export function adoptStyles(...styles) {
-  const sheets = styles.map(toSheet);
-  globalSheets.push(...sheets);
-  for (const ref of [...shadowRoots]) {
-    const root = ref.deref();
-    if (root) adopt(root, sheets);
-    else shadowRoots.delete(ref);
-  }
-  return sheets;
 }
 
 /** The attribute that marks content slotted into a styled light-DOM component (value: its tag). */
@@ -1016,10 +984,17 @@ function serverElement(tag, options) {
 /**
  * The version of the compiled-code interface: what `$define()`'s arguments and parts mean, and the
  * server markup they hydrate. 3 (5.0) is 2 with processing-instruction markers; this runtime reads
- * 2's comment markers too, so modules compiled by 3.x and 4.x still run.
+ * 2's comment markers too, so modules compiled by 3.x and 4.x still run. 4 (5.17) is parts that
+ * name their binders, as 5.17 and 5.18 wrote them; 5 (5.19.1) also names event modifiers'
+ * binder, form controls and hydration, which 4 left to the runtime.
+ *
+ * Bump it whenever compiled output starts naming something the runtime used to do unasked:
+ * output from before the change still says the old number, and only `legacy.js` fills in what it
+ * doesn't name. (5.19.0 didn't, and ran 5.18's interface 4 output without its modifiers, form
+ * association or hydration: `test/browser/since-4.test.js`.)
  */
-export const ABI = 4;
-const READS = [2, 3, 4]; // what $define (legacy.js) reads; interface 4 output calls $element
+export const ABI = 5;
+const READS = [2, 3, 4, 5]; // what $define and $element (legacy.js) read; interface 5 output calls $component
 
 /**
  * What modules compiled for runtime 1.x call. Their compiled shape differs, so they're refused
@@ -1029,12 +1004,18 @@ export function define(tag) {
   throw new Error(`zubra: <${tag}> was compiled for @zubra/runtime 1.x; recompile it with zubra 2 (the CLI, @zubra/compiler or @zubra/unplugin)`);
 }
 
-/** @internal Register a component compiled for interface 4: its parts name their binders. */
-export function $element(tag, definition) {
-  if (definition?.abi !== ABI) {
-    throw new Error(`zubra: <${tag}> was compiled for a different @zubra/runtime (interface ${definition?.abi ?? 1}, this runtime is ${ABI}); recompile it with the matching zubra`);
-  }
+/**
+ * @internal Register a component compiled for interface 5: its parts and definition name what
+ * they need (binders, slots, form controls, hydration). Older output calls `$define` or `$element`.
+ */
+export function $component(tag, definition) {
+  if (definition?.abi !== ABI) refuse(tag, definition);
   return defineElement(tag, definition);
+}
+
+/** @internal A module compiled for an interface this runtime doesn't read: say what to do. */
+export function refuse(tag, definition) {
+  throw new Error(`zubra: <${tag}> was compiled for a different @zubra/runtime (interface ${definition?.abi ?? 1}, this runtime is ${ABI}); recompile it with the matching zubra`);
 }
 
 // @hot (left out of the production build: scripts/build-production.js)
@@ -1059,6 +1040,8 @@ function defineElement(tag, definition) {
   let slotting = slottingOf(definition);
   // A form-associated component's API and callbacks: imported by its module (`$form`), filled in by $define.
   const forming = form ? definition.forming ?? null : null;
+  // A shadow component's root, sheets and slot following (shadow.js): what its output names.
+  const shadowing = shadow ? definition.shadowing ?? null : null;
   // Taking over server markup (hydrate.js): what compiled output imports, unless built for an app
   // that never renders on a server.
   const hydrating = definition.hydrating ?? null;
@@ -1308,16 +1291,7 @@ function defineElement(tag, definition) {
       // @hot (left out of the production build: scripts/build-production.js)
       if (globalThis.__ZUBRA_HOT__ && !reloading) live.add(new WeakRef(this));
       // @hot-end
-      const root = shadow ? (this.shadowRoot ?? this.attachShadow({ mode: 'open' })) : this;
-      if (shadow) {
-        adopt(root, [...globalSheets, ...ownSheets()]);
-        shadowRoots.add(new WeakRef(root));
-        // The server's copy of the styles, for before this ran; the adopted sheet replaces it.
-        const serverStyles = root.firstElementChild;
-        if (serverStyles?.localName === 'style' && serverStyles.hasAttribute('data-zubra')) {
-          serverStyles.remove();
-        }
-      }
+      const root = shadowing ? shadowing.attach(this, ownSheets()) : this;
       const $p = {};
       for (const name of Object.keys(props)) {
         // A two-way prop (`value:model`) fires `<prop>change` when the component assigns it.
@@ -1406,18 +1380,7 @@ function defineElement(tag, definition) {
           else parkChildren(this, context, tag);
         } else if (this.#hooks.filled.size) {
           // Shadow DOM: the host's children are assigned by the browser; follow them.
-          const follow = () => {
-            for (const [name, signal] of this.#hooks.filled) {
-              signal.set([...this.childNodes].some((node) => isContent(node) && (node.nodeType === 1 ? (node.getAttribute('slot') ?? 'default') : 'default') === name));
-            }
-          };
-          follow();
-          this.#hooks.mount.push(() => {
-            follow();
-            const observer = new MutationObserver(follow);
-            observer.observe(this, { childList: true, subtree: true, attributes: true, attributeFilter: ['slot'], characterData: true });
-            return () => observer.disconnect();
-          });
+          shadowing?.follow(this, this.#hooks);
         }
       });
       // @dev
@@ -1438,4 +1401,4 @@ function defineElement(tag, definition) {
 }
 
 /** @internal What the runtime's feature modules (blocks, when, each, await, slots) take from here. */
-export { APPLE, bind, blueprint, childRange, COMMENT, current, defineElement, formOf, hasContent, isClose, isContent, isOpen, locate, mark, marker, matchingClose, PI, positions, READS, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, TEXT, unmark, untrack };
+export { adopt, APPLE, bind, blueprint, childRange, COMMENT, current, defineElement, formOf, hasContent, isClose, isContent, isOpen, listen, locate, mark, marker, matchingClose, PI, positions, READS, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, TEXT, toSheet, unmark, untrack };

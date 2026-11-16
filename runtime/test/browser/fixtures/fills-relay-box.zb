@@ -1,0 +1,7 @@
+<!-- Fills <relay-box>'s slot, which <relay-box> forwards to <frame-box>'s. -->
+<script>
+  import './relay-box.zb'
+</script>
+<fills-relay-box label="Go">
+  <relay-box><b>{label}</b></relay-box>
+</fills-relay-box>

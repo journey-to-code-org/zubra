@@ -1,0 +1,6 @@
+<!-- Two slots at the same place in two branches, by the same steps: nothing in the markup tells
+     which one the server rendered, so content for them can't be taken over. -->
+<slot-swap wide={false}>
+  <p zb-if={wide}><zb-slot name="left"></zb-slot></p>
+  <p zb-else><zb-slot name="right"></zb-slot></p>
+</slot-swap>

@@ -1,0 +1,22 @@
+<!-- What interface 4 output gained after 5.18.0 (event modifiers, form association, hydration)
+     and what it names after 5.19.0 (window listeners, class lists and toggles, style properties,
+     URL checks). since-4-518.js is this compiled by 5.18.0. -->
+<script>
+  import { state, formValue, signal } from '@zubra/runtime'
+  const count = state(0)
+  formValue(signal(count))
+  let keys = 0
+  let resized = 0
+  let on = false
+  let link = 'javascript:alert(1)'
+  let width = '10px'
+  function flip() { on = !on; link = 'https://example.com/'; width = '20px' }
+</script>
+<zb-since form-associated>
+  <zb-window onresize={() => (resized = resized + 1)}></zb-window>
+  <input class="keys" onkeydown.enter={() => (keys = keys + 1)} />
+  <button type="button" class="up" onclick={() => count.set(count.get() + 1)}>+</button>
+  <button type="button" class="flip" onclick={flip}>flip</button>
+  <a href={link} class={on ? 'on big' : 'off'} class:active={on} style:width={width}>link</a>
+  <output>{count} {keys} {resized}</output>
+</zb-since>

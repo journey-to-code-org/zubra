@@ -1,0 +1,7 @@
+<!-- Forwards its slot to <frame-box>'s. -->
+<script>
+  import './frame-box.zb'
+</script>
+<relay-box>
+  <frame-box><zb-slot></zb-slot></frame-box>
+</relay-box>

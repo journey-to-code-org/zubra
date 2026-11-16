@@ -1,0 +1,7 @@
+<!-- Fills <branch-slot>'s slot with text it keeps current: on hydration, wherever the server put it. -->
+<script>
+  import './branch-slot.zb'
+</script>
+<fills-branch-slot label="Go" href="" busy={false}>
+  <branch-slot href={href} busy={busy}>{label} now</branch-slot>
+</fills-branch-slot>

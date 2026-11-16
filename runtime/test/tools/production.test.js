@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { production, bundle, BUNDLE } from '../../scripts/build-production.js';
+import { production, bundle, BUNDLE, PRIVATE } from '../../scripts/build-production.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -101,4 +101,25 @@ test('bundle(): a name is given only by the module it belongs to, and a module t
   assert.equal(out['lone.js'], sources['lone.js'], 'a module outside the graph is as it was');
   assert.throws(() => bundle({ ...sources, 'other.js': 'import{pick as p}from"./impl.js";export const b=p;' }, 'index.js'), /other\.js imports pick from impl\.js/);
   assert.throws(() => bundle({ ...sources, 'other.js': 'import*as all from"./one.js";export const b=all.a;' }, 'index.js'), /other than by name/);
+});
+
+// The production build gives private fields short names (`PRIVATE` in build-production.js), which
+// is only right while each name is used on its module's own objects and nowhere else. Two checks:
+// the unit tests, the 5,000-seed comparison with signal-polyfill among them, pass on the build
+// itself; and none of the names is something the typings promise.
+test('the unit tests pass on dist/production, where private fields have short names', () => {
+  const run = spawnSync(process.execPath, ['--import', join(root, 'test/tools/on-production/register.mjs'), '--test', '--test-reporter=tap', ...readdirSync(join(root, 'test')).filter((name) => name.endsWith('.test.js')).map((name) => join(root, 'test', name))], { encoding: 'utf8', env: { ...process.env, NODE_TEST_CONTEXT: undefined } });
+  const count = (what) => Number(run.stdout.match(new RegExp(`^# ${what} (\\d+)`, 'm'))?.[1]);
+  assert.equal(count('fail'), 0, run.stdout.split('\n').filter((line) => line.startsWith('not ok')).join('\n'));
+  assert.ok(count('pass') > 400, `only ${count('pass')} tests ran`);
+  // And they did run on the build: its signal graph has no field by its source's name.
+  const impl = readFileSync(join(root, 'dist/production/signal-impl.js'), 'utf8');
+  for (const name of PRIVATE['signal-impl.js']) assert.ok(!new RegExp(`\\.${name}\\b`).test(impl), `signal-impl.js still has .${name}`);
+});
+
+test('no private field is a name the typings give', () => {
+  // An effect's owner is handed out (`scope()`), so its public fields keep their names. The signal
+  // graph's nodes never leave signal-impl.js: what's public there is the class around each.
+  const declared = readFileSync(join(root, 'types/effect.d.ts'), 'utf8');
+  for (const name of PRIVATE['effect.js']) assert.ok(!new RegExp(`\\b${name}\\??\\s*[:(]`).test(declared), `effect.js: ${name} is in types/effect.d.ts`);
 });
