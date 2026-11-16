@@ -1,0 +1,41 @@
+<!--
+  A tip that arrives a moment later: async data without effects.
+
+  - `resource(fetcher)` holds a value that comes later. It runs again by itself when state or a
+    prop the fetcher read changes (here `asked`), and drops an answer a newer request overtook.
+  - `<zb-await>` shows `<zb-pending>` while waiting, `<zb-then>` with the value and `<zb-catch>`
+    with the error; `keep` holds the last value on screen while the next one loads.
+  - The promise below stands in for a request. With a real one, pass the signal on so it's
+    aborted when it's overtaken: `resource(({ signal }) => fetch(url, { signal }).then((r) => r.json()))`.
+-->
+<script>
+  import { resource } from '@zubra/runtime'
+
+  const tips = [
+    'A top-level let is state: assign it and the page updates.',
+    'A const that reads state or props is derived, and stays in sync.',
+    'Props are declared on the host tag, with their defaults.',
+    'Styles are scoped to the component, in light DOM too.',
+  ]
+  let asked = 0
+
+  const tip = resource(() => {
+    const text = tips[asked % tips.length]
+    return new Promise((resolve) => setTimeout(() => resolve(text), wait))
+  })
+</script>
+<style>
+  :host { display: grid; gap: 0.6rem; justify-items: start; }
+  :host(:state(loading)) p { opacity: 0.5; }
+  p { margin: 0; min-height: 3em; }
+  button { padding: 0.4rem 0.8rem; border: 1px solid var(--line, #c9cdd6); border-radius: 0.4rem; background: transparent; font: inherit; color: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent, #4f5df5); }
+</style>
+<async-tip wait={500}>
+  <zb-await {tip} keep>
+    <zb-pending><p>Loading a tip…</p></zb-pending>
+    <zb-then as="text"><p>{text}</p></zb-then>
+    <zb-catch as="{ message }"><p>{message} <button type="button" onclick={retry}>Try again</button></p></zb-catch>
+  </zb-await>
+  <button type="button" onclick={() => asked++}>Another tip</button>
+</async-tip>

@@ -1,0 +1,87 @@
+<!--
+  The examples on the starter page: one card per idea, each a file in this folder that you can
+  open, change and copy from. It shows components using components (the imports below) and a
+  parent reading what its children do. Like zubra-welcome.zb, it's here to be deleted.
+-->
+<script>
+  import './example-card.zb'
+  import './todo-list.zb'
+  import './rating-input.zb'
+  import './async-tip.zb'
+
+  let submitted = ''
+
+  // A component used in a <form> submits like an <input>: read it from the form's FormData.
+  function send(event) {
+    submitted = new URLSearchParams(new FormData(event.target)).toString()
+  }
+
+  // The few lines each example turns on, shown under it.
+  const listCode = `let items = [{ id: 1, text: 'Edit', done: true }]
+const left = items.filter((item) => !item.done).length
+
+<zb-each items={items} as="item" key={item.id}>
+  <li class:done={item.done}>{item.text}</li>
+</zb-each>
+<p zb-if={!items.length}>Nothing to do.</p>`
+  const formCode = `<rating-input form-associated value:model={0}>
+
+<form>
+  <rating-input name="stars"></rating-input>
+</form>`
+  const asyncCode = `const tip = resource(() => load(asked))
+
+<zb-await {tip} keep>
+  <zb-pending>Loading…</zb-pending>
+  <zb-then as="text">{text}</zb-then>
+</zb-await>`
+  const slotCode = `<example-card heading="Slots">
+  <p>The default slot.</p>
+  <span slot="note">The slot named note.</span>
+</example-card>`
+</script>
+<style>
+  :host { display: grid; gap: 1.25rem; width: 100%; }
+  h2 { margin: 0; font-size: 1.4rem; text-align: center; }
+  .zx-lede { margin: -0.75rem 0 0; text-align: center; color: var(--muted, #5d6375); }
+  .zx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: 1rem; }
+  .zx-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+  .zx-form > button { padding: 0.4rem 0.8rem; border: 1px solid var(--line, #c9cdd6); border-radius: 0.4rem; background: transparent; font: inherit; color: inherit; cursor: pointer; }
+  .zx-form > button:hover { border-color: var(--accent, #4f5df5); }
+  code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; }
+  nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem 1.5rem; padding-top: 0.5rem; }
+  nav a { color: var(--accent, #4f5df5); text-decoration: none; font-weight: 500; }
+  nav a:hover { text-decoration: underline; }
+</style>
+<zubra-examples>
+  <h2>How things work</h2>
+  <p class="zx-lede">Each card is a file in <code>src/components/</code>. Open one, change it, save.</p>
+  <div class="zx-grid">
+    <example-card heading="Lists, conditions and input" file="src/components/todo-list.zb" code={listCode}>
+      <todo-list></todo-list>
+      <span slot="note">Mutating state updates only what read it. Nothing re-renders.</span>
+    </example-card>
+    <example-card heading="A real form control" file="src/components/rating-input.zb" code={formCode}>
+      <form class="zx-form" onsubmit.prevent={send}>
+        <rating-input name="stars" value={3}></rating-input>
+        <button>Submit</button>
+        <button type="reset">Reset</button>
+      </form>
+      <span slot="note">The form submitted: <code class="zx-sent">{submitted || 'nothing yet'}</code></span>
+    </example-card>
+    <example-card heading="Async data" file="src/components/async-tip.zb" code={asyncCode}>
+      <async-tip></async-tip>
+      <span slot="note">No effects and no dependency arrays: the fetcher runs again when what it read changes.</span>
+    </example-card>
+    <example-card heading="Slots" file="src/components/example-card.zb" code={slotCode}>
+      <p>This card is the example: its heading and file are props, and this paragraph is in its default slot.</p>
+      <span slot="note">And this line is in its slot named <code>note</code>.</span>
+    </example-card>
+  </div>
+  <nav aria-label="Zubra documentation">
+    <a href="https://journey-to-code-org.github.io/zubra/docs/" target="_blank" rel="noreferrer">Tutorial and reference</a>
+    <a href="https://journey-to-code-org.github.io/zubra/playground/" target="_blank" rel="noreferrer">Playground</a>
+    <a href="https://github.com/journey-to-code-org/zubra/tree/main/registry/components" target="_blank" rel="noreferrer">Components to copy</a>
+    <a href="https://github.com/journey-to-code-org/zubra" target="_blank" rel="noreferrer">GitHub</a>
+  </nav>
+</zubra-examples>

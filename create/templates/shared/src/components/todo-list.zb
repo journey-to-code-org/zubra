@@ -1,0 +1,54 @@
+<!--
+  A to-do list: lists, conditions and input.
+
+  - `let items` is state. Mutating it (`items.push(…)`, `item.done = true`, `items.splice(…)`)
+    updates exactly what read it; nothing re-renders.
+  - `const left` reads state, so it stays in sync by itself.
+  - `<zb-each>` draws a row per item; `key` keeps a row's DOM when others come and go.
+  - `zb-if` / `zb-else` on neighbouring elements choose between them.
+  - `onsubmit.prevent` is `event.preventDefault()` before the handler.
+-->
+<script>
+  let items = [
+    { id: 1, text: 'Edit a component and save', done: true },
+    { id: 2, text: 'Add a component of your own', done: false },
+  ]
+  let draft = ''
+  let nextId = 3
+  const left = items.filter((item) => !item.done).length
+
+  function add() {
+    const text = draft.trim()
+    if (!text) return
+    items.push({ id: nextId++, text, done: false })
+    draft = ''
+  }
+</script>
+<style>
+  :host { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.6rem; width: 100%; }
+  form { display: flex; gap: 0.4rem; }
+  input:not([type]) { flex: 1; min-width: 0; padding: 0.4rem 0.6rem; border: 1px solid var(--line, #c9cdd6); border-radius: 0.4rem; font: inherit; color: inherit; background: transparent; }
+  button { padding: 0.4rem 0.8rem; border: 1px solid var(--line, #c9cdd6); border-radius: 0.4rem; background: transparent; font: inherit; color: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent, #4f5df5); }
+  ul { display: grid; gap: 0.25rem; margin: 0; padding: 0; list-style: none; }
+  li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+  li.done label { text-decoration: line-through; opacity: 0.6; }
+  li button { padding: 0 0.5rem; border-color: transparent; }
+  p { margin: 0; font-size: 0.9rem; color: var(--muted, #5d6375); }
+</style>
+<todo-list>
+  <form onsubmit.prevent={add}>
+    <input value={draft} oninput={(event) => (draft = event.target.value)} aria-label="New item" placeholder="Something to do">
+    <button>Add</button>
+  </form>
+  <ul zb-if={items.length}>
+    <zb-each items={items} as="item" key={item.id}>
+      <li class:done={item.done}>
+        <label><input type="checkbox" checked={item.done} onchange={() => (item.done = !item.done)}> {item.text}</label>
+        <button type="button" aria-label="Remove {item.text}" onclick={() => items.splice(items.indexOf(item), 1)}>×</button>
+      </li>
+    </zb-each>
+  </ul>
+  <p zb-else>Nothing to do. Add something.</p>
+  <p class="tl-left">{left} left</p>
+</todo-list>

@@ -3,19 +3,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FRAMEWORKS, create, parse } from '../index.js';
 
 const work = () => mkdtempSync(join(tmpdir(), 'create-zubra-'));
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+// The starter page's components: the counter, the examples, and the page's own three.
+const COMPONENTS = ['hello-counter', 'todo-list', 'rating-input', 'async-tip', 'example-card', 'zubra-examples', 'zubra-welcome'];
 
 for (const framework of Object.keys(FRAMEWORKS)) {
   test(`${framework}: an app with the component, the plugin, a test, and no placeholders left`, () => {
     const dir = join(work(), 'My App');
     const files = create(dir, framework);
-    for (const file of ['.gitignore', 'README.md', 'package.json', 'src/components/hello-counter.zb', 'test/app.test.js', 'test/build.js', 'AGENTS.md', 'skills/zubra-component/SKILL.md', 'skills/zubra-consume/SKILL.md']) {
+    for (const file of ['.gitignore', 'README.md', 'package.json', 'src/style.css', ...COMPONENTS.map((name) => `src/components/${name}.zb`), 'test/app.test.js', 'test/build.js', 'AGENTS.md', 'skills/zubra-component/SKILL.md', 'skills/zubra-consume/SKILL.md']) {
       assert.ok(files.includes(file), `${file} in ${files.join(', ')}`);
     }
     for (const file of files) {
@@ -30,6 +32,20 @@ for (const framework of Object.keys(FRAMEWORKS)) {
     assert.match(readFileSync(join(dir, config), 'utf8'), /@zubra\/unplugin\/(vite|astro)/);
     assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /^# My App/);
     assert.match(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), /^# My App/);
+    // The starter page: the welcome, the counter the page binds to, and the examples, in the
+    // framework's own entry (as tags, or as the components React, Vue and Astro import).
+    const page = files.filter((file) => /^(index\.html|src\/(App\.(jsx|vue|svelte)|app\.ts|main\.js|pages\/index\.astro))$/.test(file)).map((file) => readFileSync(join(dir, file), 'utf8')).join('\n');
+    for (const tag of ['zubra-welcome', 'hello-counter', 'zubra-examples']) {
+      const component = tag.replace(/(^|-)(\w)/g, (_, _dash, letter) => letter.toUpperCase());
+      assert.match(page, new RegExp(`<(${tag}|${component})[\\s>/]`), `${tag} in the ${framework} page`);
+    }
+    assert.match(page, /heading="My App"/);
+    // What the docs in the app say is there, is there: every component is in both tables.
+    for (const doc of ['AGENTS.md', 'README.md']) {
+      const text = readFileSync(join(dir, doc), 'utf8');
+      for (const name of COMPONENTS) assert.ok(text.includes(`\`${name}.zb\``), `${doc} mentions ${name}.zb`);
+      assert.doesNotMatch(text, /No framework/);
+    }
   });
 }
 
@@ -82,6 +98,7 @@ test('command line: arguments, and a run without a terminal', () => {
   const out = execFileSync(process.execPath, [new URL('../index.js', import.meta.url).pathname, 'site', '--framework', 'svelte'], { cwd, encoding: 'utf8' });
   assert.match(out, /A Zubra app \(Svelte\) is in site/);
   assert.match(out, /cd site\n {2}npm install/);
+  assert.match(out, /made of the examples in src\/components\//);
   assert.match(readFileSync(join(cwd, 'site/src/App.svelte'), 'utf8'), /<hello-counter/);
   // No terminal and no framework: plain HTML, in zb-app.
   execFileSync(process.execPath, [new URL('../index.js', import.meta.url).pathname], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -90,4 +107,10 @@ test('command line: arguments, and a run without a terminal', () => {
   const typed = execFileSync(process.execPath, [new URL('../index.js', import.meta.url).pathname, 'typed', '--framework', 'vanilla', '--typescript'], { cwd, encoding: 'utf8' });
   assert.match(typed, /A Zubra app \(No framework \(plain HTML and JavaScript\), TypeScript\) is in typed/);
   assert.match(typed, /npm run check {3}type-checks the components/);
+});
+
+test("no starter component has a registry component's name, so `zubra add` never finds its file taken", () => {
+  for (const name of COMPONENTS) {
+    assert.ok(!existsSync(new URL(`../../registry/components/${name}.zb`, import.meta.url)), `registry/components/${name}.zb exists: \`npx zubra add ${name}\` would refuse in a new app`);
+  }
 });

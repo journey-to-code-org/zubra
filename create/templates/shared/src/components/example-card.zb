@@ -1,0 +1,32 @@
+<!--
+  The frame around each example on the starter page, and itself the example of slots: what a
+  page puts inside the element goes where the template has a `<zb-slot>`.
+
+  - `<zb-slot>` is the default slot; its own content shows while nothing is given.
+  - `<zb-slot name="note">` takes children with `slot="note"`.
+  - `hasSlot('note')` says whether any were given, so the footer is left out when there are none.
+-->
+<script>
+  import { hasSlot } from '@zubra/runtime'
+
+  const hasNote = hasSlot('note')
+</script>
+<style>
+  :host { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; padding: 1.1rem 1.2rem; border: 1px solid var(--line, #dfe2ea); border-radius: 0.9rem; background: var(--panel, #fff); text-align: left; }
+  header { display: grid; gap: 0.3rem; }
+  h3 { margin: 0; font-size: 1.05rem; }
+  .xc-file, .xc-code { font: 0.8rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .xc-file { color: var(--accent, #4f5df5); overflow-wrap: anywhere; }
+  .xc-demo { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: start; gap: 0.6rem; }
+  .xc-code { margin: 0; padding: 0.7rem 0.8rem; border-radius: 0.5rem; background: var(--code, #e9ebf3); color: var(--text, #1d2130); overflow-x: auto; white-space: pre; }
+  footer { font-size: 0.9rem; color: var(--muted, #5d6375); }
+</style>
+<example-card heading="" file="" code="">
+  <header>
+    <h3>{heading}</h3>
+    <code class="xc-file" zb-if={file}>{file}</code>
+  </header>
+  <div class="xc-demo"><zb-slot><p>Put anything here.</p></zb-slot></div>
+  <pre class="xc-code" zb-if={code}>{code}</pre>
+  <footer zb-if={hasNote}><zb-slot name="note"></zb-slot></footer>
+</example-card>
