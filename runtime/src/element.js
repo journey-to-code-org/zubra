@@ -1362,6 +1362,13 @@ function defineElement(tag, definition) {
             console.warn(lost
               ? `zubra: <${tag}>'s hydration markers (<?zb [?>, <?zb ]?>, …) are missing, so it's rendered fresh. A sanitizer or a fragment parser removed them; keep processing instructions (and comments, for markup from a 4.x server)${see('hydration-markers')}`
               : `zubra: <${tag}>'s markup doesn't match its template; rendering it fresh${see('server-rendering-and-hydration')}`);
+            // Where they part ways, in a second warning, from a module loaded only now. The markup
+            // is moved out to be read then (it is about to be replaced).
+            if (!lost) {
+              const was = document.createDocumentFragment();
+              was.append(...root.childNodes);
+              import('./mismatch.js').then((module) => module.report(tag, was, componentTemplate.content, parts, [positions, walk, placed, isOpen, isClose, marker, matchingClose]), () => {});
+            }
             // @dev-end
           }
           // Find and bind the parts before inserting (see mountBlock).

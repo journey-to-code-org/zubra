@@ -17,7 +17,7 @@ const from = join(root, 'src');
 const to = join(root, 'dist/production');
 const check = process.argv.includes('--check');
 // Modules only development imports (from `// @dev` blocks): not in the production build at all.
-const DEV_ONLY = ['devhook.js', 'devtools.js'];
+const DEV_ONLY = ['devhook.js', 'devtools.js', 'mismatch.js'];
 
 // Fields of objects that never leave their module, by module: the production build gives them
 // short names (esbuild's `mangleProps`), where minifying alone keeps every property's name. A

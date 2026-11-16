@@ -1,0 +1,14 @@
+<!-- An element at the top, a text marker and a zb-if region inside a <p>, and bindings in a form. -->
+<script>
+  const out = left !== null && left <= 0
+  const words = left === null ? '' : left > 0 ? `${left} left` : 'Sold out'
+</script>
+<menu-item name="" left={null}>
+  <h3>{name}</h3>
+  <p class="meta">{name} today<span zb-if={words}> · {words}</span></p>
+  <form method="post">
+    <label>How many <input type="number" name="qty" value="1" disabled={out}></label>
+    <input type="hidden" name="item" value={name}>
+    <button type="submit" disabled={out}>Add</button>
+  </form>
+</menu-item>

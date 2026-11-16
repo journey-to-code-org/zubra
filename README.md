@@ -491,7 +491,7 @@ The host also gets the custom state `hydrated`, for CSS: `:host(:state(hydrated)
 
 `docs/server-rendering.md` is the plain account: what renders where, what works without JavaScript, and the gaps that remain.
 
-The HTML output is the server rendering: static, deterministic, escaped markup. Props that differ from their defaults are written onto the host (JSON for arrays and objects). When the element starts in the browser, it first checks that the markup has its template's shape. If it does, it binds to the existing DOM: nothing is re-rendered, and a part writes only when its value differs. Markup that doesn't match is replaced, with a warning.
+The HTML output is the server rendering: static, deterministic, escaped markup. Props that differ from their defaults are written onto the host (JSON for arrays and objects). When the element starts in the browser, it first checks that the markup has its template's shape. If it does, it binds to the existing DOM: nothing is re-rendered, and a part writes only when its value differs. Markup that doesn't match is replaced, with a warning. "Shape" is which elements and markers are where, not what they say: a different attribute value or text is just written. So in the development build a second warning follows and says where the shapes part ways: the two top-level shapes (`where <menu-item>'s markup doesn't match its template: the template's top level is <h3> <p> <form>, and the markup's is <p> <form>`), or the first binding whose place holds something else (`the template expects a zb-if region in <menu-item> › <p>, at position 2, and the markup has <span>`). Positions count elements and markers, as the compiled paths do.
 
 ### Hydration markers
 
