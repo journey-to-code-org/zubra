@@ -61,6 +61,11 @@ test('the skills npm create zubra ships are the ones here', () => {
     assert.ok(existsSync(shipped), `${shipped} (run scripts/sync-skills.sh)`);
     assert.equal(readFileSync(shipped, 'utf8'), read(skill), `${skill}: create/templates/shared copy is stale (run scripts/sync-skills.sh)`);
   }
+  // The server-rendered app's own: the server skill.
+  {
+    const shipped = join(repo, 'create/templates/server/skills/zubra-server/SKILL.md');
+    assert.equal(readFileSync(shipped, 'utf8'), read('zubra-server'), 'zubra-server: create/templates/server copy is stale (run scripts/sync-skills.sh)');
+  }
 });
 
 test('AGENTS.md names every skill', () => {

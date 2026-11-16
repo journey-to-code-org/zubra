@@ -1,0 +1,19 @@
+{
+  "name": "{{name}}",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "NODE_ENV=production node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@zubra/actions": "^{{version}}",
+    "@zubra/compiler": "^{{version}}",
+    "@zubra/runtime": "^{{version}}",
+    "@zubra/server": "^{{version}}"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}

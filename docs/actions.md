@@ -125,6 +125,35 @@ The adapters do this for you: `c.get('zubraAction')` (Hono), `res.locals.zubraAc
 
 Only that page reads it: `result()` on any other path answers `null` and leaves the cookie for the page it's meant for. On HTTPS the cookie is `__Host-zb_result` and `Secure`, so a sibling subdomain or a plain-HTTP response can't plant a result of its own; on plain HTTP (local development) it's `__zb_result`. Over HTTPS only `__Host-zb_result` is read. Behind a proxy that ends TLS, requests reach the app as http: pass `createActions({ secure: true })` so the cookie is still `__Host-` and `Secure`. With no `Referer` (a browser setting, or a client that sends none) the post goes back to `/`.
 
+## Showing what changed
+
+A function's answer goes to the component, and the page shows whatever the component does with it. Nothing re-renders the page after a post made with JavaScript, so a list that should grow is state the component holds: it starts from the prop the server rendered with, and takes the function's answer.
+
+```html
+<script>
+  import { from } from '@zubra/runtime'
+  import { addNote } from '../notes.js'
+
+  let list = from(saved)
+
+  export async function add(formData) {
+    'use server'
+    return { notes: addNote(String(formData.get('text'))) }
+  }
+</script>
+<guest-book saved={[]}>
+  <form action={add} onaction={(event) => (list = event.detail.value.notes)}>
+    <input name="text">
+    <button>Sign</button>
+  </form>
+  <ul>
+    <zb-each items={list} as="note"><li>{note}</li></zb-each>
+  </ul>
+</guest-book>
+```
+
+Without JavaScript the same form posts, the server redirects back, and the page is rendered again with the new `saved`. `npm create zubra@latest my-app -- --framework server` writes this component in a working app, with the server around it and a test that uses it both ways.
+
 ## Security
 
 - **Cross-site posts are refused** (by `Sec-Fetch-Site`, or `Origin` when that's missing), so a form on another site can't call an action with your users' cookies. Allow more origins with `origins: [...]`.

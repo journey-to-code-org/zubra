@@ -13,7 +13,8 @@ const { version } = JSON.parse(readFileSync(new URL('../package.json', import.me
 // The starter page's components: the counter, the examples, and the page's own three.
 const COMPONENTS = ['hello-counter', 'todo-list', 'rating-input', 'async-tip', 'example-card', 'zubra-examples', 'zubra-welcome'];
 
-for (const framework of Object.keys(FRAMEWORKS)) {
+// (The server app has no plugin and no build: its own test is below.)
+for (const framework of Object.keys(FRAMEWORKS).filter((framework) => framework !== 'server')) {
   test(`${framework}: an app with the component, the plugin, a test, and no placeholders left`, () => {
     const dir = join(work(), 'My App');
     const files = create(dir, framework);
@@ -34,12 +35,12 @@ for (const framework of Object.keys(FRAMEWORKS)) {
     assert.match(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), /^# My App/);
     // The starter page: the welcome, the counter the page binds to, and the examples, in the
     // framework's own entry (as tags, or as the components React, Vue and Astro import).
-    const page = files.filter((file) => /^(index\.html|src\/(App\.(jsx|vue|svelte)|app\.ts|main\.js|pages\/index\.astro))$/.test(file)).map((file) => readFileSync(join(dir, file), 'utf8')).join('\n');
+    const page = files.filter((file) => /^(index\.html|server\.js|src\/(App\.(jsx|vue|svelte)|app\.ts|main\.js|pages\/index\.astro))$/.test(file)).map((file) => readFileSync(join(dir, file), 'utf8')).join('\n');
     for (const tag of ['zubra-welcome', 'hello-counter', 'zubra-examples']) {
       const component = tag.replace(/(^|-)(\w)/g, (_, _dash, letter) => letter.toUpperCase());
-      assert.match(page, new RegExp(`<(${tag}|${component})[\\s>/]`), `${tag} in the ${framework} page`);
+      assert.match(page, new RegExp(`<(${tag}|${component})[\\s>/]|page\\.render\\('${tag}'`), `${tag} in the ${framework} page`);
     }
-    assert.match(page, /heading="My App"/);
+    assert.match(page, /heading(="|: ')My App/);
     // What the docs in the app say is there, is there: every component is in both tables.
     for (const doc of ['AGENTS.md', 'README.md']) {
       const text = readFileSync(join(dir, doc), 'utf8');
@@ -113,4 +114,38 @@ test("no starter component has a registry component's name, so `zubra add` never
   for (const name of COMPONENTS) {
     assert.ok(!existsSync(new URL(`../../registry/components/${name}.zb`, import.meta.url)), `registry/components/${name}.zb exists: \`npx zubra add ${name}\` would refuse in a new app`);
   }
+});
+
+test('the server app: a Node server, a form with a server function, no bundler, and its own docs', () => {
+  const dir = join(work(), 'shop');
+  const files = create(dir, 'server', { name: 'My Shop' });
+  for (const file of ['server.js', 'src/notes.js', 'src/components/guest-book.zb', 'skills/zubra-server/SKILL.md', 'test/app.test.js']) assert.ok(files.includes(file), file);
+  // No build step: nothing of Vite's, and not the shared test's build helper.
+  assert.deepEqual(files.filter((file) => /vite|index\.html|test\/build\.js/.test(file)), []);
+  const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+  assert.deepEqual(Object.keys(manifest.dependencies).sort(), ['@zubra/actions', '@zubra/compiler', '@zubra/runtime', '@zubra/server']);
+  for (const name of Object.keys(manifest.dependencies)) assert.equal(manifest.dependencies[name], `^${version}`);
+  assert.deepEqual(Object.keys(manifest.devDependencies), ['playwright']);
+  assert.equal(manifest.scripts.dev, 'node --watch server.js');
+  const server = readFileSync(join(dir, 'server.js'), 'utf8');
+  assert.match(server, /heading: 'My Shop'/);
+  assert.match(server, /<title>My Shop<\/title>/);
+  // The handlers in the order that works, and one page object that renders and finishes.
+  assert.ok(server.indexOf('actions.handle(req, res)') < server.indexOf('zubra.handle(req, res)'));
+  assert.equal(server.match(/= zubra\.page\(\)/g).length, 1);
+  for (const file of files) assert.doesNotMatch(readFileSync(join(dir, file), 'utf8'), /\{\{(name|title|version|framework)\}\}/, file);
+  // Its docs are its own: the server, the guest book, and nothing about a dev server's hot reload.
+  for (const doc of ['AGENTS.md', 'README.md']) {
+    const text = readFileSync(join(dir, doc), 'utf8');
+    for (const name of [...COMPONENTS, 'guest-book']) assert.ok(text.includes(`\`${name}.zb\``), `${doc} mentions ${name}.zb`);
+    assert.match(text, /server\.js/);
+    assert.doesNotMatch(text, /hot reload|vite|\{\{/i);
+  }
+  assert.match(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), /skills\/zubra-server\/SKILL\.md/);
+  // With --typescript: the check script, and the docs say so.
+  const typed = join(work(), 'typed-shop');
+  create(typed, 'server', { typescript: true });
+  assert.equal(JSON.parse(readFileSync(join(typed, 'package.json'), 'utf8')).scripts.check, 'zubra check --types src');
+  assert.match(readFileSync(join(typed, 'README.md'), 'utf8'), /^npm run check {3}# type-checks the components[^\n]*\nnpm test {8}# starts the server/m);
+  assert.match(readFileSync(join(typed, 'AGENTS.md'), 'utf8'), /`npm run check` type-checks every component/);
 });

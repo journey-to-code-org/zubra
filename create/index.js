@@ -7,7 +7,9 @@
 //
 // The app has a starter page made of small example components (src/components/: a counter, a
 // list, a form control, async data, slots), the plugin wired up, typings, an AGENTS.md and a
-// browser test (`npm test`). With --typescript the counter is `<script lang="ts">`, and
+// browser test (`npm test`). `--framework server` is a Node server instead of a bundler's app:
+// pages rendered by @zubra/server and a form's function run by @zubra/actions, with no build
+// step. With --typescript the counter is `<script lang="ts">`, and
 // `npm run check` type-checks it (`zubra check --types`). Nothing is installed: the last lines
 // say what to run.
 import { cpSync, existsSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
@@ -25,6 +27,7 @@ export const FRAMEWORKS = {
   lit: 'Lit',
   angular: 'Angular',
   astro: 'Astro (server-rendered pages)',
+  server: 'Server-rendered (a Node server with forms, no bundler)',
 };
 
 const templates = fileURLToPath(new URL('./templates/', import.meta.url));
@@ -41,7 +44,8 @@ export function create(dir, framework, { name = basename(resolve(dir)), typescri
   if (!(framework in FRAMEWORKS)) throw new Error(`create-zubra: unknown framework "${framework}"; one of ${Object.keys(FRAMEWORKS).join(', ')}`);
   const target = resolve(dir);
   if (existsSync(target) && readdirSync(target).length) throw new Error(`create-zubra: ${dir} isn't empty`);
-  cpSync(join(templates, 'shared'), target, { recursive: true });
+  // (The server app has no build step, so not the shared test's build helper.)
+  cpSync(join(templates, 'shared'), target, { recursive: true, filter: (from) => !(framework === 'server' && from.endsWith(join('test', 'build.js'))) });
   cpSync(join(templates, framework), target, { recursive: true });
   if (typescript) {
     // The component in TypeScript, and a tsconfig.json unless the framework has its own.
@@ -54,7 +58,7 @@ export function create(dir, framework, { name = basename(resolve(dir)), typescri
     // And the README and AGENTS.md say so.
     const readme = join(target, 'README.md');
     writeFileSync(readme, readFileSync(readme, 'utf8')
-      .replace('npm test        # builds', 'npm run check   # type-checks the components: scripts, templates, props and events\nnpm test        # builds')
+      .replace(/^npm test {8}# /m, 'npm run check   # type-checks the components: scripts, templates, props and events\n$&')
       .replace('- `src/components/` holds the components: one `.zb` file each, with its script, styles and template.', '- `src/components/` holds the components: one `.zb` file each, with its script, styles and template. `hello-counter.zb` is in TypeScript (`<script lang="ts">`, with an `interface Props`); the others are plain JavaScript, and a file becomes TypeScript when you add `lang="ts"` to it. `npm run check` is `zubra check --types`: your TypeScript checks each script, every `{…}` of its template, and the props and events of the components it uses, in both kinds of file; run it in CI.'));
     const agents = join(target, 'AGENTS.md');
     writeFileSync(agents, readFileSync(agents, 'utf8').replace('`npm run dev` runs the app', '`npm run check` type-checks every component (after a change, it should report nothing); `npm run dev` runs the app'));
@@ -123,7 +127,7 @@ async function main(argv) {
     create(dir, framework, { typescript });
     const cd = relative(process.cwd(), resolve(dir)) || '.';
     const check = typescript ? '  npm run check   type-checks the components (zubra check --types)\n' : '';
-    console.log(`\nA Zubra app (${FRAMEWORKS[framework]}${typescript ? ', TypeScript' : ''}) is in ${cd}. Next:\n\n${cd === '.' ? '' : `  cd ${cd}\n`}  npm install\n  npm run dev     edit src/components/hello-counter.zb: it updates in place\n  npm test        builds the app and clicks through it in Chromium\n${check}\nThe page it opens is made of the examples in src/components/ (a list, a form control, async data, slots):\nread them there, and AGENTS.md for how it all fits together.\n`);
+    console.log(`\nA Zubra app (${FRAMEWORKS[framework]}${typescript ? ', TypeScript' : ''}) is in ${cd}. Next:\n\n${cd === '.' ? '' : `  cd ${cd}\n`}  npm install\n${framework === 'server' ? '  npm run dev     http://localhost:3000; edit src/components/hello-counter.zb and reload\n  npm test        starts the server and uses the page in Chromium, with JavaScript and without\n' : '  npm run dev     edit src/components/hello-counter.zb: it updates in place\n  npm test        builds the app and clicks through it in Chromium\n'}${check}\nThe page it opens is made of the examples in src/components/ (a list, a form control, async data, slots):\nread them there, and AGENTS.md for how it all fits together.\n`);
   } finally {
     prompt?.close();
   }

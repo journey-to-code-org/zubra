@@ -1,0 +1,57 @@
+<!--
+  A guest book: a form that runs a function on the server.
+
+  - `add` is marked 'use server', so it stays on the server: the browser never gets its code or
+    what it imports (`../notes.js`). The form's `action` is the function.
+  - With JavaScript the form posts in the background and `onaction` gets what the function
+    returned. Without it the form posts normally, the server redirects back, and the page is
+    rendered with the new list: the same component, both ways.
+  - `let list = from(saved)` starts from the prop the server rendered with, and follows the
+    component's own assignment after a post.
+  @prop saved - The notes so far, from the server.
+  @prop said - What to say on load (the function's error, when the form was posted without JavaScript).
+-->
+<script>
+  import { from } from '@zubra/runtime'
+  import { addNote } from '../notes.js'
+
+  let list = from(saved)
+  let message = ''
+
+  export async function add(formData) {
+    'use server'
+    const text = String(formData.get('text') ?? '').trim()
+    if (!text) return { error: 'Write something first.' }
+    if (text.length > 80) return { error: 'Keep it under 80 characters.' }
+    return { notes: [...addNote(text)] }
+  }
+
+  function added(event) {
+    const { error, notes } = event.detail.value ?? {}
+    message = error ?? ''
+    if (notes) list = notes
+  }
+</script>
+<style>
+  :host { display: grid; gap: 0.6rem; width: min(100%, 26rem); text-align: left; }
+  h2 { margin: 0; font-size: 1.1rem; }
+  form { display: flex; gap: 0.4rem; }
+  input { flex: 1; min-width: 0; padding: 0.4rem 0.6rem; border: 1px solid var(--line, #c9cdd6); border-radius: 0.4rem; font: inherit; color: inherit; background: transparent; }
+  button { padding: 0.4rem 0.8rem; border: 1px solid var(--line, #c9cdd6); border-radius: 0.4rem; background: transparent; font: inherit; color: inherit; cursor: pointer; }
+  button:hover { border-color: var(--accent, #4f5df5); }
+  ul { display: grid; gap: 0.25rem; margin: 0; padding-left: 1.2rem; }
+  .gb-said { margin: 0; min-height: 1.5em; color: #c2410c; }
+</style>
+<guest-book saved={[]} said="">
+  <h2>Guest book</h2>
+  <form action={add} onaction={added}>
+    <input name="text" aria-label="Your note" placeholder="Leave a note">
+    <button>Sign</button>
+  </form>
+  <p class="gb-said" role="status">{message || said}</p>
+  <ul>
+    <zb-each items={list} as="note">
+      <li>{note}</li>
+    </zb-each>
+  </ul>
+</guest-book>

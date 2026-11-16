@@ -1,0 +1,43 @@
+---
+name: zubra-server
+description: Render Zubra components on a server. Use when adding components to an Express, Fastify, Hono, Flask, Rails, Eleventy or other server-rendered page, when a meta-framework (Nuxt, SvelteKit, React Router, SolidStart, Next.js) needs the elements' markup before JavaScript, or when a page must work without JavaScript.
+---
+
+Zubra renders components without a DOM on the server: the compiler emits the HTML, the element hydrates it in place. Which path depends on the server.
+
+## Steps
+
+1. **Pick the path** from the table. Done when the server's HTML contains the component's rendered markup (not an empty host tag), the browser logs no hydration warning, and the page's forms submit with JavaScript off.
+2. **Keep components in the server's subset** for what must be in the HTML: props, arithmetic, ternaries, template literals, arrow functions defined in the script (not `function` declarations), string/array methods, `Math` (not `random`), `Object.keys/values/entries`. `Date`, `Intl`, `window`, `navigator` are browser-only; `zubra check --server <file>` names each such part. Move them into `onMount` or behind `hydrated()`.
+3. **Inside a hydrating framework, an element given framework children must be `shadow`**, and so must every component under SvelteKit; a light-DOM element with no framework children works under Next.js, React Router, Nuxt and SolidStart (the wrappers, or `injectShadowRoots` with `lightDom: true` for Solid, render its content and keep the framework out of the host).
+
+| Server | Path |
+|---|---|
+| Express, Fastify, Hono, Eleventy, any Node template engine | `@zubra/server`: `createZubra({ components })`, then per request `page.render(tag, props, slots)` (slots are HTML, which may be other `page.render()` output) and `page.finish(html)`, which adds the components' CSS and modules. `zubra.handle(req, res)` or `zubra.fetch(request)` serves `/_zubra/…`. Adapters: `@zubra/server/express`, `/fastify`, `/hono`. `page.provide({ module: './theme.js', export: 'theme' }, value)` gives a context to every component the page renders after it (server HTML and the elements' starting value). `createZubra({ clientModules: 'needed' })` ships no module for components whose server HTML is complete (`zubra check --client` lists which, and why), when the page's own scripts never change their props. A render that leaves part of a component's HTML for the browser (something the server can't compute) is warned about once per place; `gaps: 'ignore'` when that's intended. Under a Content-Security-Policy without `'unsafe-inline'`: `zubra.page({ nonce })` where each response has a nonce, or `createZubra({ inline: false })` for a static site (stylesheet links, module scripts by `src`, no import map; `writeAssets()` writes the stylesheets too). |
+| Node without a framework, Bun, scripts | `render(path, { props, slots })` from `@zubra/compiler` returns `{ html, css }`. |
+| Flask, Rails, Go, PHP, anything that isn't Node | One long-lived `zubra serve` process; a JSON line per render (the request format is in the `zubra-cli` skill). Serve the compiled modules and `@zubra/runtime` statically. `examples/backends/flask-garden/` is the pattern. |
+| Astro | `@zubra/unplugin/astro`; components render on the server and `client:load` hydrates. |
+| Nuxt, React Router, Next.js | The React and Vue wrappers render each element's content into its host on the server (light or shadow DOM) for elements with no framework children, and leave it alone while hydrating; nothing to add. Next.js needs `@zubra/unplugin/loader` with a server rule (`condition: { not: 'browser' }, options: { server: true }`) and `serverExternalPackages: ['@zubra/compiler']`. Elements given framework children must be `shadow` and go through `injectShadowRoots` (below), or draw in the browser under Next.js. |
+| SvelteKit, SolidStart | The framework renders only the host tag. Pass the page's HTML through `zubra.injectShadowRoots(html)` (or `injectShadowRootsStream()`) from `@zubra/server` in the framework's HTML hook: SvelteKit `handle`'s `transformPageChunk`, a middleware in SolidStart (with `{ lightDom: true }`: Solid tolerates light-DOM children). Components under SvelteKit must be `shadow`. The plugin writes `zb-props` on each host so the element starts with its props. |
+
+## Streaming slow data
+
+Give a prop as a promise: `page.render('reviews', { items: fetchReviews() })`. The component's `<zb-await value={items}>` renders its pending content; `page.stream(html).pipe(res)` (Express/Node) or `return page.streamResponse(html)` (Hono) sends the page, then the resolved region when the promise settles, hydrated by the element. Without JavaScript the pending content stays, so stream only what the page can show late.
+
+## Without JavaScript
+
+- Light-DOM components keep native inputs, links and forms in the page, so they work as they are.
+- `<select value>` and `<textarea value>` render the chosen value.
+- Under the bridge, a `form-associated` component with a `name` gets a hidden input with its server value, so the form submits; the user can't edit that value before hydration.
+- A form whose `action` is a `'use server'` function posts to `/_zb/action/<tag>/<name>`. Serve those with `@zubra/actions` (`await createActions({ components })`, then `actions.handle(req, res)` or `actions.fetch(request)`, or its Hono/Express/Fastify adapter, mounted before body parsers), and put `actions.script()` on the page. Without JavaScript the post redirects back and `actions.result(req, setHeader)` gives the page the result once; with it, the form fires `action`. `docs/actions.md` has the contract.
+- In an app with no host framework, `@zubra/router` serves components as pages: `'use route /farms/:id'` at the top of a script, an exported `load({ params, context })` that runs on the server and returns the props (or `notFound()`, `redirect(to)`, `show(component, props)`), `app.zb` as the layout around every page and `'use layout /farm'` for a section, the page in the layout's `<zb-slot>`. `const router = await createRouter({ zubra, components })`, then `await router.handle(req, res)` after `zubra.handle`, and `router.notFound(req, res)` last. `docs/router.md` has the rules.
+- `'use collection'` components need `@zubra/sync` installed; `@zubra/server` then serves it and maps it in the page by itself (`@zubra/sync` and `@zubra/sync/connect`). Other packages components import go in `createZubra({ imports })`. `createSyncServer({ authorize })` from `@zubra/sync/server` (`handle(req, res)` on Node) keeps the shared log. Without `authorize`, pages may read but every write from a page is refused (403); say who may change what, or `authorize: allowAnyone` for a page everyone may edit. `examples/standup` shows the whole setup.
+- `hydrated()` and `:state(hydrated)` show a fallback (an Apply button) only until the element is live.
+
+## Hydration markers
+
+The server HTML carries processing-instruction markers (`<?zb [?>`, `<?zb ]?>`, `<?zb ?>`). htmx and the HTML parser keep them; so do html-minifier-terser (with `removeComments`) and @minify-html/node, with nothing to configure. Two minifiers strip them by default and keep them with one option: @swc/html with `preserveComments: [ZUBRA_MARKER_PATTERN]`, htmlnano with the posthtml parser option `directives: [ZUBRA_MARKER_DIRECTIVE]` (both from `@zubra/compiler`). Sanitizers (DOMPurify, sanitize-html) drop them; the element then restores them by structure (slower, one warning for `zb-await` and projected content). `docs/server-rendering.md` has the measured table. Markup from a 4.x server has comment markers (`<!--[-->`) instead: keep those with `ignoreCustomComments: [ZUBRA_MARKER_COMMENT]` (from `@zubra/compiler`) in html-minifier-terser.
+
+## Reference
+
+https://github.com/journey-to-code-org/zubra/blob/main/docs/server-rendering.md (the honest account, with the gaps), https://github.com/journey-to-code-org/zubra#server-rendering-and-hydration, and in the repository `server/src/index.js`, `examples/helpdesk/`, `examples/meta/README.md`.

@@ -47,7 +47,7 @@ const actions = await createActions({ components: 'components' });
 if (await actions.handle(req, res)) return;
 ```
 
-Hono, Express and Fastify have adapters. Put `actions.script()` on the page, and a submit becomes a `fetch`: the form gets `aria-busy` while it's in flight, then the `action` event with the function's return value, which is what `onaction` above reads. Without JavaScript, the browser's own post goes to the same URL and comes back to the page with a `303`, and the server reads the result once, with `actions.result(request)`.
+The whole server in one file, with the page and a form like this one, is what `npm create zubra@latest my-app -- --framework server` writes ([the starter app](starter-app.md#the-server-rendered-app)). Hono, Express and Fastify have adapters. Put `actions.script()` on the page, and a submit becomes a `fetch`: the form gets `aria-busy` while it's in flight, then the `action` event with the function's return value, which is what `onaction` above reads. Without JavaScript, the browser's own post goes to the same URL and comes back to the page with a `303`, and the server reads the result once, with `actions.result(request)`.
 
 ## What to keep in mind
 

@@ -7,4 +7,7 @@ for skill in zubra-component zubra-consume; do
   mkdir -p "create/templates/shared/skills/$skill"
   cp "skills/$skill/SKILL.md" "create/templates/shared/skills/$skill/SKILL.md"
 done
+# The server-rendered app also gets the server skill.
+mkdir -p create/templates/server/skills/zubra-server
+cp skills/zubra-server/SKILL.md create/templates/server/skills/zubra-server/SKILL.md
 echo "synced"
