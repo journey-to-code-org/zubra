@@ -65,9 +65,16 @@ test('hydrating server markup is cheaper than rendering it fresh, and keeps ever
   writeFileSync(props, JSON.stringify({ rows: rows(ROWS) }));
   const html = compiler(join(here, 'fixtures/bench.zb'), '--props', props);
 
+  // The clock starts when <zb-bench> is defined, not before its modules load: fetching and
+  // parsing them took as long as the work being compared, and varied by more than the margin
+  // between the two on a busy CI machine (hydrating came out 1.55 times rendering fresh once,
+  // 0.6 times another). From `define` on, both do what's being measured: upgrade the element,
+  // then hydrate the server's rows or render them, and lay them out.
+  const clock = `const define = customElements.define.bind(customElements);
+    customElements.define = (name, ...rest) => { if (name === 'zb-bench') window.start = performance.now(); return define(name, ...rest); };`;
   const measure = async (body, setup) => {
     const { page, messages } = await open(body, {
-      beforeModules: `window.firstRow = document.querySelector('tr'); window.start = performance.now(); ${setup}`,
+      beforeModules: `window.firstRow = document.querySelector('tr'); ${clock} ${setup}`,
       modules: ['bench'],
     });
     const result = await page.evaluate(async () => {
@@ -91,7 +98,7 @@ test('hydrating server markup is cheaper than rendering it fresh, and keeps ever
   const best = (runs) => runs.reduce((a, b) => (a.ms <= b.ms ? a : b));
   const hydrated = best(hydrations);
   const fresh = best(renders);
-  t.diagnostic(`hydrate ${hydrated.ms.toFixed(1)} ms, fresh render ${fresh.ms.toFixed(1)} ms (${ROWS} rows, includes defining the element)`);
+  t.diagnostic(`hydrate ${hydrated.ms.toFixed(1)} ms, fresh render ${fresh.ms.toFixed(1)} ms (${ROWS} rows, from defining the element)`);
   assert.equal(hydrated.rows, ROWS);
   assert.equal(fresh.rows, ROWS);
   assert.equal(hydrated.kept, true, 'hydration bound to the server rows instead of replacing them');
