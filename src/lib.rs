@@ -1010,8 +1010,145 @@ pub fn warnings_with(source: &str, path: &str, loader: Loader<'_>) -> Vec<Diagno
     }
     if let Ok(component) = load(source, path, Some(loader)) {
         attribute_case_warnings(&component, &component.nodes, &mut all);
+        let mut seen = Vec::new();
+        unknown_child_warnings(
+            &component,
+            &component.nodes,
+            path,
+            loader,
+            &mut seen,
+            &mut all,
+        );
     }
     all
+}
+
+/// A tag in the template that isn't an imported component's but looks like it was meant to be
+/// one. Any hyphenated tag may be someone else's custom element, so it can't be an error, and
+/// was until now nothing at all: the element stayed empty on the server and never started in
+/// the browser, with every check of its props switched off. Two cases can be told apart:
+///
+/// - a component in a file of that name beside this one (`<price-tag>` and `./price-tag.zb`),
+///   which the script doesn't import;
+/// - a tag one slip away from a component the script does import (`<need-nmae>`).
+///
+/// Once per tag. Where the loader can't read beside the file (a server that sent only what the
+/// component imports), the first isn't found, and nothing is said.
+fn unknown_child_warnings(
+    component: &ast::ComponentAst,
+    nodes: &[ast::Node],
+    path: &str,
+    loader: Loader<'_>,
+    seen: &mut Vec<String>,
+    out: &mut Vec<Diagnostic>,
+) {
+    use ast::Node;
+    for node in nodes {
+        match node {
+            Node::Element(element) => {
+                let name = element.name.as_str();
+                if name.contains('-')
+                    && !BUILT_IN_ELEMENTS.contains(&name)
+                    && !name.eq_ignore_ascii_case(&component.tag)
+                    && component.child(name).is_none()
+                    && !seen.iter().any(|tag| tag == name)
+                {
+                    seen.push(name.to_owned());
+                    let beside = [".zb", ".zb.jsx", ".zb.tsx"].into_iter().find(|extension| {
+                        let found = loader(&format!("./{name}{extension}"), path);
+                        found.is_ok_and(|(_, source)| declares(&source, name))
+                    });
+                    if let Some(extension) = beside {
+                        out.push(
+                            Diagnostic::new(
+                                element.span,
+                                format!(
+                                    "<{name}> is the component in `./{name}{extension}`, which this file doesn't import: the tag is an unknown element here, left empty on the server and never started in the browser"
+                                ),
+                            )
+                            .with_help(format!(
+                                "add `import './{name}{extension}'` to the script"
+                            )),
+                        );
+                    } else if let Some(child) = component.children.iter().find(|child| {
+                        let distance = validate::edit_distance(name, &child.ast.tag);
+                        distance == 1 || (distance == 2 && name.len().min(child.ast.tag.len()) >= 8)
+                    }) {
+                        out.push(
+                            Diagnostic::new(
+                                element.span,
+                                format!(
+                                    "<{name}> isn't a component this file imports, and is close to one that is: <{}>. As written it's an unknown element: empty on the server, and its props aren't checked",
+                                    child.ast.tag
+                                ),
+                            )
+                            .with_help(format!(
+                                "did you mean `<{}>`? (if <{name}> is another library's element, it's fine as it is)",
+                                child.ast.tag
+                            )),
+                        );
+                    }
+                }
+                unknown_child_warnings(component, &element.children, path, loader, seen, out);
+            }
+            Node::If {
+                consequent,
+                alternate,
+                ..
+            } => {
+                unknown_child_warnings(component, consequent, path, loader, seen, out);
+                unknown_child_warnings(component, alternate, path, loader, seen, out);
+            }
+            Node::Each { children, .. } | Node::Else { children, .. } => {
+                unknown_child_warnings(component, children, path, loader, seen, out)
+            }
+            Node::Slot { fallback, .. } => {
+                unknown_child_warnings(component, fallback, path, loader, seen, out)
+            }
+            Node::Await {
+                pending,
+                then,
+                catch,
+                ..
+            } => {
+                unknown_child_warnings(component, pending, path, loader, seen, out);
+                for branch in then.iter().chain(catch.iter()) {
+                    unknown_child_warnings(component, &branch.children, path, loader, seen, out);
+                }
+            }
+            Node::Settled { branch, .. } => {
+                unknown_child_warnings(component, &branch.children, path, loader, seen, out)
+            }
+            Node::Text(_) => {}
+        }
+    }
+}
+
+/// The template's own elements, which are never a component's tag.
+const BUILT_IN_ELEMENTS: &[&str] = &[
+    "zb-if",
+    "zb-else-if",
+    "zb-else",
+    "zb-each",
+    "zb-slot",
+    "zb-await",
+    "zb-pending",
+    "zb-then",
+    "zb-catch",
+    "zb-switch",
+    "zb-case",
+    "zb-window",
+    "zb-document",
+    "zb-animate",
+];
+
+/// Whether `source` is a component whose element is `<tag>` (a `.zb` file's host tag, or a JSX
+/// component, whose tag is its file's name).
+fn declares(source: &str, tag: &str) -> bool {
+    if jsx::looks_like_jsx(source) {
+        return true;
+    }
+    load(source, &format!("{tag}.zb"), None).is_ok_and(|other| other.tag.eq_ignore_ascii_case(tag))
 }
 
 fn attribute_case_warnings(

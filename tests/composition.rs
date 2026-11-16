@@ -428,6 +428,74 @@ fn a_camelcase_prop_written_in_lowercase_on_a_child_warns() {
 }
 
 #[test]
+fn a_sibling_used_without_its_import_and_a_tag_a_slip_from_an_imported_one_warn() {
+    let price = "<price-tag cents={0}><b>{cents}</b></price-tag>";
+    let name = "<need-name name><p>{name}</p></need-name>";
+    let loader = |specifier: &str, _from: &str| match specifier {
+        "./price-tag.zb" => Ok(("price-tag.zb".to_owned(), price.to_owned())),
+        "./need-name.zb" => Ok(("need-name.zb".to_owned(), name.to_owned())),
+        // A file of the tag's name that is some other element's: not this tag's component.
+        "./date-chip.zb" => Ok((
+            "date-chip.zb".to_owned(),
+            "<other-chip><i>x</i></other-chip>".to_owned(),
+        )),
+        _ => Err("not found".to_owned()),
+    };
+    let app = "<script>\n  import './need-name.zb'\n</script>\n<menu-row>\n  <price-tag cents={250}></price-tag>\n  <zb-if test={true}><price-tag cents={1}></price-tag></zb-if>\n  <need-nmae name=\"x\"></need-nmae>\n  <need-name name=\"y\"></need-name>\n  <date-chip></date-chip>\n  <sl-button>theirs</sl-button>\n  <menu-row></menu-row>\n  <zb-window onresize={() => {}}></zb-window>\n</menu-row>";
+    let warnings = zubra::warnings_with(app, "menu-row.zb", &loader);
+    let found: Vec<(usize, &str)> = warnings
+        .iter()
+        .map(|warning| (warning.span.line, warning.message.as_str()))
+        .collect();
+    // Once per tag, and nothing for the imported one, another library's, a file that isn't the
+    // tag's component, the component's own tag or the template's own elements.
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert_eq!(found[0].0, 5);
+    assert!(
+        found[0].1.contains(
+            "<price-tag> is the component in `./price-tag.zb`, which this file doesn't import"
+        ),
+        "{}",
+        found[0].1
+    );
+    assert_eq!(
+        warnings[0].help.as_deref(),
+        Some("add `import './price-tag.zb'` to the script")
+    );
+    assert_eq!(found[1].0, 7);
+    assert!(
+        found[1]
+            .1
+            .contains("<need-nmae> isn't a component this file imports, and is close to one that is: <need-name>"),
+        "{}",
+        found[1].1
+    );
+    assert!(warnings[1]
+        .help
+        .as_deref()
+        .unwrap()
+        .starts_with("did you mean `<need-name>`?"));
+    // With the import, nothing; and a short tag two edits away is somebody else's element.
+    let imported = app.replace(
+        "import './need-name.zb'",
+        "import './need-name.zb'\n  import './price-tag.zb'",
+    );
+    let after: Vec<String> = zubra::warnings_with(&imported, "menu-row.zb", &loader)
+        .into_iter()
+        .map(|warning| warning.message)
+        .collect();
+    assert_eq!(after.len(), 1, "{after:?}");
+    assert!(after[0].contains("<need-nmae>"));
+    let short = "<script>\n  import './x-tab.zb'\n</script>\n<x-app><x-tab></x-tab><x-pane></x-pane><y-tabs></y-tabs></x-app>";
+    let tab = |specifier: &str, _from: &str| {
+        (specifier == "./x-tab.zb")
+            .then(|| ("x-tab.zb".to_owned(), "<x-tab><i>t</i></x-tab>".to_owned()))
+            .ok_or_else(|| "not found".to_owned())
+    };
+    assert!(zubra::warnings_with(short, "x-app.zb", &tab).is_empty());
+}
+
+#[test]
 fn a_parent_needs_the_browser_when_a_child_does() {
     let counter = "<script>\n  let n = 0\n</script>\n<zb-counter><button onclick={() => n++}>{n}</button></zb-counter>";
     let label = "<zb-label text=\"x\"><b>{text}</b></zb-label>";

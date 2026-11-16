@@ -19,6 +19,8 @@ Import a component and use its tag:
 
 The compiler knows the child's props, so a typo (`nmae={…}`), a wrong type or a missing required prop is an error at build time, in the parent's file. Values go in as properties, so objects and arrays arrive as they are.
 
+The import is what makes the tag a component. Without it `<user-avatar>` is an unknown element, as any hyphenated tag may be someone else's: it stays empty on the server, nothing loads its module, and none of its props are checked. `zubra check` and your editor warn in the two cases that can be told from a real third-party element: a tag with a component file of that name beside this one (`./user-avatar.zb`) that isn't imported, and a tag a letter or two from a component that is (`<user-avatr>`).
+
 ## Slots
 
 Content placed inside an element goes to its slots:
