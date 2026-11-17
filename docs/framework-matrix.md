@@ -43,6 +43,25 @@ Each framework's app in `examples/frameworks/` (or `examples/meta/` for the serv
 | Plain HTML | `todo/`, `planner/` | `plugin` | elements used from a page with an import map |
 | Express, Hono, Flask, htmx, Electron, a Chrome extension | `helpdesk/`, `hypermedia/`, `backends/`, `desktop/`, `extension/` | `helpdesk`, `hypermedia`, `backends`, `clients` | server rendering from Node and from Python through `zubra serve`; streaming; a strict CSP; another site's page |
 
+## Outside this repository: open.parlor
+
+The rows above are Zubra's own apps. [open.parlor](https://github.com/journey-to-code-org/open.parlor) is a separate app that depends on the published packages, and it checks the same claim from the outside: one set of components, used from React, Vue, Svelte, Solid and Angular in different parts of one games site.
+
+Its conformance suite (`packages/conformance` there) writes one fixture six times, once in each framework and once with none, the way each framework's own documentation would have it written, and runs one set of browser checks against all six in Chrome. A check that passes in five and fails in one is a difference in Zubra. Nothing in a framework's page works around one: it is reported here as an issue and listed there as a known difference until it is fixed.
+
+| Checked there | In |
+|---|---|
+| Props, events, two-way binding, slots, named slots arriving and leaving, a dialog, a table, tabs, a component removed and brought back | all five frameworks and plain elements |
+| Each framework's own features around a component: keyed lists, context through a slot, class and style bindings, lazy loading | all five |
+| Portals (`createPortal`, `Teleport`, `Portal`) | React, Vue, Solid |
+| Transitions (`Transition`, `transition:`, `animate.leave`) | Vue, Svelte, Angular |
+| Kept while off the page (`Activity`, `KeepAlive`) | React, Vue |
+| Reactive forms through `zubraModel`: values both ways, validity and touched, `disable()`, `reset()` | Angular |
+
+[The results of its last run](https://journey-to-code-org.github.io/open.parlor/conformance/) are published with the app, with the six fixture pages to try by hand. Its first run, on 5.9, found #261, #262, #267, #268 and #269, all fixed in 5.15.0.
+
+It runs on the version of Zubra the app has installed, which can be behind this repository's `main`; the page says which.
+
 ## What isn't in a row
 
 - SvelteKit with light-DOM components (Svelte claims every node; components there are `shadow`).
