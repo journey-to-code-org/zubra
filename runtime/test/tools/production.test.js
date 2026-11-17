@@ -51,9 +51,9 @@ test('dist/bundled: the entry and what it imports are one module, and every othe
   // The core's exports, and what the other modules take from inside (an effect's root).
   assert.deepEqual(Object.keys(entry).sort(), Object.keys(prod).sort());
   for (const name of Object.keys(core)) assert.equal(entry[name], one[name], name);
-  // zb-if's, zb-each's, event modifiers' and form controls' binders are the core's (@zubra/server
-  // maps their entries to it); zb-await's, the slots' and $define are files of their own, which a
-  // page loads if it uses them.
+  // zb-if's, zb-each's, event modifiers' and form controls' binders are the core's (a server from
+  // before the split maps their entries to it; dist/split is what a current one sends);
+  // zb-await's, the slots' and $define are files of their own, which a page loads if it uses them.
   for (const name of ['$when', '$each', '$modified', '$form']) assert.equal(one[name], entry[name], name);
   for (const [name, file] of [['$define', 'legacy.js'], ['$await', 'await.js'], ['$slot', 'slots.js'], ['$slotted', 'slots.js']]) {
     assert.equal(one[name], undefined, `${name} isn't in ${BUNDLE}`);
@@ -82,6 +82,37 @@ test('dist/bundled: the entry and what it imports are one module, and every othe
   assert.deepEqual(seen, [1, 2]);
   stop();
   assert.equal(Object.keys(track).length, 1);
+});
+
+test('dist/split: the base is one module, what only some components use is beside it, and core.js is the whole', async () => {
+  const dir = join(root, 'dist/split');
+  const [whole, base, core, index, lists] = await Promise.all([import('../../dist/bundled/zubra.js'), import('../../dist/split/zubra.js'), import('../../dist/split/core.js'), import('../../dist/split/index.js'), import('../../dist/modules.js')]);
+  const { split } = lists;
+  assert.doesNotMatch(readFileSync(join(dir, BUNDLE), 'utf8'), /(?:\bfrom|\bimport)\s*["']/, 'the base imports nothing');
+  // The same script API as before the split, and as dist/bundled's: nothing gone, nothing new.
+  assert.deepEqual(Object.keys(core).sort(), Object.keys(await import('../../dist/production/core.js')).sort());
+  assert.deepEqual(Object.keys(index).sort(), Object.keys(await import('../../dist/production/index.js')).sort());
+  // Each split name is in the file the list says, not in the base, and core.js's is that one.
+  assert.equal(split.base, 'base.js');
+  assert.deepEqual([...new Set(Object.values(split.names))].sort(), ['form.js', 'modifiers.js', 'provide.js', 'resource.js', 'shadow.js']);
+  for (const [name, file] of Object.entries(split.names)) {
+    assert.equal(base[name], undefined, `${name} isn't in the base`);
+    const own = (await import(`../../dist/split/${file}`))[name];
+    assert.ok(own !== undefined, `${name} is in ${file}`);
+    assert.equal(core[name], own, name);
+    assert.equal(typeof whole[name], typeof own, `${name}: dist/bundled's zubra.js still has it, for a server from before the split`);
+  }
+  // Everything else the core has is the base's own: one copy, whichever file a module asks.
+  for (const name of Object.keys(core)) if (!split.names[name]) assert.equal(core[name], base[name], name);
+  for (const file of new Set(Object.values(split.names))) {
+    const code = readFileSync(join(dir, file), 'utf8');
+    assert.match(code, /from"\.\/zubra\.js"/, file);
+    assert.doesNotMatch(code, /from"\.\/(?:signal|effect|element|base|core)\.js"/, file);
+  }
+  // The list a server preloads from says the same.
+  assert.deepEqual(split.modules['form.js'], ['zubra.js']);
+  assert.deepEqual(split.modules['zubra.js'], []);
+  assert.deepEqual(split.modules['core.js'].sort(), ['form.js', 'modifiers.js', 'provide.js', 'resource.js', 'shadow.js', 'zubra.js']);
 });
 
 test('bundle(): a name is given only by the module it belongs to, and a module that takes another is refused', () => {

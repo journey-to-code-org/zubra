@@ -156,9 +156,11 @@ test('inline: false: stylesheet links, module scripts by src, no import map, and
 
   // The module's imports are resolved: the compiler's, and the script's own `@zubra/runtime`.
   const module = await (await fetch(`${url}/_zubra/components/hello-there.js`)).text();
-  assert.match(module, /import \{ hydrated \} from ['"]\/_zubra\/runtime\/core\.js['"]/);
+  assert.match(module, /import \{ hydrated \} from ['"]\.\.\/runtime\/base\.js['"]/);
   assert.doesNotMatch(module, /from ['"]@zubra\//);
-  assert.match(inlined.module('hello-there'), /from ['"]@zubra\/runtime['"]/, 'left for the import map otherwise');
+  // (With an import map the runtime's names are taken by address just the same: only a script of
+  // the page's own uses the bare name.)
+  assert.match(inlined.module('hello-there'), /import \{ hydrated \} from ['"]\.\.\/runtime\/base\.js['"]/);
 
   const page = await open(url);
   assert.equal(await greeted(page), 'rgb(0, 128, 0)');
@@ -182,8 +184,8 @@ test('inline: false: `imports` and @zubra/sync resolve in the modules, the runti
   assert.match(module, /from "\/_zubra\/sync\/index\.js"/);
   assert.match(module, /from '\/vendor\/color\/shade\.js'/);
   assert.match(module, /from '\.\/tint\.js'/, 'relative imports stay');
-  assert.match(await text('/_zubra/components/tint.js'), /from '\/_zubra\/runtime\/core\.js'/, 'a plain module the component imports');
-  assert.match(await text('/_zubra/sync/index.js'), /from '\/_zubra\/runtime\/core\.js'/, "@zubra/sync's import of the runtime");
+  assert.match(await text('/_zubra/components/tint.js'), /from '\.\.\/runtime\/base\.js'/, 'a plain module the component imports');
+  assert.match(await text('/_zubra/sync/index.js'), /from '\.\.\/runtime\/base\.js'/, "@zubra/sync's import of the runtime");
   assert.doesNotMatch(await text('/_zubra/sync/index.js'), /from ['"]@zubra\/runtime['"]/);
 });
 
@@ -220,7 +222,7 @@ test('inline: false: writeAssets() writes the stylesheets and resolved modules, 
   after(() => rmSync(plain, { recursive: true, force: true }));
   createZubra({ components, production: true, devtools: false }).writeAssets(plain);
   assert.equal(existsSync(join(plain, '_zubra/components/hello-there.css')), false);
-  assert.match(readFileSync(join(plain, '_zubra/components/hello-there.js'), 'utf8'), /from ['"]@zubra\/runtime['"]/);
+  assert.match(readFileSync(join(plain, '_zubra/components/hello-there.js'), 'utf8'), /from ['"]\.\.\/runtime\/zubra\.js['"]/);
 
   // Any static file server, with the policy.
   const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };

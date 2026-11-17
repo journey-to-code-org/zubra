@@ -17,6 +17,8 @@ const components = join(here, 'components');
 const layout = (body) => `<!doctype html><html><head><meta charset="utf-8"><title>t</title></head><body>${body}</body></html>`;
 const preloaded = (html) => [...html.matchAll(/<link rel="modulepreload" href="([^"]+)"/g)].map((match) => match[1]);
 const runtime = (links) => links.filter((link) => link.startsWith('/_zubra/runtime/'));
+// What the fixture page loads of the runtime in production: the base, and the files its components name.
+const SPLIT = ['/_zubra/runtime/zubra.js', '/_zubra/runtime/form.js', '/_zubra/runtime/shadow.js'];
 /** What the server answers for a URL: `{ status, type, body }`. */
 const get = (zubra, url) => {
   const answer = { status: 404, type: '', body: '' };
@@ -45,16 +47,23 @@ after(async () => {
 test('bundle: a production page maps and preloads the runtime as one module, and the server has it', () => {
   const zubra = createZubra({ components, production: true, bundle: true });
   const html = pageOf(zubra);
-  assert.deepEqual(runtime(preloaded(html)), ['/_zubra/runtime/zubra.js']);
-  assert.match(html, /"@zubra\/runtime":"\/_zubra\/runtime\/zubra\.js"/);
+  // The base, and the two files this page's components name: count-stepper is a form control in
+  // a shadow root. Nothing else of the runtime (no context, event modifiers or resource()).
+  assert.deepEqual(runtime(preloaded(html)), SPLIT);
+  // The bare name is the whole script API, for a script of the page's own: the base and the files
+  // beside it, the same modules the components load.
+  assert.match(html, /"@zubra\/runtime":"\/_zubra\/runtime\/core\.js"/);
+  assert.match(String(get(zubra, '/_zubra/runtime/core.js').body), /from"\.\/zubra\.js".*from"\.\/provide\.js".*from"\.\/modifiers\.js"/s);
   const served = get(zubra, '/_zubra/runtime/zubra.js');
   assert.equal(served.status, 200);
   assert.doesNotMatch(String(served.body), /(?:\bfrom|\bimport)\s*["']/, 'it imports nothing');
   // Without it the runtime is the same one file (only the components aren't joined), and file by
   // file in development, where it's read and edited.
-  assert.deepEqual(runtime(preloaded(pageOf(createZubra({ components, production: true })))), ['/_zubra/runtime/zubra.js']);
+  assert.deepEqual(runtime(preloaded(pageOf(createZubra({ components, production: true })))).sort(), [...SPLIT].sort());
   const development = runtime(preloaded(pageOf(createZubra({ components }))));
-  assert.ok(development.includes('/_zubra/runtime/core.js') && development.length > 5 && !development.includes('/_zubra/runtime/zubra.js'));
+  assert.ok(development.includes('/_zubra/runtime/base.js') && development.length > 5 && !development.includes('/_zubra/runtime/zubra.js'));
+  // (Not core.js: nothing on the page names context, event modifiers or resource().)
+  assert.ok(!development.includes('/_zubra/runtime/core.js') && !development.includes('/_zubra/runtime/provide.js'), development.join(' '));
 });
 
 test('bundle: no effect in development or with the DevTools, which read the runtime file by file', () => {
@@ -87,7 +96,7 @@ test("bundle: the runtime's other modules import the one file, and are preloaded
 test('bundle with inline: false: a served component imports the one file by its URL', () => {
   const zubra = createZubra({ components, production: true, bundle: true, inline: false });
   const code = String(get(zubra, '/_zubra/components/order-form.js').body);
-  assert.match(code, /from\s*["']\/_zubra\/runtime\/zubra\.js["']/);
+  assert.match(code, /from\s*["']\.\.\/runtime\/zubra\.js["']/);
   assert.doesNotMatch(code, /@zubra\/runtime["']/);
 });
 
@@ -96,7 +105,9 @@ test('bundle: writeAssets writes the bundled runtime', () => {
   try {
     createZubra({ components, production: true, bundle: true }).writeAssets(dir);
     assert.ok(existsSync(join(dir, '_zubra/runtime/zubra.js')));
-    assert.match(readFileSync(join(dir, '_zubra/runtime/index.js'), 'utf8'), /from"\.\/zubra\.js"/);
+    assert.match(readFileSync(join(dir, '_zubra/runtime/core.js'), 'utf8'), /from"\.\/zubra\.js"/);
+    // The files beside it, each on the base: one copy of everything, whichever a page loads.
+    for (const file of ['form.js', 'shadow.js', 'modifiers.js', 'provide.js', 'resource.js']) assert.match(readFileSync(join(dir, '_zubra/runtime', file), 'utf8'), /from"\.\/zubra\.js"/, file);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -110,7 +121,7 @@ test('bundle at the edge: the same page as Node, where the host serves dist/bund
   const sources = Object.fromEntries(readdirSync(components).filter((name) => name.endsWith('.zb')).map((name) => [name.slice(0, -3), readFileSync(join(components, name), 'utf8')]));
   const edge = createEdge({ wasm: new WebAssembly.Module(readFileSync(wasmPath)), components: sources, bundle: true });
   const html = pageOf(edge);
-  assert.deepEqual(runtime(preloaded(html)), ['/_zubra/runtime/zubra.js']);
+  assert.deepEqual(runtime(preloaded(html)), SPLIT);
   assert.equal(html, pageOf(createZubra({ components, production: true, bundle: true })));
 });
 
@@ -135,7 +146,7 @@ test('bundle: in a browser the page works and asks for one runtime module', asyn
   assert.equal(await page.locator('count-stepper output').innerText(), '2', 'as the server rendered it');
   await page.locator('count-stepper .more').click();
   await page.waitForFunction(() => document.querySelector('count-stepper').shadowRoot.querySelector('output').textContent === '3');
-  assert.deepEqual(asked.filter((path) => path.startsWith('/_zubra/runtime/')), ['/_zubra/runtime/zubra.js']);
+  assert.deepEqual(asked.filter((path) => path.startsWith('/_zubra/runtime/')).sort(), [...SPLIT].sort());
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -166,12 +177,13 @@ test("bundle: a page's components are one module, named for the set and the hash
   const url = html.match(/\/_zubra\/b\/[^'"]+\.js/)[0];
   assert.match(url, /^\/_zubra\/b\/count-stepper\+order-form\.[0-9a-z]{11}\.js$/, 'the component it imports too, sorted');
   assert.equal(scriptOf(html), `import '${url}';`, 'the only module the page asks for itself');
-  assert.deepEqual(preloaded(html), [url, '/_zubra/runtime/zubra.js'], 'and what is preloaded: it, and what it imports');
+  assert.deepEqual(preloaded(html), [url, ...SPLIT], 'and what is preloaded: it, and what it imports');
   const served = get(zubra, url);
   assert.equal(served.status, 200);
   assert.equal(served.cache, 'public, max-age=31536000, immutable');
   assert.match(served.body, /^\/\/ Generated by zubra: components\/count-stepper\.js, components\/order-form\.js as one module\. Do not edit\.\n/);
-  assert.equal(served.body.match(/^import .*$/gm).length, 1, 'one import, of the runtime');
+  // One import per runtime file its components name: the base, form.js and shadow.js.
+  assert.deepEqual(served.body.match(/^import .*$/gm).map((line) => line.match(/from "([^"]+)"/)[1]), ['../runtime/zubra.js', '../runtime/form.js', '../runtime/shadow.js']);
   assert.ok(served.body.includes('"count-stepper"') && served.body.includes('"order-form"'));
   assert.doesNotMatch(served.body, /^export /m);
   // The same from another instance, which never rendered the page: the URL is enough.
@@ -290,9 +302,10 @@ test('bundle: in a browser a page of two components asks for two modules, and bo
   // The stepper is still the form's control: its value goes with the form.
   assert.equal(await page.evaluate(() => new FormData(document.querySelector('form')).get('qty')), '4');
   const modules = asked.filter((path) => path.endsWith('.js'));
-  assert.equal(modules.length, 2, modules.join(' '));
+  // The components as one module, and the runtime: its base and the two files these name.
+  assert.equal(modules.length, 1 + SPLIT.length, modules.join(' '));
   assert.match(modules[0], /^\/_zubra\/b\/count-stepper\+order-form\./);
-  assert.ok(modules.includes('/_zubra/runtime/zubra.js'));
+  for (const file of SPLIT) assert.ok(modules.includes(file), file);
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -303,7 +316,8 @@ test('bundle with inline: false: the page names the joined module by src, and it
   const url = html.match(/<script type="module" src="(\/_zubra\/b\/count-stepper\+order-form\.[0-9a-z]{11}\.js)"><\/script>/)[1];
   assert.doesNotMatch(html, /<script type="module">/);
   const body = get(zubra, url).body;
-  assert.match(body, /^import \{[^}]*\} from "\/_zubra\/runtime\/zubra\.js";$/m);
+  assert.match(body, /^import \{[^}]*\} from "\.\.\/runtime\/zubra\.js";$/m);
+  assert.match(body, /^import \{ \$form \} from "\.\.\/runtime\/form\.js";$/m);
   assert.doesNotMatch(body, /@zubra\/runtime"/);
 });
 

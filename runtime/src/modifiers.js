@@ -51,3 +51,43 @@ function bindModified(part, node) {
 
 /** @internal The binder an interface 4 part with modifiers names (`binder: $modified`). */
 export { bindModified as $modified };
+
+// ---- the modifiers as functions (for JSX, and for handlers built in scripts) ----------------
+
+/** `prevent(fn)`: a handler that calls `event.preventDefault()` first. */
+export const prevent = (fn) => function (event) { event.preventDefault(); return fn?.call(this, event); };
+/** `stop(fn)`: a handler that calls `event.stopPropagation()` first. */
+export const stop = (fn) => function (event) { event.stopPropagation(); return fn?.call(this, event); };
+/** `selfOnly(fn)`: a handler that ignores events from inside the element (`.self`). */
+export const selfOnly = (fn) => function (event) { if (event.target === event.currentTarget) return fn?.call(this, event); };
+/** `submit(fn)`: after the handler, submit the element's form, with validation (`.submit`). */
+export const submit = (fn) => function (event) {
+  const result = fn?.call(this, event);
+  formOf(event.currentTarget)?.requestSubmit();
+  return result;
+};
+
+const KEY_NAMES = {
+  enter: 'Enter', tab: 'Tab', space: ' ', esc: 'Escape', escape: 'Escape', up: 'ArrowUp', down: 'ArrowDown',
+  left: 'ArrowLeft', right: 'ArrowRight', arrowup: 'ArrowUp', arrowdown: 'ArrowDown', arrowleft: 'ArrowLeft',
+  arrowright: 'ArrowRight', delete: 'Delete', backspace: 'Backspace', home: 'Home', end: 'End', pageup: 'PageUp', pagedown: 'PageDown',
+};
+/**
+ * `keys('shift+enter', fn)`: a keyboard handler for one key, with exactly the modifier keys named
+ * (the same rule as `onkeydown.shift.enter` in a template). Several combinations: `'enter, space'`.
+ */
+export function keys(combinations, fn) {
+  const wanted = String(combinations).split(',').map((combination) => {
+    const pieces = combination.trim().toLowerCase().split('+');
+    const key = pieces.pop();
+    // `mod` is ⌘ on Apple platforms and Ctrl elsewhere.
+    const mod = pieces.includes('mod');
+    return { key: KEY_NAMES[key] ?? key, shift: pieces.includes('shift'), ctrl: pieces.includes('ctrl') || (mod && !APPLE()), alt: pieces.includes('alt'), meta: pieces.includes('meta') || (mod && APPLE()) };
+  });
+  return function (event) {
+    const key = event.key ?? '';
+    const match = wanted.some((w) => (w.key.length === 1 ? key.toLowerCase() === w.key : key === w.key)
+      && w.shift === event.shiftKey && w.ctrl === event.ctrlKey && w.alt === event.altKey && w.meta === event.metaKey);
+    if (match) return fn?.call(this, event);
+  };
+}

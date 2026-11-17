@@ -4,6 +4,16 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Changed
+
+- **A page of `@zubra/server` loads less of the runtime: its base, and only the rest its components name.** The file every page loaded in production (`runtime/zubra.js`) carried the whole script API, used or not: 14.3 KB compressed. It is now the base, 11.7 KB, and what only some components use is in files beside it, each sent to the pages whose components name it: context (`provide.js`, 0.85 KB), form controls and their helpers (`form.js`, 1.2), event modifiers and helpers (`modifiers.js`, 1.1), shadow roots (`shadow.js`, 0.6) and `resource()` (`resource.js`, 0.65). A page that uses none loads 2.6 KB less; one that uses event modifiers about 1.5 KB less, in one more request (preloaded, so not another round). The server sends each module the names it imports from the file that has them, by address, as it already did for `zb-await` and slots; that covers components, the plain modules they import and `@zubra/sync`'s.
+  - Nothing to change in an app. The script API is the same, from the same import (`@zubra/runtime`); `@zubra/runtime/core` exports what it did; bundlers and `@zubra/unplugin` are untouched.
+  - A `<script type="module">` of your own that imports `@zubra/runtime` gets the whole API as before, from the same modules the components use, now as the base and five small files where it was one.
+  - With `imports: { '@zubra/runtime': … }` (a CDN) nothing changes: every name comes from the address you gave.
+  - A server from before this release with this runtime is unaffected: `dist/bundled` is still whole, and the split build is a folder of its own (`dist/split`).
+  - At the edge, serve `dist/split` where you served `dist/bundled` (which still works, without the saving). Pages using `@zubra/sync` from static assets load the whole API there, since the Worker can't rewrite files it doesn't serve.
+  - In the runtime, the helpers moved out of `element.js` into `provide.js`, `form.js` and `modifiers.js`, and `base.js` is the new smaller entry; `@zubra/runtime/modules` gained `split`.
+
 ## 5.21.1 — 2026-11-17
 
 ### Changed
