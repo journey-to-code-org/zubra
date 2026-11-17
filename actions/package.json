@@ -1,6 +1,6 @@
 {
   "name": "@zubra/actions",
-  "version": "5.20.0",
+  "version": "5.21.0",
   "description": "Serve Zubra components' 'use server' functions over plain form posts, enhanced to fetch when JavaScript loads.",
   "type": "module",
   "main": "./src/index.js",
@@ -34,8 +34,8 @@
     "test": "node --test \"test/*.test.js\""
   },
   "peerDependencies": {
-    "@zubra/compiler": "^5.20.0",
-    "@zubra/server": "^5.20.0"
+    "@zubra/compiler": "^5.21.0",
+    "@zubra/server": "^5.21.0"
   },
   "devDependencies": {
     "@zubra/compiler": "file:../compiler",
