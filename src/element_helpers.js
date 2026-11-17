@@ -134,7 +134,8 @@ function @insert(parent, node, before) {
 /** Moves a node already on the page, keeping its focus and state where the browser can (moveBefore). */
 function @move(parent, node, before) {
   try {
-    if (Element.prototype.moveBefore && node.isConnected && parent.isConnected) return parent.moveBefore(node, before);
+    // The platform's own, as with insert: a parent that is another element's host has one that routes.
+    if (Element.prototype.moveBefore && node.isConnected && parent.isConnected) return Element.prototype.moveBefore.call(parent, node, before);
   } catch {
     // not movable in one step: insert it
   }
@@ -830,12 +831,24 @@ function @dropStandIn(node) {
   }
 
   // Frameworks keep managing what they gave the element through the element itself (React calls
-  // insertBefore and removeChild on it, Vue sets textContent): once it has started, those go to
-  // the slots.
+  // insertBefore and removeChild on it, Preact 11 moveBefore, Vue sets textContent): once it has
+  // started, those go to the slots.
   insertBefore(node, before) {
     if (!this.#started) return super.insertBefore(node, before);
     this.#route(node, before ?? null);
     return node;
+  }
+  // Preact 11 reorders a keyed child with moveBefore() where the browser has it: the node goes
+  // where an insert would put it, and one already in its slot is moved there with its state kept.
+  // Defined only where the browser has the method, since frameworks ask for it by name.
+  static {
+    const native = Element.prototype.moveBefore;
+    if (typeof native === "function") {
+      this.prototype.moveBefore = function (node, before) {
+        if (!this.#started) return native.call(this, node, before);
+        this.#route(node, before ?? null);
+      };
+    }
   }
   appendChild(node) {
     if (!this.#started) return super.appendChild(node);
