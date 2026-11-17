@@ -500,7 +500,8 @@ export function hasSlot(name = 'default') {
 //
 // In light DOM the host's children are the template, so content given to the element lives in
 // its slot regions instead. Frameworks keep managing that content through the host — React
-// calls host.insertBefore(node, sibling) and host.removeChild(node), Vue sets textContent — so
+// calls host.insertBefore(node, sibling) and host.removeChild(node), Preact 11 reorders with
+// host.moveBefore(node, sibling), Vue sets textContent — so
 // the host's child methods are routed to the slots, and a MutationObserver notices content
 // removed through its real parent. Each slot keeps its nodes in order; while its region isn't
 // rendered (inside an zb-if branch that's off) they're parked in a fragment. A slot's own text
@@ -541,7 +542,7 @@ const isContent = (node) => node.nodeType === 1 || (node.nodeType === TEXT && no
 
 let nativeText, nativeHTML; // looked up on first use, so the module loads without a DOM
 
-const ROUTED = ['insertBefore', 'appendChild', 'append', 'removeChild', 'replaceChild', 'replaceChildren', 'textContent', 'innerHTML', 'firstChild'];
+const ROUTED = ['insertBefore', 'moveBefore', 'appendChild', 'append', 'removeChild', 'replaceChild', 'replaceChildren', 'textContent', 'innerHTML', 'firstChild'];
 
 /** Route the host's child methods to its slots (see above). */
 /**
@@ -576,6 +577,12 @@ function routeTo(host, { insert, remove, holds, clear, first }) {
   const asNodes = (items) => items.map((item) => (item instanceof Node ? item : document.createTextNode(String(item))));
   Object.defineProperties(host, {
     insertBefore: { value(node, before) { insert(node, before ?? null); return node; }, configurable: true },
+    // Preact 11 reorders a keyed child with moveBefore() where the browser has it. The node goes
+    // where an insert would put it; one already in its slot is moved there with its state kept
+    // (`move` in blocks.js). Only where the browser has the method: frameworks ask for it by name.
+    ...(typeof Element.prototype.moveBefore === 'function' && {
+      moveBefore: { value(node, before) { insert(node, before ?? null); }, configurable: true },
+    }),
     appendChild: { value(node) { insert(node, null); return node; }, configurable: true },
     append: { value(...items) { for (const node of asNodes(items)) insert(node, null); }, configurable: true },
     removeChild: {

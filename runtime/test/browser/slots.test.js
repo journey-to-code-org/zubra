@@ -200,6 +200,46 @@ test("the host's child methods put content into its slots after startup", async 
   await page.close();
 });
 
+test("moveBefore on the host moves content within its slot, keeping the node (Preact 11 reorders keyed children with it)", async () => {
+  const { page, messages } = await open('<zb-card></zb-card>', { modules: ['card'] });
+  const has = await page.evaluate(() => typeof Element.prototype.moveBefore === 'function');
+  if (!has) {
+    // A browser without moveBefore(): the host doesn't claim one, so a framework that asks for
+    // it by name (Preact: `parentDom.moveBefore && …`) takes its insertBefore path.
+    assert.equal(await page.evaluate(() => 'moveBefore' in document.querySelector('zb-card')), false);
+    await page.close();
+    return;
+  }
+  let card = await change(page, (el) => {
+    window.items = ['a', 'b', 'c'].map((text) => Object.assign(document.createElement('p'), { textContent: text }));
+    for (const item of window.items) el.appendChild(item);
+    const title = Object.assign(document.createElement('h2'), { textContent: 'T' });
+    title.slot = 'title';
+    el.appendChild(title);
+  });
+  assert.equal(card.section, '<p>a</p><p>b</p><p>c</p>');
+
+  // Preact 11, reversing a keyed list: host.moveBefore(node, sibling), sibling null for the end.
+  card = await change(page, (el) => {
+    const [a, b, c] = window.items;
+    el.moveBefore(c, a);
+    el.moveBefore(a, null);
+  });
+  assert.equal(card.section, '<p>c</p><p>b</p><p>a</p>');
+  assert.equal(card.header, '<h2 slot="title">T</h2>', "another slot's content stays where it is");
+  assert.deepEqual(
+    await page.evaluate(() => { const [a, b, c] = window.items; const section = document.querySelector('zb-card section'); return [...section.children].map((node) => [a, b, c].indexOf(node)); }),
+    [2, 1, 0],
+    'the same nodes, moved: not copies',
+  );
+
+  // What the host holds is still what a framework reads back and removes.
+  card = await change(page, (el) => el.removeChild(window.items[1]));
+  assert.equal(card.section, '<p>c</p><p>a</p>');
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
 test('content removed through its real parent leaves its slot (Vue removes via parentNode)', async () => {
   const { page } = await open('<zb-card><p id="mine">mine</p></zb-card>', { modules: ['card'] });
   const card = await change(page, () => { const p = document.getElementById('mine'); p.parentNode.removeChild(p); });
