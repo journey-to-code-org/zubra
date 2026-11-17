@@ -24,8 +24,9 @@ import { flatName, rewriteImports, serverHalves } from './compile.js';
 
 export { MOUNT, SCRIPT_PATH, COOKIE, SECURE_COOKIE };
 
-const CLIENT = readFileSync(new URL('./client.js', import.meta.url), 'utf8');
-const FORMS = readFileSync(new URL('./enhance-forms.js', import.meta.url), 'utf8');
+// The two browser scripts: as written (src/) in development, minified (dist/production, built by
+// scripts/build-production.js) in production, where they are about half the bytes.
+const script = (file, production) => readFileSync(new URL(production ? `../dist/production/${file}` : `./${file}`, import.meta.url), 'utf8');
 
 /**
  * `context({ request, req, c })`: what else a server function gets beside `request`, per request
@@ -41,6 +42,7 @@ const FORMS = readFileSync(new URL('./enhance-forms.js', import.meta.url), 'utf8
  * request's own protocol.
  * `maxBytes`: the largest post read, files and fields together (10 MB by default; `Infinity`
  * for none). A bigger one gets `{ error: 'Too large' }` (413) and the function doesn't run.
+ * `production`: serve the browser scripts minified (by default when `NODE_ENV` is `production`).
  */
 export async function createActions({
   components = 'components',
@@ -50,6 +52,7 @@ export async function createActions({
   context = () => ({}),
   maxBytes,
   secure,
+  production = process.env.NODE_ENV === 'production',
 } = {}) {
   const root = resolve(components);
   if (!existsSync(root)) throw new Error(`@zubra/actions: no components folder at ${root}`);
@@ -67,7 +70,7 @@ export async function createActions({
     renameSync(writing, module);
     maps.push((await import(`${pathToFileURL(module).href}?t=${Date.now()}`)).actions);
   }
-  const core = createActionsCore({ routes: routesFrom(...maps), client: CLIENT, forms: FORMS, origins, onError, context, maxBytes, secure });
+  const core = createActionsCore({ routes: routesFrom(...maps), client: script('client.js', production), forms: script('enhance-forms.js', production), origins, onError, context, maxBytes, secure });
 
   /** Node's http: answers ours and returns true, or returns false without reading the body. */
   async function handle(req, res) {
