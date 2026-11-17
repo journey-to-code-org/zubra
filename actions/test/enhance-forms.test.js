@@ -7,7 +7,8 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
-const script = readFileSync(new URL('../src/enhance-forms.js', import.meta.url));
+// (production.test.js runs this file again against the minified build.)
+const script = readFileSync(new URL(`../${process.env.ZUBRA_ACTIONS_SCRIPTS ?? 'src'}/enhance-forms.js`, import.meta.url));
 let server, browser, base;
 let count = 0;
 const posts = [];

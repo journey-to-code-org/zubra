@@ -31,6 +31,7 @@
     "./hono": "./src/hono.js"
   },
   "scripts": {
+    "build": "node scripts/build-production.js",
     "test": "node --test \"test/*.test.js\""
   },
   "peerDependencies": {
@@ -41,6 +42,7 @@
     "@zubra/compiler": "file:../compiler",
     "@zubra/runtime": "file:../runtime",
     "@zubra/server": "file:../server",
+    "esbuild": "0.28.2",
     "express": "5.3.0",
     "fastify": "5.12.8",
     "hono": "4.13.17",
@@ -51,6 +53,7 @@
   },
   "files": [
     "src",
+    "dist",
     "bin",
     "README.md"
   ],
