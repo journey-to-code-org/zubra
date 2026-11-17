@@ -4,6 +4,8 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+## 5.22.0 — 2026-11-17
+
 ### Changed
 
 - **A page of `@zubra/server` loads less of the runtime: its base, and only the rest its components name.** The file every page loaded in production (`runtime/zubra.js`) carried the whole script API, used or not: 14.3 KB compressed. It is now the base, 11.7 KB, and what only some components use is in files beside it, each sent to the pages whose components name it: context (`provide.js`, 0.85 KB), form controls and their helpers (`form.js`, 1.2), event modifiers and helpers (`modifiers.js`, 1.1), shadow roots (`shadow.js`, 0.6) and `resource()` (`resource.js`, 0.65). A page that uses none loads 2.6 KB less; one that uses event modifiers about 1.5 KB less, in one more request (preloaded, so not another round). The server sends each module the names it imports from the file that has them, by address, as it already did for `zb-await` and slots; that covers components, the plain modules they import and `@zubra/sync`'s.
