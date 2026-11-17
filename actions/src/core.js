@@ -3,6 +3,8 @@
 // (edge.js) is given routes built ahead of time (`zubra-actions build`). Both answer through this.
 export const MOUNT = '/_zb/action/';
 export const SCRIPT_PATH = '/_zb/actions.js';
+/** Where `@zubra/actions/enhance-forms` is served (plain form posts without the reload). */
+export const FORMS_PATH = '/_zb/enhance-forms.js';
 export const COOKIE = '__zb_result';
 /**
  * On HTTPS the result cookie is `__Host-zb_result` and `Secure`: browsers then refuse it from a
@@ -18,9 +20,10 @@ export const TOO_LARGE = Object.freeze({ error: 'Too large' });
 
 /**
  * `routes`: a Map of URL → function. `client`: the enhancing script's source, served at
- * SCRIPT_PATH, or null when the host serves it as a static file.
+ * SCRIPT_PATH, or null when the host serves it as a static file. `forms`: the same for
+ * `@zubra/actions/enhance-forms`, at FORMS_PATH.
  */
-export function createActionsCore({ routes, client = null, origins = [], onError = (error) => console.error(error), context = () => ({}), maxBytes = MAX_BYTES, secure }) {
+export function createActionsCore({ routes, client = null, forms = null, origins = [], onError = (error) => console.error(error), context = () => ({}), maxBytes = MAX_BYTES, secure }) {
   // Whether a request is over HTTPS, for the result cookie: what the app says (`secure`, for one
   // behind a proxy that ends TLS, whose requests reach it as http), else the request's own URL.
   const overHttps = (request) => secure ?? (/^https:/i.test(request.url ?? '') || request.socket?.encrypted === true);
@@ -78,6 +81,9 @@ export function createActionsCore({ routes, client = null, origins = [], onError
     const url = new URL(request.url);
     if (request.method === 'GET' && url.pathname === SCRIPT_PATH) {
       return client === null ? null : new Response(client, { headers: { 'content-type': 'text/javascript; charset=utf-8' } });
+    }
+    if (request.method === 'GET' && url.pathname === FORMS_PATH) {
+      return forms === null ? null : new Response(forms, { headers: { 'content-type': 'text/javascript; charset=utf-8' } });
     }
     if (!url.pathname.startsWith(MOUNT)) return null;
     if (request.method !== 'POST') return text(405, 'Method Not Allowed', { allow: 'POST' });
@@ -160,6 +166,7 @@ export function createActionsCore({ routes, client = null, origins = [], onError
     result,
     routes: () => [...routes.keys()],
     script: () => `<script type="module" src="${SCRIPT_PATH}"></script>`,
+    formsScript: () => `<script type="module" src="${FORMS_PATH}"></script>`,
     clearCookie: CLEAR,
   };
 }

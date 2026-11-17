@@ -8,17 +8,18 @@
 //   export default { fetch: async (request, env) => (await forms.fetch(request, { env })) ?? page(request) };
 //
 // The enhancing script (`@zubra/actions/client`) is served from your static assets at
-// /_zb/actions.js, as the runtime is, unless you pass its source as `client`.
+// /_zb/actions.js, as the runtime is, unless you pass its source as `client`. The same goes for
+// `@zubra/actions/enhance-forms` at /_zb/enhance-forms.js and `forms`.
 import { createActionsCore, routesFrom } from './core.js';
 
-export { MOUNT, SCRIPT_PATH, COOKIE, SECURE_COOKIE } from './core.js';
+export { MOUNT, SCRIPT_PATH, FORMS_PATH, COOKIE, SECURE_COOKIE } from './core.js';
 
 /**
  * `actions`: `{ url: fn }`, the build's `actions` (or several merged). `context(…)` gets
  * `{ request, ...extra }`, where `extra` is fetch's second argument (`{ env, ctx }` in a Worker).
  * `origins`, `onError` as the Node entry's.
  */
-export function createActions({ actions, client = null, origins = [], onError = (error) => console.error(error), context = () => ({}), maxBytes, secure } = {}) {
+export function createActions({ actions, client = null, forms = null, origins = [], onError = (error) => console.error(error), context = () => ({}), maxBytes, secure } = {}) {
   if (!actions || typeof actions !== 'object') throw new TypeError("createActions({ actions }): pass `actions` from `zubra-actions build`'s index.js");
-  return createActionsCore({ routes: routesFrom(actions), client, origins, onError, context, maxBytes, secure });
+  return createActionsCore({ routes: routesFrom(actions), client, forms, origins, onError, context, maxBytes, secure });
 }

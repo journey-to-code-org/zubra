@@ -6,6 +6,7 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ### Added
 
+- **Plain form posts without the reload: `data-zb-updates` and `@zubra/actions/enhance-forms`** (experimental). A form that posts to an app's own route and is redirected back loaded the whole page again. A form that names the parts of the page its post changes, `<form method="post" action="/add" data-zb-updates="site said">`, is now sent with `fetch`, and those parts' children come from the page the server redirects to; the rest of the page, components and typed input included, stays. The server is unchanged, and so is every form without the attribute. `actions.formsScript()` writes the script tag and `createActions` serves it at `/_zb/enhance-forms.js` (0.9 KB compressed). On the comparison's menu page on a slow phone, adding an item took 264 ms, from 525.
 - **`follow()` from `@zubra/sync/follow`: a connection for a page that only reads** (experimental). A page whose server writes its documents and never lets a page write loaded `connect()`'s outbox, pushes, presence and peer code for nothing. `follow()` pulls and listens exactly as `connect()` does (the same cursor, scope, merge by clock and reconnecting, tested against the same cases) and has none of the rest: 3.5 KB compressed against 4.9 on a read-only menu page. An edit on such a page stays on that device and is reported once in the console. `connect()` and every existing page are unchanged. `@zubra/server` maps and serves it beside `connect.js`.
 
 ### Fixed

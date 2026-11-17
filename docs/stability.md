@@ -127,6 +127,7 @@ A sibling: needed only for `'use server'` functions.
 |---|---|---|---|
 | `@zubra/actions` | Supported | Plugin job (`actions/`, with and without JavaScript in Chromium) | Standup, Tailgate |
 | `@zubra/actions/client` | Supported | Same | Same |
+| `@zubra/actions/enhance-forms` | Experimental | Actions (`enhance-forms.test.js`, Chromium) | Plain form posts without the reload: `data-zb-updates`, the `updated` event, `actions.formsScript()` |
 | `@zubra/actions/build` | Supported | Same; Sync and Actions on a Cloudflare Worker | Standup worker |
 | `@zubra/actions/edge` | Supported | Sync and Actions on a Cloudflare Worker | Standup worker |
 | `@zubra/actions/express` | Supported | Plugin job | Its tests |

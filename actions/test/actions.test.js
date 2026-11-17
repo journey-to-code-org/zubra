@@ -99,6 +99,13 @@ test('the client script is served, and the page gets a tag for it', async () => 
   assert.equal(actions.script(), '<script type="module" src="/_zb/actions.js"></script>');
 });
 
+test('the form script (enhance-forms) is served too, with a tag of its own', async () => {
+  const response = await actions.fetch(new Request('http://localhost/_zb/enhance-forms.js'));
+  assert.match(response.headers.get('content-type'), /javascript/);
+  assert.match(await response.text(), /data-zb-updates/);
+  assert.equal(actions.formsScript(), '<script type="module" src="/_zb/enhance-forms.js"></script>');
+});
+
 test('Node\'s http: answers ours, leaves the rest (and their bodies) alone', async () => {
   const server = createServer(async (req, res) => {
     if (await actions.handle(req, res)) return;
