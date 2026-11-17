@@ -12,6 +12,8 @@ export interface EdgeActionsOptions<Extra extends object = object> {
   actions: Record<string, ActionFunction>;
   /** The enhancing script's source, to serve at `/_zb/actions.js`. Default: serve it from static assets. */
   client?: string | null;
+  /** Experimental. The source of `@zubra/actions/enhance-forms`, to serve at `/_zb/enhance-forms.js`. Default: serve it from static assets. */
+  forms?: string | null;
   /** Other origins allowed to post, beyond the request's own. */
   origins?: string[];
   /** Called when a server function throws. The client gets a generic error either way. */
@@ -37,6 +39,8 @@ export interface EdgeActions<Extra extends object = object> {
   result<T = unknown>(request: Request, setHeader?: (name: string, value: string) => void): ActionResult<T> | null;
   routes(): string[];
   script(): string;
+  /** Experimental. The `<script type="module">` for `@zubra/actions/enhance-forms`. */
+  formsScript(): string;
   clearCookie: string;
 }
 

@@ -154,6 +154,27 @@ A function's answer goes to the component, and the page shows whatever the compo
 
 Without JavaScript the same form posts, the server redirects back, and the page is rendered again with the new `saved`. `npm create zubra@latest my-app -- --framework server` writes this component in a working app, with the server around it and a test that uses it both ways.
 
+## Plain forms without the reload (experimental)
+
+A form that posts to a route of your own, where the server changes something and redirects back, loads the whole page again. If the form says which parts of the page its post changes, by id, only those parts are replaced:
+
+```html
+<form method="post" action="/add" data-zb-updates="site said">…</form>
+
+<nav id="site">Your order (2)</nav>
+<div id="said" role="status"></div>
+```
+
+```js
+html += actions.formsScript(); // <script type="module" src="/_zb/enhance-forms.js"></script>
+```
+
+The server doesn't change: it gets the same post and answers with the same redirect. The script sends the post with `fetch`, follows the redirect, and takes those parts' children from the new page; the address becomes the one the server sent. Everything else on the page stays as it is, components and what the visitor has typed included. The form gets an `updated` event when it's done.
+
+The browser posts the form itself, as it would without the script, when the form has no `data-zb-updates` or has `data-zb-native`, when a named id isn't on the page or isn't on the new one, when the server sends the visitor to another page, and when the request fails. A post answered with this page and no redirect (a 422 with the problem in it) is merged the same way.
+
+It needs nothing else from this package: with a bundler, `import '@zubra/actions/enhance-forms'`; at the edge, serve `enhance-forms.js` from your static assets or pass its source as `forms`. Forms inside a shadow root: `enhanceForms(shadowRoot)`. On the comparison's menu page on a slow phone, adding an item went from 525 ms to 264 ms.
+
 ## Security
 
 - **Cross-site posts are refused** (by `Sec-Fetch-Site`, or `Origin` when that's missing), so a form on another site can't call an action with your users' cookies. Allow more origins with `origins: [...]`.

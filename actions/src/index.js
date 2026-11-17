@@ -7,6 +7,7 @@
 //   actions.handle(req, res)   // Node's http: true if it answered
 //   actions.result(request)    // after a no-JavaScript post: { action, value } once, else null
 //   actions.script()           // <script> for the page: enhances those forms into fetch requests
+//   actions.formsScript()      // <script> for plain forms that name what they update (experimental)
 //
 // The contract (plan/actions-design.md):
 // - A form posts to /_zb/action/<tag>/<name> with its own encoding; the function gets the FormData.
@@ -24,6 +25,7 @@ import { flatName, rewriteImports, serverHalves } from './compile.js';
 export { MOUNT, SCRIPT_PATH, COOKIE, SECURE_COOKIE };
 
 const CLIENT = readFileSync(new URL('./client.js', import.meta.url), 'utf8');
+const FORMS = readFileSync(new URL('./enhance-forms.js', import.meta.url), 'utf8');
 
 /**
  * `context({ request, req, c })`: what else a server function gets beside `request`, per request
@@ -65,7 +67,7 @@ export async function createActions({
     renameSync(writing, module);
     maps.push((await import(`${pathToFileURL(module).href}?t=${Date.now()}`)).actions);
   }
-  const core = createActionsCore({ routes: routesFrom(...maps), client: CLIENT, origins, onError, context, maxBytes, secure });
+  const core = createActionsCore({ routes: routesFrom(...maps), client: CLIENT, forms: FORMS, origins, onError, context, maxBytes, secure });
 
   /** Node's http: answers ours and returns true, or returns false without reading the body. */
   async function handle(req, res) {

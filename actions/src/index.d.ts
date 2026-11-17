@@ -48,6 +48,8 @@ export interface Actions {
   routes(): string[];
   /** The `<script type="module">` that enhances action forms. */
   script(): string;
+  /** Experimental. The `<script type="module">` for `@zubra/actions/enhance-forms`: plain forms that name what they update (`data-zb-updates`) post without a reload. */
+  formsScript(): string;
   /** A `Set-Cookie` value that clears the result cookie. */
   clearCookie: string;
 }
