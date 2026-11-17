@@ -14,7 +14,7 @@
 // the import map at a CDN with `imports`. Everything else, including streaming (`page().streamResponse`)
 // and `injectShadowRoots`, is the Node entry's, from the same code (`core.js`).
 import { createCompiler } from '@zubra/compiler/wasm';
-import runtimeModules, { bundled as bundledModules } from '@zubra/runtime/modules';
+import * as runtimeLists from '@zubra/runtime/modules';
 import { createCore, parseAttributes, propsFrom, SOURCE_EXTENSION } from './core.js';
 
 export { parseAttributes, propsFrom };
@@ -37,8 +37,10 @@ function normalize(path) {
  * each other by relative path, as they do on disk. The other options are `createZubra`'s: `prefix`,
  * `cache`, `devtools` (off by default here: the DevTools need the runtime's development build,
  * which you would have to serve yourself) and `imports`. `bundle: true`: the pages load the
- * runtime as one file, `<prefix>/runtime/zubra.js`; serve `@zubra/runtime`'s `dist/bundled` there
- * (where `dist/production` would otherwise go).
+ * runtime's base as one file, `<prefix>/runtime/zubra.js`, and the files beside it that their
+ * components name; serve `@zubra/runtime`'s `dist/split` there (where `dist/production` would
+ * otherwise go). `dist/bundled`, from before the split, still works there: `zubra.js` is then
+ * the whole core and the files beside it only pass its names on.
  */
 export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : null, components = {}, prefix = '/_zubra', cache = true, devtools = false, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false } = {}) {
   if (!compiler) throw new Error("@zubra/server/edge: createZubra() needs the compiler's WebAssembly module (`wasm`), or a `compiler` from createCompiler()");
@@ -82,7 +84,8 @@ export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : nul
     inline,
     preload,
     bundle: Boolean(bundle),
-    runtimeModules: bundle ? bundledModules : runtimeModules,
+    runtimeModules: bundle ? runtimeLists.split?.modules ?? runtimeLists.bundled : runtimeLists.default,
+    runtimeSplit: runtimeLists.split ?? null,
     request: (body) => compiler.request(body),
     files,
     sourcesOf: (path) => sourcesOf(path),

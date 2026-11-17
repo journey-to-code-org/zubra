@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createCore } from '../src/core.js';
-import runtimeModules, { bundled } from '@zubra/runtime/modules';
+import runtimeModules, { bundled, split } from '@zubra/runtime/modules';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const runtime = join(here, '..', '..', 'runtime');
@@ -79,10 +79,12 @@ before(async () => {
 });
 after(() => browser?.close());
 
-for (const [name, bundle, dir, modules] of [['file by file (development)', false, 'src', runtimeModules], ['as one file (production)', true, 'dist/bundled', bundled]]) {
+// The first two are a server from before the split (no `runtimeSplit`): everything from the name
+// `@zubra/runtime`, which dist/bundled's zubra.js still has whole. The last two are this one.
+for (const [name, bundle, dir, modules, runtimeSplit] of [['file by file (development)', false, 'src', runtimeModules], ['as one file (production)', true, 'dist/bundled', bundled], ['split, file by file (development)', false, 'src', runtimeModules, split], ['split (production)', true, 'dist/split', split.modules, split]]) {
   for (const [tag, compiled] of [['zb-since-518', compiled519], ...keptModules]) test(`in a browser, with the runtime ${name}: ${tag === 'zb-since-518' && compiled === compiled519 ? "5.18's module with 5.19.0's import" : `the module kept as ${tag}`} defines its element and it works`, async () => {
     const legacy = /\$element|\{ \$define/.test(compiled.split('\n').find((line) => line.startsWith('import ') && line.includes('"@zubra/runtime"')));
-    const core = coreOver(compiled, { bundle, runtimeModules: modules }, tag);
+    const core = coreOver(compiled, { bundle, runtimeModules: modules, ...(runtimeSplit ? { runtimeSplit } : {}) }, tag);
     const server = createServer((request, response) => {
       const url = new URL(request.url, 'http://x').pathname;
       const served = core.serve(url);
@@ -115,7 +117,13 @@ for (const [name, bundle, dir, modules] of [['file by file (development)', false
       assert.deepEqual(errors.filter((message) => !message.includes('blocked an unsafe URL')), []);
       // Only output from before interface 5 needs legacy.js.
       assert.equal(asked.includes('/_zubra/runtime/legacy.js'), legacy, asked.join(' '));
-      assert.ok(asked.includes(`/_zubra/runtime/${bundle ? 'zubra.js' : 'core.js'}`));
+      assert.ok(asked.includes(`/_zubra/runtime/${bundle ? 'zubra.js' : runtimeSplit ? 'base.js' : 'core.js'}`), asked.join(' '));
+      // Split, the module's own names come from their files (an older one's through legacy.js,
+      // which fills them in), and the whole API (core.js) isn't asked for.
+      if (runtimeSplit) {
+        assert.ok(asked.includes('/_zubra/runtime/form.js') && asked.includes('/_zubra/runtime/modifiers.js'), asked.join(' '));
+        assert.ok(!asked.includes('/_zubra/runtime/core.js') && !asked.includes('/_zubra/runtime/provide.js'), asked.join(' '));
+      }
     } finally {
       await page.close();
       server.close();

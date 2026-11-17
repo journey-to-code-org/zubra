@@ -23,7 +23,7 @@ import * as nodeStream from 'node:stream';
 const { Transform } = nodeStream;
 import { findCompiler } from './compiler.js';
 import { versionAt, versionSkew } from './versions.js';
-import runtimeModules, { bundled as bundledModules } from '@zubra/runtime/modules';
+import * as runtimeLists from '@zubra/runtime/modules';
 import { createCore, joinPath, parseAttributes, propsFrom, SOURCE_EXTENSION as SOURCE, TYPES } from './core.js';
 
 export { findCompiler, parseAttributes, propsFrom };
@@ -65,7 +65,12 @@ export function createZubra({ components = 'components', packages = [], prefix =
   // with `bundle` or without: one request where it was a dozen, and fewer bytes, since they
   // compress together. `bundle` also joins a page's components into one module. Development and
   // the DevTools keep the runtime file by file, as it is read and edited.
-  const bundledDir = join(sourceDir, '..', 'dist', 'bundled');
+  // A runtime with a split build (`dist/split`: `zubra.js` is the base, and what only some
+  // components use is in files beside it) is served from that, so a page loads only what its
+  // components name; one from before it, from `dist/bundled`, whole.
+  const splitDir = join(sourceDir, '..', 'dist', 'split');
+  const split = runtimeLists.split && existsSync(splitDir) ? runtimeLists.split : null;
+  const bundledDir = split ? splitDir : join(sourceDir, '..', 'dist', 'bundled');
   const oneFile = production && !devtools && existsSync(bundledDir);
   const bundling = Boolean(bundle) && oneFile;
   const runtimeDir = oneFile ? bundledDir : production && !devtools && existsSync(productionDir) ? productionDir : sourceDir;
@@ -201,7 +206,9 @@ export function createZubra({ components = 'components', packages = [], prefix =
     checkPages: !production,
     changed,
     runtimeFile: oneFile ? 'zubra.js' : 'core.js',
-    runtimeModules: oneFile ? bundledModules : runtimeModules,
+    runtimeModules: oneFile ? split?.modules ?? runtimeLists.bundled : runtimeLists.default,
+    // (A runtime from before the split has no such list, and is served as it was.)
+    runtimeSplit: split,
     // The compiler keys a context by its module's path, joined to the importing component's.
     contextKey: ({ module, export: name }) => `${joinPath(posix(root), module)}#${name}`,
     // A `.js` file in the components folder, served as it is (core serves only those a browser
