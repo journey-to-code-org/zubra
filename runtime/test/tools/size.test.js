@@ -142,23 +142,32 @@ for (const [entry, budget] of Object.entries(ADAPTERS)) {
 // more files in the core's graph: element.js 0.4 KB smaller, the two 1.1 KB, since small files
 // compress worse on their own (as one file, zubra.js, they cost 60 B). 19.5 KB until a list's
 // rows were found by remembered places (about 230 B, in blocks.js and deep.js).
-const SERVED = 19.75 * 1024;
+//
+// Since the split, what every page loads is base.js and its imports, and core.js (the whole
+// script API: the base, context, form helpers, event helpers, shadow roots, resource()) is what a
+// page's own script gets from the bare `@zubra/runtime`. So there are two figures. The base:
+// 15.9 KB, where every page loaded 19.5. The whole: 20.3 KB, 0.55 KB over what it was, since the
+// helpers are two more files (provide.js, and base.js itself) and small files compress worse.
+const SERVED = 16 * 1024;
+const SERVED_WHOLE = 20.5 * 1024;
 
-test('dist/production as served fits its budget', (t) => {
-  const dir = join(here, '../../dist/production');
-  const sizes = new Map();
-  const queue = ['core.js'];
-  while (queue.length) {
-    const file = queue.pop();
-    if (sizes.has(file)) continue;
-    const code = readFileSync(join(dir, file), 'utf8');
-    sizes.set(file, gzipSync(code).length);
-    for (const match of code.matchAll(/(?:from|import)\s*["']\.\/([^"']+)["']/g)) queue.push(match[1]);
-  }
-  const total = [...sizes.values()].reduce((sum, size) => sum + size, 0);
-  t.diagnostic(`dist/production/core.js and its ${sizes.size - 1} imports: ${total} B gzip, file by file`);
-  assert.ok(total <= SERVED, `${total} B gzip > ${SERVED} B`);
-});
+for (const [entry, budget, what] of [['base.js', SERVED, 'what every page loads'], ['core.js', SERVED_WHOLE, 'the whole script API']]) {
+  test(`dist/production as served fits its budget: ${what}`, (t) => {
+    const dir = join(here, '../../dist/production');
+    const sizes = new Map();
+    const queue = [entry];
+    while (queue.length) {
+      const file = queue.pop();
+      if (sizes.has(file)) continue;
+      const code = readFileSync(join(dir, file), 'utf8');
+      sizes.set(file, gzipSync(code).length);
+      for (const match of code.matchAll(/(?:from|import)\s*["']\.\/([^"']+)["']/g)) queue.push(match[1]);
+    }
+    const total = [...sizes.values()].reduce((sum, size) => sum + size, 0);
+    t.diagnostic(`dist/production/${entry} and its ${sizes.size - 1} imports: ${total} B gzip, file by file`);
+    assert.ok(total <= budget, `${total} B gzip > ${budget} B`);
+  });
+}
 
 // The same as one file (`dist/bundled/zubra.js`, what `@zubra/server` sends with `bundle`): the
 // modules compress together. 18.6 KB file by file, 16.0 KB as one (5.15); 13.6 KB once zb-await's
@@ -174,4 +183,18 @@ test('dist/bundled/zubra.js fits its budget, under the file-by-file build', (t) 
   const size = gzipSync(readFileSync(join(here, '../../dist/bundled/zubra.js'), 'utf8')).length;
   t.diagnostic(`dist/bundled/zubra.js: ${size} B gzip`);
   assert.ok(size <= BUNDLED, `${size} B gzip > ${BUNDLED} B`);
+});
+
+// `dist/split/zubra.js` (what `@zubra/server` sends since the split): the base alone. Context,
+// form controls and their helpers, event modifiers and theirs, shadow roots and resource() are
+// files beside it (0.6 to 1.2 KB each), which a page loads only if its components name them.
+// 11.7 KB where the whole was 14.3: 2.6 KB less for a page that names none.
+const SPLIT = 12 * 1024;
+const BESIDE = { 'provide.js': 900, 'modifiers.js': 1100, 'form.js': 1250, 'shadow.js': 650, 'resource.js': 700 };
+
+test('dist/split: the base and each file beside it fit their budgets', (t) => {
+  const size = (file) => gzipSync(readFileSync(join(here, '../../dist/split', file), 'utf8')).length;
+  t.diagnostic(`dist/split/zubra.js: ${size('zubra.js')} B gzip; ${Object.keys(BESIDE).map((file) => `${file} ${size(file)}`).join(', ')}`);
+  assert.ok(size('zubra.js') <= SPLIT, `${size('zubra.js')} B gzip > ${SPLIT} B`);
+  for (const [file, budget] of Object.entries(BESIDE)) assert.ok(size(file) <= budget, `${file}: ${size(file)} B gzip > ${budget} B`);
 });

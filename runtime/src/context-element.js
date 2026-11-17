@@ -21,7 +21,7 @@
 // app that never provides a context doesn't carry it.
 import { Signal } from './signal.js';
 import { effect, root } from './effect.js';
-import { ContextProviderEvent } from './element.js';
+import { ContextProviderEvent } from './provide.js';
 
 const isSignal = (value) => value instanceof Signal.State || value instanceof Signal.Computed;
 const unwrap = (value) => (isSignal(value) ? value.get() : value);

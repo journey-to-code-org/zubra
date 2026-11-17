@@ -7,6 +7,15 @@ export default {
     "resource.js",
     "signal.js"
   ],
+  "base.js": [
+    "signal.js",
+    "effect.js",
+    "element.js",
+    "parts.js",
+    "when.js",
+    "each.js",
+    "hydrate.js"
+  ],
   "blocks.js": [
     "element.js"
   ],
@@ -17,23 +26,18 @@ export default {
   "context-element.js": [
     "signal.js",
     "effect.js",
-    "element.js"
+    "provide.js"
   ],
   "context.js": [
     "context-element.js"
   ],
   "core.js": [
-    "signal.js",
-    "effect.js",
+    "base.js",
     "resource.js",
-    "element.js",
-    "parts.js",
+    "provide.js",
     "shadow.js",
-    "when.js",
-    "each.js",
     "modifiers.js",
-    "form.js",
-    "hydrate.js"
+    "form.js"
   ],
   "deep.js": [
     "signal.js"
@@ -94,6 +98,10 @@ export default {
     "effect.js"
   ],
   "primitives.js": [],
+  "provide.js": [
+    "signal.js",
+    "element.js"
+  ],
   "react.js": [
     "outlet.js",
     "navigation.js",
@@ -205,6 +213,9 @@ export const bundled = {
     "zubra.js"
   ],
   "primitives.js": [],
+  "provide.js": [
+    "zubra.js"
+  ],
   "react.js": [
     "outlet.js",
     "navigation.js",
@@ -244,4 +255,149 @@ export const bundled = {
     "zubra.js"
   ],
   "zubra.js": []
+};
+
+// The names core.js has that base.js doesn't, and the file each is in: what a server sends only to
+// the pages whose components import it (`@zubra/server` takes each from its file).
+export const split = {
+  "base": "base.js",
+  "names": {
+    "$form": "form.js",
+    "$modified": "modifiers.js",
+    "$shadow": "shadow.js",
+    "ContextProviderEvent": "provide.js",
+    "ContextRequestEvent": "provide.js",
+    "adoptStyles": "shadow.js",
+    "createContext": "provide.js",
+    "formValue": "form.js",
+    "inject": "provide.js",
+    "keys": "modifiers.js",
+    "onFormDisabled": "form.js",
+    "onFormReset": "form.js",
+    "onFormRestore": "form.js",
+    "prevent": "modifiers.js",
+    "provide": "provide.js",
+    "resource": "resource.js",
+    "selfOnly": "modifiers.js",
+    "stop": "modifiers.js",
+    "submit": "modifiers.js",
+    "validity": "form.js"
+  },
+  "modules": {
+    "await.js": [
+      "zubra.js",
+      "resource.js"
+    ],
+    "base.js": [
+      "zubra.js"
+    ],
+    "blocks.js": [
+      "zubra.js"
+    ],
+    "bridge.js": [
+      "zubra.js"
+    ],
+    "context-element.js": [
+      "zubra.js",
+      "provide.js"
+    ],
+    "context.js": [
+      "context-element.js"
+    ],
+    "core.js": [
+      "zubra.js",
+      "resource.js",
+      "provide.js",
+      "shadow.js",
+      "modifiers.js",
+      "form.js"
+    ],
+    "deep.js": [
+      "zubra.js"
+    ],
+    "each.js": [
+      "zubra.js"
+    ],
+    "effect.js": [
+      "zubra.js"
+    ],
+    "element.js": [
+      "zubra.js"
+    ],
+    "form.js": [
+      "zubra.js"
+    ],
+    "forms.js": [],
+    "hydrate.js": [
+      "zubra.js"
+    ],
+    "index.js": [
+      "core.js",
+      "legacy.js",
+      "await.js",
+      "slots.js",
+      "page-styles.js"
+    ],
+    "legacy.js": [
+      "await.js",
+      "zubra.js",
+      "shadow.js",
+      "slots.js",
+      "modifiers.js",
+      "form.js"
+    ],
+    "modifiers.js": [
+      "zubra.js"
+    ],
+    "motion.js": [],
+    "navigation.js": [],
+    "outlet.js": [],
+    "page-styles.js": [],
+    "parts.js": [
+      "zubra.js"
+    ],
+    "primitives.js": [],
+    "provide.js": [
+      "zubra.js"
+    ],
+    "react.js": [
+      "outlet.js",
+      "navigation.js",
+      "context-element.js",
+      "bridge.js"
+    ],
+    "remark.js": [],
+    "resource.js": [
+      "zubra.js"
+    ],
+    "server.js": [],
+    "shadow.js": [
+      "zubra.js"
+    ],
+    "signal.js": [
+      "zubra.js"
+    ],
+    "slots.js": [
+      "zubra.js"
+    ],
+    "spread.js": [
+      "zubra.js"
+    ],
+    "testing.js": [],
+    "track.js": [
+      "zubra.js"
+    ],
+    "vue.js": [
+      "navigation.js",
+      "context-element.js",
+      "bridge.js"
+    ],
+    "when.js": [
+      "zubra.js"
+    ],
+    "zag.js": [
+      "zubra.js"
+    ],
+    "zubra.js": []
+  }
 };

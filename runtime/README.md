@@ -41,6 +41,16 @@ by name, re-exporting from it. `@zubra/server` serves it with `createZubra({ bun
 maps `@zubra/runtime` to it, and compiles its modules to import the binders from their own
 entries (`--binder-entries`). It is generated and checked with the production build.
 
+`dist/split/` is the same made from the base (`src/base.js`) in place of the core: there
+`zubra.js` is what every page needs (11.7 KB gzipped), and what only some components use is in
+files beside it, each on `zubra.js`: context (`provide.js`), form controls and their helpers
+(`form.js`), event modifiers and helpers (`modifiers.js`), shadow roots (`shadow.js`) and
+`resource()` (`resource.js`). `core.js` there is the whole script API again: the base and those
+five. `@zubra/server` serves this one in production, sends each of its modules the names it
+imports from the file that has them (`@zubra/runtime/modules`' `split` says which), and maps the
+bare `@zubra/runtime` to `core.js` for a page's own script. `dist/bundled/` stays whole, for a
+server from before the split, which takes all of those names from `zubra.js`.
+
 ## Signals
 
 `src/signal-impl.js` is an independent implementation of the proposed API. It is held to the

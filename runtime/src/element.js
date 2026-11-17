@@ -233,183 +233,6 @@ export function id() {
   return `${base}-${++component.ids}`;
 }
 
-// ---- form-associated components ------------------------------------------------------------
-//
-// With `form-associated` on the host, the element is a form control built on the platform's
-// ElementInternals: it submits a value, takes part in validation, reset and restore, and is
-// disabled by a disabled <fieldset> — and exposes the same API as native controls.
-
-function formHooks(name) {
-  const component = hooks(name);
-  if (!component.internals) {
-    throw new Error(`zubra: ${name}() needs form-associated on the component's host tag${see('forms')}`);
-  }
-  return component;
-}
-
-/** What the form submits for this control: follows `source` (a signal, function or value). */
-export function formValue(source) {
-  const component = formHooks('formValue');
-  const { internals } = component;
-  component.formValued = true;
-  effect(() => {
-    const value = $r(typeof source === 'function' ? source() : source);
-    internals.setFormValue(value == null ? null : value instanceof FormData || value instanceof File ? value : String(value));
-  });
-}
-
-/**
- * Validation: `check()` returns an error message, or '' / null when the value is valid. Re-runs
- * when what it reads changes; the form won't submit while it reports an error.
- */
-const FOCUSABLE = 'input:not([type=hidden]), select, textarea, button, [tabindex]:not([tabindex="-1"]), [contenteditable]';
-
-export function validity(check) {
-  const component = formHooks('validity');
-  const { internals, host } = component;
-  // The browser shows the message at the anchor and focuses it when a form won't submit: the
-  // first focusable element the component rendered (the host itself isn't focusable).
-  const anchor = () => {
-    for (const node of (host.shadowRoot ?? host).querySelectorAll(FOCUSABLE)) {
-      if (!node.closest('[data-zb-slotted]')) return node;
-    }
-    return host;
-  };
-  let message = '';
-  const apply = () => {
-    if (message) internals.setValidity({ customError: true }, message, anchor());
-    else internals.setValidity({});
-  };
-  effect(() => {
-    message = String($r(check()) || '');
-    apply();
-  });
-  component.mount.push(apply); // once rendered, the anchor is inside
-}
-
-/** The form was reset. */
-export function onFormReset(fn) {
-  formHooks('onFormReset').formReset.push(fn);
-}
-
-/** The browser restored a value (back/forward navigation, autofill): `fn(state, mode)`. */
-export function onFormRestore(fn) {
-  formHooks('onFormRestore').formRestore.push(fn);
-}
-
-/** The control was disabled or enabled (its own attribute, or a disabled <fieldset>). */
-export function onFormDisabled(fn) {
-  formHooks('onFormDisabled').formDisabled.push(fn);
-}
-
-// ---- context (the Web Components Community Group Context Protocol) -------------------------
-//
-// A consumer dispatches a bubbling, composed `context-request` event carrying the context key
-// and a callback; the nearest provider for that key stops it and calls back with the value,
-// and with `subscribe: true` keeps calling back when the value changes, passing an
-// `unsubscribe` function. Providers announce themselves with a `context-provider` event, so a
-// consumer that asked before its provider existed can ask again. Because it is plain DOM events,
-// zubra components share context with any other implementation (Lit's @lit/context, …).
-
-export class ContextRequestEvent extends Event {
-  constructor(context, contextTarget, callback, subscribe) {
-    super('context-request', { bubbles: true, composed: true });
-    this.context = context;
-    this.contextTarget = contextTarget;
-    this.callback = callback;
-    this.subscribe = subscribe;
-  }
-}
-
-export class ContextProviderEvent extends Event {
-  constructor(context, contextTarget) {
-    super('context-provider', { bubbles: true, composed: true });
-    this.context = context;
-    this.contextTarget = contextTarget;
-  }
-}
-
-/** A context key, with the value consumers get when no provider answers. */
-export function createContext(defaultValue) {
-  return Object.freeze({ defaultValue });
-}
-
-/**
- * Provide `value` (a plain value or a signal) for `context` to every element inside this one.
- * Must be called during setup.
- */
-export function provide(context, value) {
-  const host = hooks('provide').host;
-  const subscribers = new Set();
-  host.addEventListener('context-request', (event) => {
-    if (event.context !== context || event.contextTarget === host) return;
-    event.stopPropagation();
-    if (!event.subscribe) return event.callback($r(value));
-    const subscriber = { callback: event.callback };
-    subscriber.unsubscribe = () => subscribers.delete(subscriber);
-    subscribers.add(subscriber);
-    event.callback($r(value), subscriber.unsubscribe);
-  });
-  watch(() => $r(value), (next) => {
-    for (const subscriber of [...subscribers]) subscriber.callback(next, subscriber.unsubscribe);
-  });
-  host.dispatchEvent(new ContextProviderEvent(context, host));
-}
-
-/**
- * Read `context` from the nearest provider above this element, as a signal that follows the
- * provider's value. Must be called during setup. Without a provider the value is `fallback`
- * (by default the context's own default). Works with any Context Protocol provider: pass its
- * key as `context`.
- */
-export function inject(context, fallback = context?.defaultValue) {
-  const component = hooks('inject');
-  const host = component.host;
-  // The value the server rendered with (`data-zb-inject`, by call number) is where it starts,
-  // so hydrating doesn't show the default until the provider answers.
-  const number = (component.injects = (component.injects ?? 0) + 1);
-  const rendered = host.getAttribute('data-zb-inject');
-  if (rendered) {
-    try {
-      const values = JSON.parse(rendered);
-      if (Object.hasOwn(values, number)) fallback = values[number];
-    } catch { /* not ours: keep the default */ }
-  }
-  const value = new Signal.State(fallback);
-  let unsubscribe = null;
-  let answered = false;
-  let generation = 0;
-  const request = () => {
-    const mine = ++generation;
-    answered = false;
-    host.dispatchEvent(new ContextRequestEvent(context, host, (next, stop) => {
-      if (mine !== generation) return stop?.();  // an answer to a request we've moved past
-      answered = true;
-      if (stop) unsubscribe = stop;
-      value.set(next);
-    }, true));
-  };
-  const lateProvider = (event) => {
-    if (!answered && event.context === context && event.contextTarget !== host) request();
-  };
-  // Ask now, so the first render already has the value; ask again whenever the element is
-  // re-attached (it may have moved under a different provider).
-  let firstMount = true;
-  request();
-  onMount(() => {
-    if (!firstMount) request();
-    firstMount = false;
-    document.addEventListener('context-provider', lateProvider);
-    return () => {
-      document.removeEventListener('context-provider', lateProvider);
-      generation++;
-      unsubscribe?.();
-      unsubscribe = null;
-    };
-  });
-  return new Signal.Computed(() => value.get());
-}
-
 /** Call `callback(next, previous)` when `source()` changes (not on the first run). */
 export function watch(source, callback) {
   let first = true;
@@ -561,7 +384,8 @@ function blueprint(source, parent = null) {
 
 // ---- binding parts -------------------------------------------------------------------------
 
-// ---- event helpers: the modifiers, as functions (for JSX, and for handlers built in scripts) --
+// (The event helpers, `prevent`, `keys` and the rest, are modifiers.js's; the form helpers form.js's;
+// context is provide.js's. A page whose components use none of them doesn't load that code.)
 
 /**
  * `function X({ value = model(0) })` in a JSX component marks `value` as two-way (like
@@ -569,44 +393,7 @@ function blueprint(source, parent = null) {
  */
 export const model = (value) => value;
 
-/** `prevent(fn)`: a handler that calls `event.preventDefault()` first. */
-export const prevent = (fn) => function (event) { event.preventDefault(); return fn?.call(this, event); };
-/** `stop(fn)`: a handler that calls `event.stopPropagation()` first. */
-export const stop = (fn) => function (event) { event.stopPropagation(); return fn?.call(this, event); };
-/** `selfOnly(fn)`: a handler that ignores events from inside the element (`.self`). */
-export const selfOnly = (fn) => function (event) { if (event.target === event.currentTarget) return fn?.call(this, event); };
-/** `submit(fn)`: after the handler, submit the element's form, with validation (`.submit`). */
-export const submit = (fn) => function (event) {
-  const result = fn?.call(this, event);
-  formOf(event.currentTarget)?.requestSubmit();
-  return result;
-};
 const formOf = (node) => node.form ?? node.closest('form') ?? node.getRootNode().host?.form;
-
-const KEY_NAMES = {
-  enter: 'Enter', tab: 'Tab', space: ' ', esc: 'Escape', escape: 'Escape', up: 'ArrowUp', down: 'ArrowDown',
-  left: 'ArrowLeft', right: 'ArrowRight', arrowup: 'ArrowUp', arrowdown: 'ArrowDown', arrowleft: 'ArrowLeft',
-  arrowright: 'ArrowRight', delete: 'Delete', backspace: 'Backspace', home: 'Home', end: 'End', pageup: 'PageUp', pagedown: 'PageDown',
-};
-/**
- * `keys('shift+enter', fn)`: a keyboard handler for one key, with exactly the modifier keys named
- * (the same rule as `onkeydown.shift.enter` in a template). Several combinations: `'enter, space'`.
- */
-export function keys(combinations, fn) {
-  const wanted = String(combinations).split(',').map((combination) => {
-    const pieces = combination.trim().toLowerCase().split('+');
-    const key = pieces.pop();
-    // `mod` is ⌘ on Apple platforms and Ctrl elsewhere.
-    const mod = pieces.includes('mod');
-    return { key: KEY_NAMES[key] ?? key, shift: pieces.includes('shift'), ctrl: pieces.includes('ctrl') || (mod && !APPLE()), alt: pieces.includes('alt'), meta: pieces.includes('meta') || (mod && APPLE()) };
-  });
-  return function (event) {
-    const key = event.key ?? '';
-    const match = wanted.some((w) => (w.key.length === 1 ? key.toLowerCase() === w.key : key === w.key)
-      && w.shift === event.shiftKey && w.ctrl === event.ctrlKey && w.alt === event.altKey && w.meta === event.metaKey);
-    if (match) return fn?.call(this, event);
-  };
-}
 
 let apple;
 const APPLE = () => (apple ??= /mac|iphone|ipad|ipod/i.test(navigator.userAgentData?.platform ?? navigator.platform ?? ''));
@@ -1422,4 +1209,4 @@ function defineElement(tag, definition) {
 }
 
 /** @internal What the runtime's feature modules (blocks, when, each, await, slots) take from here. */
-export { adopt, APPLE, FORWARD, bind, blueprint, childRange, COMMENT, current, defineElement, formOf, hasContent, isClose, isContent, isOpen, listen, locate, mark, marker, matchingClose, PI, positions, READS, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, TEXT, toSheet, unmark, untrack };
+export { adopt, APPLE, FORWARD, hooks, bind, blueprint, childRange, COMMENT, current, defineElement, formOf, hasContent, isClose, isContent, isOpen, listen, locate, mark, marker, matchingClose, PI, positions, READS, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, TEXT, toSheet, unmark, untrack };
