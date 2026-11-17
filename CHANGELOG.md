@@ -4,6 +4,8 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+## 5.21.0 — 2026-11-17
+
 ### Added
 
 - **Plain form posts without the reload: `data-zb-updates` and `@zubra/actions/enhance-forms`** (experimental). A form that posts to an app's own route and is redirected back loaded the whole page again. A form that names the parts of the page its post changes, `<form method="post" action="/add" data-zb-updates="site said">`, is now sent with `fetch`, and those parts' children come from the page the server redirects to; the rest of the page, components and typed input included, stays. The server is unchanged, and so is every form without the attribute. `actions.formsScript()` writes the script tag and `createActions` serves it at `/_zb/enhance-forms.js` (0.9 KB compressed). On the comparison's menu page on a slow phone, adding an item took 264 ms, from 525.
