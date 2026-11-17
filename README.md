@@ -624,6 +624,10 @@ Lit apps put Zubra elements in their shadow roots: a light-DOM component's style
 
 `examples/frameworks/` has a complete app for each framework (React, Vue, Svelte, Solid, Lit, Preact, Angular), tested in a browser.
 
+For one real app that uses all of them at once, see [open.parlor](https://github.com/journey-to-code-org/open.parlor): a games site whose buttons, fields, tables, dialogs and playing cards are one set of Zubra components, used from React, Vue, Svelte, Solid and Angular in different parts of the app. It writes the same fixture in each framework and runs one set of browser checks against them all, then publishes [how the last run went](https://journey-to-code-org.github.io/open.parlor/conformance/), check by check and framework by framework, with the fixtures to try by hand and what the checks have found in Zubra so far.
+
+[![Zubra conformance in open.parlor](https://img.shields.io/endpoint?url=https://journey-to-code-org.github.io/open.parlor/conformance/badge.json)](https://journey-to-code-org.github.io/open.parlor/conformance/)
+
 ## Sharing components
 
 **Publish a library** with one command (`zubra` comes with `@zubra/compiler`; no Rust needed):
@@ -783,7 +787,7 @@ Zubra is meant to be absorbed by the platform. These reports give the standards 
 - [`docs/standards/dom-parts.md`](docs/standards/dom-parts.md): what a parts model needed in practice (markers, regions, hydration), for DOM Parts and declarative templating.
 - [`docs/standards/declarative-custom-elements.md`](docs/standards/declarative-custom-elements.md): the `.zb` format as a worked declarative custom elements explainer.
 - [`docs/standards/one-source-n-consumers.md`](docs/standards/one-source-n-consumers.md): the case for one source against agent-made ports, with numbers: what the compiler generates for the registry across the matrix, the ten framework bugs the adapters absorbed once, and an experiment where an agent ported three components to three frameworks (47 behavioural differences before any change; a fix propagated to all six ports without error).
-- [`docs/framework-matrix.md`](docs/framework-matrix.md): what each framework's row in CI proves, and what isn't in a row.
+- [`docs/framework-matrix.md`](docs/framework-matrix.md): what each framework's row in CI proves, and what isn't in a row, and the checks an app outside this repository runs.
 
 ## Stability
 
