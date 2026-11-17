@@ -4,6 +4,8 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+## 5.21.1 — 2026-11-17
+
 ### Changed
 
 - **`@zubra/actions` serves its browser scripts minified in production.** `actions.script()`'s module and the form script (`/_zb/enhance-forms.js`) were sent as written, comments included: 1.34 KB and 1.85 KB compressed. In production (`NODE_ENV=production`, or `createActions({ production: true })`) they now come from the package's `dist/production`: 0.78 KB and 1.04 KB. Development serves the source as before. Found by Potomac's comparison, where the form script added more to the menu page than `follow()` took off. At the edge, serve `dist/production/client.js` and `dist/production/enhance-forms.js` from your static assets, or pass their text as `client` and `forms`.
