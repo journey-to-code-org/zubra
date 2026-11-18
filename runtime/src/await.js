@@ -2,9 +2,9 @@
 
 import { clearBetween, hydratable, mountBlock } from './blocks.js';
 import { effect, scope } from './effect.js';
-import { $r, matchingClose, untrack } from './element.js';
+import { $r, matchingClose } from './element.js';
 import { RESOURCE } from './resource.js';
-import { Signal } from './signal.js';
+import { State, Computed, untrack } from './signal.js';
 
 /**
  * zb-await: the pending block while the value is a promise (anything with `then`), then the
@@ -36,10 +36,10 @@ export function bindAwait(part, open, hydrating, context) {
   let first = hydrating;
   let latest = null;
   let settled = false; // a zb-then or zb-catch block is showing
-  const attempt = new Signal.State(0);
+  const attempt = new State(0);
   // The value, evaluated again only when what it reads changes or retry() asks: a resource
   // settling re-runs the effect below, and mustn't call `load()` again.
-  const current = new Signal.Computed(() => (attempt.get(), $r(part.await())));
+  const current = new Computed(() => (attempt.get(), $r(part.await())));
   const retry = () => {
     for (const value of [].concat(untrack(() => current.get()))) $r(value)?.[RESOURCE] && $r(value).refresh();
     attempt.set(untrack(() => attempt.get()) + 1);
@@ -58,7 +58,7 @@ export function bindAwait(part, open, hydrating, context) {
       const hydrate = first; // the server rendered this branch, unless it left the region to us
       first = false;
       settled = index > 0;
-      if (block) mountBlock(block, index ? [new Signal.State(payload), new Signal.State(retry)] : [], open, close, hydrate, context);
+      if (block) mountBlock(block, index ? [new State(payload), new State(retry)] : [], open, close, hydrate, context);
       else clearBetween(open, close);
     }));
     const done = (index, payload) => {

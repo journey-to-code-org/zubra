@@ -2,14 +2,14 @@
 
 import { clearBetween, departBetween, hydratable, mountBlock } from './blocks.js';
 import { effect } from './effect.js';
-import { $r, matchingClose, untrack } from './element.js';
-import { Signal } from './signal.js';
+import { $r, matchingClose } from './element.js';
+import { Computed, untrack } from './signal.js';
 
 /** zb-if: re-render only when the chosen branch changes, not whenever the test re-runs. */
 export function bindWhen(part, open, hydrating, context) {
   hydrating = hydratable(open, hydrating);
   const close = matchingClose(open);
-  const branch = new Signal.Computed(() => ($r(part.when()) ? 0 : 1));
+  const branch = new Computed(() => ($r(part.when()) ? 0 : 1));
   let first = hydrating;
   effect(() => {
     const block = part.blocks[branch.get()];

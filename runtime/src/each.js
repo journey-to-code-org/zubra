@@ -2,9 +2,9 @@
 
 import { clearBetween, deleteBetween, freshParts, hydratable, mountBlock, move, parentOf } from './blocks.js';
 import { scope, effect, batch } from './effect.js';
-import { $r, bind, isOpen, matchingClose, positions, see, untrack } from './element.js';
+import { $r, bind, isOpen, matchingClose, positions, see } from './element.js';
 import { trackItems } from './deep.js';
-import { Signal } from './signal.js';
+import { State, untrack } from './signal.js';
 
 /**
  * zb-each: one row per item. Each row holds its item and index as signals, so changing one
@@ -29,8 +29,8 @@ export function bindEach(part, open, hydrating, context) {
   // what a block's nodes are at the top never changes after it's bound (a region inside one keeps
   // its own markers), so the first and last stay the row's ends. Only an empty block needs one.
   const createRow = (value, index, key, rowOpen, rowClose, hydrateRow) => {
-    const item = new Signal.State(value);
-    const position = new Signal.State(index);
+    const item = new State(value);
+    const position = new State(index);
     if (rowOpen) {
       const owner = rowsOwner.run(() => scope(() => mountBlock(part.block, [item, position], rowOpen, rowClose, hydrateRow, context)));
       return { key, item, position, open: rowOpen, close: rowClose, owner };
