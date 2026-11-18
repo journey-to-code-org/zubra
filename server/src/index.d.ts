@@ -8,6 +8,8 @@ export interface PageOptions {
    * components' CSS, the import map, the module script, and a streamed prop's scripts).
    */
   nonce?: string;
+  /** This page's limit on a streamed prop, in milliseconds, in place of `createZubra({ streamTimeout })`. `0` for none. */
+  streamTimeout?: number;
 }
 
 export interface Page {
@@ -141,6 +143,19 @@ export interface ZubraOptions {
    * that says to build again. Not with `imports['@zubra/runtime']`.
    */
   runtime?: { file: string; code: string; names: string[]; components?: string[]; scripts?: boolean } | null;
+  /**
+   * What happens to a streamed prop that rejects, or doesn't settle within `streamTimeout`:
+   * called with the error and which component and prop it was. By default the error is logged
+   * (to `warn`, with its stack). The browser gets the error's message in development and
+   * "Internal error" in production, so a database's error never reaches a visitor.
+   */
+  onError?: (error: unknown, where: { component: string; prop: string }) => void;
+  /**
+   * How long, in milliseconds, a prop given as a promise may stay pending before its region is
+   * rejected and the stream ends (`page({ streamTimeout })` sets it for one page). `0` for no
+   * limit. Default 30000.
+   */
+  streamTimeout?: number;
   /**
    * `true`: `handle` and `fetch` answer in Brotli, or gzip, when the request's `accept-encoding`
    * takes one (with `vary: accept-encoding`), each file compressed once and kept. Off by

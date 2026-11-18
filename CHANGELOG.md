@@ -4,6 +4,16 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Security
+
+- **A streamed prop's error stays on the server.** When a prop given as a promise rejected, `@zubra/server` sent the error's message to the browser as it was, for the component's `<zb-catch>` to show: a database's error (hosts, users, queries) reached the visitor. In production the browser now gets "Internal error"; development keeps the message. The error goes to the new `createZubra({ onError: (error, { component, prop }) => … })`, or to `warn` with its stack. `@zubra/server/edge` is production unless given `production: false`. Found by call-store- serving real data.
+
+### Fixed
+
+- **A streamed page always ends.** A prop given as a promise that never settled held the response open for ever. After `streamTimeout` (30 s by default; `createZubra({ streamTimeout })`, or `page({ streamTimeout })` for one page; `0` for none) it is rejected like any other error, and the stream ends.
+- **A render that failed doesn't break the page.** `page.render()` of a name that isn't a component threw, as it should, but recorded the name first, so `head()`, `scripts()` and `finish()` threw too, for the whole page. A component is now the page's once it has rendered.
+- **Prop values JSON can't carry fail where they came from.** `NaN` and `±Infinity` arrived as `null` ("must be a number, found null"), a `BigInt` threw "Do not know how to serialize a BigInt", and a string with half a surrogate pair (text cut inside an emoji) failed every page that showed it with "the request isn't JSON: unexpected end of hex escape". The first three are now refused naming the component and where in the value (`<book-card>'s prop book.price is a BigInt…`); the last renders with U+FFFD in its place and a warning saying where. Functions and `undefined` are still left out, as JSON leaves them; a Date is still its ISO string. The same for slots and context.
+
 ### Added
 
 - **`createZubra({ compress: true })`: the server's files in Brotli or gzip.** `zubra.handle()` and `zubra.fetch()` sent every file as it is, so the sizes these notes give held only behind a CDN or proxy that compresses: on a plain Node host the browser was sent the runtime's base as 30.5 KB, not 12. With `compress: true` they answer in Brotli when the request's `accept-encoding` takes it, in gzip when it takes that, and as before otherwise, with `vary: accept-encoding` either way. Off by default, so no existing app's responses change; `npm create zubra`'s server app turns it on.

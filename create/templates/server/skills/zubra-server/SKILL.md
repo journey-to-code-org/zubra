@@ -24,6 +24,10 @@ Zubra renders components without a DOM on the server: the compiler emits the HTM
 
 Give a prop as a promise: `page.render('reviews', { items: fetchReviews() })`. The component's `<zb-await value={items}>` renders its pending content; `page.stream(html).pipe(res)` (Express/Node) or `return page.streamResponse(html)` (Hono) sends the page, then the resolved region when the promise settles, hydrated by the element. Without JavaScript the pending content stays, so stream only what the page can show late.
 
+A promise that rejects shows the component's `<zb-catch>`: with the error's message in development, and with "Internal error" in production, so a database's error never reaches a visitor. The error itself goes to `createZubra({ onError: (error, { component, prop }) => … })`, or to the log. A promise that doesn't settle within `streamTimeout` (30 s by default; `page({ streamTimeout })` for one page, `0` for none) is rejected the same way, so the response always ends.
+
+Props are JSON. `NaN`, `Infinity` and a `BigInt` are refused with the component and the prop in the message; text cut inside an emoji (half a surrogate pair) is shown as U+FFFD, with a warning saying where; functions are left out, as JSON leaves them.
+
 ## Without JavaScript
 
 - Light-DOM components keep native inputs, links and forms in the page, so they work as they are.

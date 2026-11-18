@@ -69,6 +69,24 @@ export interface EdgeOptions {
    * says the set must stay apart (the reason goes to `warn`).
    */
   bundle?: boolean;
+  /**
+   * `false` (in `wrangler dev`): a streamed prop's error reaches the browser with its message.
+   * Default `true`: it reaches the browser as "Internal error".
+   */
+  production?: boolean;
+  /**
+   * What happens to a streamed prop that rejects, or doesn't settle within `streamTimeout`:
+   * called with the error and which component and prop it was. By default the error is logged
+   * (to `warn`, with its stack). The browser gets the error's message in development and
+   * "Internal error" in production, so a database's error never reaches a visitor.
+   */
+  onError?: (error: unknown, where: { component: string; prop: string }) => void;
+  /**
+   * How long, in milliseconds, a prop given as a promise may stay pending before its region is
+   * rejected and the stream ends (`page({ streamTimeout })` sets it for one page). `0` for no
+   * limit. Default 30000.
+   */
+  streamTimeout?: number;
 }
 
 export declare function createZubra(options: EdgeOptions): EdgeZubra;
