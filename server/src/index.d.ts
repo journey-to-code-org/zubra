@@ -141,6 +141,14 @@ export interface ZubraOptions {
    * that says to build again. Not with `imports['@zubra/runtime']`.
    */
   runtime?: { file: string; code: string; names: string[]; components?: string[]; scripts?: boolean } | null;
+  /**
+   * `true`: `handle` and `fetch` answer in Brotli, or gzip, when the request's `accept-encoding`
+   * takes one (with `vary: accept-encoding`), each file compressed once and kept. Off by
+   * default: turn it on where nothing in front of the server compresses (a plain Node host),
+   * and leave it off behind a CDN, a proxy or middleware that does. Files under 1 KB go as they
+   * are. Not at the edge, where the platform compresses.
+   */
+  compress?: boolean;
 }
 
 export declare function createZubra(options?: ZubraOptions): Zubra;

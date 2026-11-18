@@ -15,7 +15,9 @@ const production = process.env.NODE_ENV === 'production';
 const components = 'src/components';
 
 // `cache: false` compiles on each request, so an edit to a .zb file shows when you reload.
-const zubra = createZubra({ components, cache: production });
+// `compress` sends the modules in Brotli or gzip (a third of the bytes); take it out if your
+// host or a proxy in front compresses already.
+const zubra = createZubra({ components, cache: production, compress: true });
 // The functions marked 'use server' in the components, served at /_zb/action/<tag>/<name>.
 const actions = await createActions({ components });
 
