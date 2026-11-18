@@ -6,6 +6,14 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ### Added
 
+- **`buildRuntime()` from `@zubra/server/build`: an app's own build of the runtime** (experimental). `@zubra/server` has no bundler, so the runtime file a page loads holds everything any component might use of it. An app that installs esbuild can now have one built for it: every name its components, the plain modules beside them and `@zubra/sync` import from the runtime is collected, and the result is one module with those names and only what they reach. `createZubra({ runtime })` serves it in production in place of the base and the files beside it; development ignores it. It takes a fraction of a second, so `const runtime = await buildRuntime({ components })` when the server starts is enough.
+  - On the comparison's menu app the runtime file goes from 12.0 KB to 10.5 KB compressed (the app has a list on another page, so `zb-each` stays in). On an app that uses context, form controls, event modifiers, shadow roots and `resource()`: one file of 12.1 KB where a page loaded seven, 18.4 KB.
+  - A component that names something the build doesn't have (added since it was built) is refused when it is compiled, with a message that says to build again; it never reaches the browser half-working. `keep: ['watch']` adds names for a `<script type="module">` of your own.
+  - While a built runtime is served, the runtime's own files answer with a module that throws and says why: loaded beside it they would be a second copy, with signals the first can't see.
+  - Not at the edge, not with `imports['@zubra/runtime']`, and not for components compiled by Zubra 5.19 or older. esbuild is an optional peer: nothing changes for an app that doesn't install it.
+
+### Added
+
 - **`--emit element` provides `onFormReset`, `onFormRestore` and `onFormDisabled`** (#367). A plain element had `formValue` and `validity`, half of the form-associated API, and refused the other half, so a control that wanted to hear a disabled `<fieldset>` couldn't be a plain element (zubra-ui's `toggle-switch` worked around it with a `disabled` prop). The three hooks are now the class's `formResetCallback`, `formStateRestoreCallback(state, mode)` and `formDisabledCallback(disabled)`, written only for a component whose script asks for them. As with the runtime, a script's own `onFormReset` is the reset, in place of a single two-way prop going back to what it started as, and a control disabled before its script ran hears it once it has. `zubra convert` reads the hooks back. One difference from `--emit js`: in a component without `form-associated`, where the browser would never call them, the compiler says so ("`onFormDisabled()` needs form-associated on the component's host tag") where the runtime throws when the element starts.
 
 ### Changed

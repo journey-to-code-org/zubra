@@ -25,7 +25,7 @@ const RENDER_LARGEST = 512 * 1024;
  * host serves under `<base>/` beyond the components' modules (`{ status, type, body }` or null).
  * `needs(name, code)`: the host's check on a compiled module (a package it needs being installed).
  */
-export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, changed = null, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, runtimeSplit = null, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}` }) {
+export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, changed = null, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, runtimeSplit = null, runtimeBuilt = null, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}` }) {
   if (gaps !== 'warn' && gaps !== 'ignore') throw new Error(`@zubra/server: gaps is "warn" or "ignore", not ${JSON.stringify(gaps)}`);
   if (clientModules !== 'all' && clientModules !== 'needed') throw new Error(`@zubra/server: clientModules is "all" or "needed", not ${JSON.stringify(clientModules)}`);
   if (typeof inline !== 'boolean') throw new Error(`@zubra/server: inline is true or false, not ${JSON.stringify(inline)}`);
@@ -247,7 +247,7 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     // framework's, naming only `@zubra/runtime`) loads them too.
     const response = send({ emit: 'js', runtime: '@zubra/runtime', devtools, binderEntries: true, path, files: sourcesOf(path), ...(stylesHref ? { stylesHref } : {}) });
     if (!response.ok) throw new Error(response.error);
-    return resolved(routed(resolveImports(older(name, String(needs(name, response.output))), bindersFor(name)), besideFor(name)));
+    return resolved(routed(resolveImports(older(name, String(needs(name, response.output))), bindersFor(name)), besideFor(name), `${where}${name}.zb`));
   });
 
   /** What each bare specifier a browser module may import resolves to: the import map's entries. */
@@ -268,9 +268,20 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   // files), for a script of the page's own; it is the same modules, so one copy of everything.
   // Not when `imports` says where the runtime is: that address is all this server knows about it,
   // and it is used as it always was.
-  const splitting = Boolean(runtimeSplit) && !imports['@zubra/runtime'];
+  //
+  // `runtimeBuilt` (experimental; `buildRuntime()` of `@zubra/server/build` makes one): the app's
+  // own build of the runtime, one module with only what its components name and what that
+  // reaches. It takes the place of the base and every file beside it: each name a served module
+  // imports from the runtime, whichever entry or file it named, comes from that one module, and
+  // so does the bare `@zubra/runtime`. A name it doesn't have is an error that says to build
+  // again, when the module is compiled and not in the browser. The runtime's other files would
+  // be a second copy of it (two graphs of signals that don't see each other), so while a built
+  // runtime is served they answer with a module that throws and says so.
+  const built = runtimeBuilt && !imports['@zubra/runtime'] ? { file: runtimeBuilt.file, code: runtimeBuilt.code, names: new Set(runtimeBuilt.names) } : null;
+  const builtMissing = (name, where) => new Error(`${where} imports \`${name}\` from @zubra/runtime, which the built runtime doesn't have. Build it again (buildRuntime()) now that the components have changed, or pass \`keep: ['${name}']\` if a script of your own needs it`);
+  const splitting = !built && Boolean(runtimeSplit) && !imports['@zubra/runtime'];
   const baseFile = runtimeFile === 'zubra.js' ? 'zubra.js' : runtimeSplit?.base;
-  const runtimeUrl = imports['@zubra/runtime'] ?? `${base}/runtime/${splitting ? 'core.js' : runtimeFile}`;
+  const runtimeUrl = imports['@zubra/runtime'] ?? `${base}/runtime/${built ? built.file : splitting ? 'core.js' : runtimeFile}`;
   // zb-if's, zb-each's, event modifiers', form controls' and hydration's binders are the core's own, so they
   // come from `@zubra/runtime` like the rest of it. zb-await's and the slots' are files of their own, beside the core: by a path
   // relative to the component's module, so they move with the folder (a static site that serves
@@ -289,6 +300,7 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     const all = names.split(',').map((one) => one.trim()).filter(Boolean);
     const legacy = all.filter((one) => /^\$(?:define|element)(?:\s|$)/.test(one));
     if (!legacy.length) return whole;
+    if (built) throw new Error(`${where}${name} was compiled by an older Zubra (it asks for ${legacy[0].split(/\s/)[0]}), which a built runtime can't serve: compile it again, or leave out \`runtime\``);
     const rest = all.filter((one) => !legacy.includes(one));
     return `import { ${legacy.join(', ')} } from ${quote}${besideFor(name)('legacy.js')}${quote};${rest.length ? ` import { ${rest.join(', ')} } from ${quote}@zubra/runtime${quote};` : ''}`;
   });
@@ -298,7 +310,12 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
    * runtime file's address from where the module is served. Only `import { … } from`: anything
    * else (`import * as`, `export … from`) keeps the bare specifier, which is the whole API.
    */
-  const routed = (code, beside) => (!splitting ? code : String(code).replace(/import\s*\{([^}]*)\}\s*from\s*(["'])@zubra\/runtime\2;?/g, (_whole, names, quote) => {
+  const routed = (code, beside, from = 'a module') => (built ? String(code).replace(/import\s*\{([^}]*)\}\s*from\s*(["'])(@zubra\/runtime(?:\/[\w-]+)?|(?:\.\.\/)+runtime\/[\w.-]+\.js)\2;?/g, (_whole, names, quote) => {
+    // (Every entry and file of the runtime: the built module is all of them at once.)
+    const list = names.split(',').map((one) => one.trim()).filter(Boolean);
+    for (const one of list) if (!built.names.has(one.split(/\s+as\s+/)[0])) throw builtMissing(one.split(/\s+as\s+/)[0], from);
+    return `import { ${list.join(', ')} } from ${quote}${beside(built.file)}${quote};`;
+  }) : !splitting ? code : String(code).replace(/import\s*\{([^}]*)\}\s*from\s*(["'])@zubra\/runtime\2;?/g, (_whole, names, quote) => {
     const byFile = new Map();
     for (const one of names.split(',').map((one) => one.trim()).filter(Boolean)) {
       const file = runtimeSplit.names[one.split(/\s+as\s+/)[0]] ?? baseFile;
@@ -316,7 +333,8 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     }
     return { '@zubra/runtime/when': '@zubra/runtime', '@zubra/runtime/each': '@zubra/runtime', '@zubra/runtime/modifiers': '@zubra/runtime', '@zubra/runtime/form': '@zubra/runtime', '@zubra/runtime/hydrate': '@zubra/runtime', '@zubra/runtime/parts': '@zubra/runtime', '@zubra/runtime/shadow': '@zubra/runtime', '@zubra/runtime/await': beside('await.js'), '@zubra/runtime/slots': beside('slots.js') };
   };
-  const mapping = () => ({ '@zubra/runtime': runtimeUrl, '@zubra/runtime/spread': `${base}/runtime/spread.js`, '@zubra/runtime/primitives': `${base}/runtime/primitives.js`, '@zubra/runtime/motion': `${base}/runtime/motion.js`, '@zubra/runtime/track': `${base}/runtime/track.js`, ...syncImports, ...imports });
+  const entry = (file) => `${base}/runtime/${built ? built.file : file}`;
+  const mapping = () => ({ '@zubra/runtime': runtimeUrl, '@zubra/runtime/spread': entry('spread.js'), '@zubra/runtime/primitives': entry('primitives.js'), '@zubra/runtime/motion': entry('motion.js'), '@zubra/runtime/track': entry('track.js'), ...syncImports, ...imports });
   /**
    * `inline: false` (a Content-Security-Policy without `'unsafe-inline'`, on a site that can't
    * give each response a nonce): a page gets no import map, so every module is served with its
@@ -479,7 +497,7 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
         const path = rest.slice('components/'.length);
         const module = browserModules().has(path) && localModule(path);
         if (!module) return { status: 404, type: 'text/plain', body: 'Not found' };
-        const body = routed(module.body, besideAt(path));
+        const body = routed(module.body, besideAt(path), `${where}${path}`);
         return { ...module, body: inline ? body : resolved(body) };
       }
       // A package's copy of a tag the app has too: the module is the app's, so the browser
@@ -491,12 +509,18 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
       }
       return { status: 200, type: TYPES['.js'], body: js(name) };
     }
+    if (built && rest.startsWith('runtime/') && rest.endsWith('.js')) {
+      const file = rest.slice('runtime/'.length);
+      if (file === built.file) return { status: 200, type: TYPES['.js'], body: built.code, immutable: true };
+      // (remark.js imports nothing: the built module loads it when server markup needs repair.)
+      if (file !== 'remark.js') return { status: 200, type: TYPES['.js'], body: `throw new Error(${JSON.stringify(`@zubra/server: this app serves a built runtime (${built.file}), and something asked for the runtime's own ${file}, which would be a second copy of it. A script that imports the runtime should use the name @zubra/runtime; a component compiled elsewhere needs \`runtime\` left out`)});\n` };
+    }
     // The runtime and @zubra/sync are the host's to serve (from disk on Node, from static assets elsewhere).
     const asset = assets(rest);
     // The runtime's and @zubra/sync's own modules import each other by name too.
     if (!asset || asset.status !== 200 || !rest.endsWith('.js')) return asset;
     // @zubra/sync's modules take what they use of the runtime from its files, as components do.
-    const body = rest.startsWith('sync/') ? routed(asset.body, besideAt(rest.slice('sync/'.length))) : asset.body;
+    const body = rest.startsWith('sync/') ? routed(asset.body, besideAt(rest.slice('sync/'.length)), `@zubra/sync's ${rest.slice('sync/'.length)}`) : asset.body;
     return inline ? (body === asset.body ? asset : { ...asset, body }) : { ...asset, body: resolved(body) };
   }
   // (With `changed`, a module may differ on the next request: the browser asks each time.)
