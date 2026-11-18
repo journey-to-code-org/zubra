@@ -277,7 +277,17 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   // again, when the module is compiled and not in the browser. The runtime's other files would
   // be a second copy of it (two graphs of signals that don't see each other), so while a built
   // runtime is served they answer with a module that throws and says so.
-  const built = runtimeBuilt && !imports['@zubra/runtime'] ? { file: runtimeBuilt.file, code: runtimeBuilt.code, names: new Set(runtimeBuilt.names) } : null;
+  //
+  // A build may hold the app's components as well (`buildApp()`: `components`, their names, and
+  // `scripts` if it took the app's own page scripts too). Then that one module is all a page
+  // loads: it is the page's only script and only preload, and a component's own address answers
+  // with an import of it. A component it doesn't hold is refused like a name it doesn't have.
+  const built = runtimeBuilt && !imports['@zubra/runtime'] ? { file: runtimeBuilt.file, code: runtimeBuilt.code, names: new Set(runtimeBuilt.names), components: runtimeBuilt.components ? new Set(runtimeBuilt.components) : null, scripts: Boolean(runtimeBuilt.scripts) } : null;
+  const whole = built?.components ?? null;
+  const inWhole = (name) => {
+    if (!whole.has(name)) throw new Error(`${where}${name} isn't in the app's built module. Build it again (buildApp()) now that the components have changed`);
+    return name;
+  };
   const builtMissing = (name, where) => new Error(`${where} imports \`${name}\` from @zubra/runtime, which the built runtime doesn't have. Build it again (buildRuntime()) now that the components have changed, or pass \`keep: ['${name}']\` if a script of your own needs it`);
   const splitting = !built && Boolean(runtimeSplit) && !imports['@zubra/runtime'];
   const baseFile = runtimeFile === 'zubra.js' ? 'zubra.js' : runtimeSplit?.base;
@@ -423,6 +433,9 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   };
   /** The modules a page's script loads itself: its components', or the one they are joined as. */
   const entries = (names) => {
+    // (The app's one module, for a page with a component of its own or where the module has the
+    // app's page scripts.)
+    if (whole) return componentSet(names).map(inWhole).length || built.scripts ? [`${base}/runtime/${built.file}`] : [];
     const one = joined(names);
     return one ? [one.url] : names.map(componentUrl);
   };
@@ -486,6 +499,11 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
       }
       if (!one || one.url !== `${base}/${rest}`) return { status: 404, type: 'text/plain', body: 'Not found' };
       return { status: 200, type: TYPES['.js'], body: one.body, immutable: true };
+    }
+    // A component the app's one module holds: its own address is that module, so nothing
+    // defines the element twice.
+    if (whole && rest.startsWith('components/') && rest.endsWith('.js') && whole.has(rest.slice('components/'.length, -3))) {
+      return { status: 200, type: TYPES['.js'], body: `import '${besideFor(rest.slice('components/'.length, -3))(built.file)}';\n` };
     }
     if (rest.startsWith('components/') && rest.endsWith('.js')) {
       const name = rest.slice('components/'.length, -3);

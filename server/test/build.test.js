@@ -3,13 +3,13 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { chromium } from 'playwright';
 import { createZubra } from '../src/index.js';
-import { buildRuntime } from '../src/build.js';
+import { buildApp, buildRuntime } from '../src/build.js';
 
 const components = mkdtempSync(join(tmpdir(), 'zubra-build-'));
 const write = (name, source) => writeFileSync(join(components, name), source);
@@ -180,6 +180,100 @@ test('in a browser: a script that asks the runtime for a name that was not kept 
     assert.equal(await page.textContent('plain-card output'), '1', "the page's components are unharmed");
     assert.equal(errors.length, 1);
     assert.match(errors[0], /does not provide an export named 'watch'/);
+  } finally {
+    await page.close();
+  }
+});
+
+// ---- buildApp(): the same module also holds the components and the app's own page scripts.
+
+// A page script of the app's own, which uses the runtime: it must be the components' copy of it.
+const scriptsDir = mkdtempSync(join(tmpdir(), 'zubra-build-scripts-'));
+const ownScript = join(scriptsDir, 'own.js');
+writeFileSync(ownScript, "import { effect, state } from '@zubra/runtime';\nconst ran = state(0);\neffect(() => { window.ownScript = `ran ${ran.get()}`; });\nwindow.bump = () => ran.set(ran.get() + 1);\n");
+after(() => rmSync(scriptsDir, { recursive: true, force: true }));
+const scriptTags = (html) => [...html.matchAll(/<script type="module"[^>]*>([^<]*)<\/script>/g)].map((match) => match[1]);
+
+test('buildApp: one module with the runtime, every component, the plain modules they import and the scripts named', async () => {
+  const app = await buildApp({ components, scripts: [ownScript] });
+  assert.match(app.file, /^app-[0-9a-f]{10}\.js$/);
+  assert.deepEqual(app.components, ['guard-link', 'key-box', 'late-word', 'pick-one', 'plain-card', 'spread-box', 'theme-box', 'theme-name']);
+  assert.equal(app.scripts, true);
+  for (const tag of app.components) assert.ok(app.code.includes(`"${tag}"`), `${tag} is defined in it`);
+  assert.ok(app.code.includes('ownScript'), 'the script is in it');
+  // Nothing left to fetch but the runtime's repair chunk, which is only loaded when needed.
+  assert.deepEqual([...app.code.matchAll(/(?:\bfrom|\bimport)\s*["']([^"']+)["']/g)].map((match) => match[1]), []);
+  assert.ok(app.names.includes('$component') && app.names.includes('provide'), 'and it still exports what a served module or a page script may ask the runtime for');
+  assert.equal((await buildApp({ components })).scripts, false);
+  // @zubra/sync is left for the server to send, so a script and a component share one copy.
+  const syncing = join(scriptsDir, 'syncing.js');
+  writeFileSync(syncing, "import { follow } from '@zubra/sync/follow';\nfollow();\n");
+  assert.deepEqual([...(await buildApp({ components, scripts: [syncing] })).code.matchAll(/(?:\bfrom|\bimport)\s*["']([^"']+)["']/g)].map((match) => match[1]), ['@zubra/sync/follow']);
+  await assert.rejects(buildApp({ components, scripts: [join(scriptsDir, 'missing.js')] }), /no script at .*missing\.js/);
+});
+
+test("with the app's module a page has one script and one preload, and a component's own address is that module", async () => {
+  const app = await buildApp({ components, scripts: [ownScript] });
+  const zubra = createZubra({ components, production: true, runtime: app });
+  const html = pageOf(zubra, ALL);
+  assert.deepEqual(preloaded(html), [`/_zubra/runtime/${app.file}`]);
+  assert.deepEqual(scriptTags(html), [`import '/_zubra/runtime/${app.file}';`]);
+  assert.equal(await text(zubra, '/_zubra/components/plain-card.js'), `import '../runtime/${app.file}';\n`);
+  // A page with no component still gets the module when it holds the app's scripts, and not otherwise.
+  assert.deepEqual(scriptTags(zubra.page().finish(layout('<p>plain</p>'))), [`import '/_zubra/runtime/${app.file}';`]);
+  const noScripts = createZubra({ components, production: true, runtime: await buildApp({ components }) });
+  assert.deepEqual(scriptTags(noScripts.page().finish(layout('<p>plain</p>'))), []);
+  // Development: every module on its own, as always.
+  assert.ok(scriptTags(pageOf(createZubra({ components, production: false, runtime: app }), ['plain-card']))[0].includes('/_zubra/components/plain-card.js'));
+});
+
+test("a component added since the app's module was built is refused when its page is made, with what to do", async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'zubra-build-stale-'));
+  try {
+    cpSync(components, folder, { recursive: true });
+    const app = await buildApp({ components: folder });
+    writeFileSync(join(folder, 'new-one.zb'), '<new-one>\n  <p>new</p>\n</new-one>\n');
+    const zubra = createZubra({ components: folder, production: true, runtime: app });
+    const page = zubra.page();
+    page.render('new-one');
+    assert.throws(() => page.finish(layout('')), /new-one isn't in the app's built module\. Build it again \(buildApp\(\)\)/);
+    assert.doesNotThrow(() => pageOf(zubra, ['plain-card']));
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("in a browser: the whole page runs from the app's one module, its own script on the components' runtime", async () => {
+  const app = await buildApp({ components, scripts: [ownScript] });
+  const zubra = createZubra({ components, production: true, runtime: app });
+  const html = pageOf(zubra, ALL);
+  const url = await serving(zubra, html);
+  const page = await browser.newPage();
+  const errors = [];
+  const asked = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => message.type() === 'error' && errors.push(message.text()));
+  page.on('request', (request) => request.resourceType() === 'script' && asked.push(new URL(request.url()).pathname));
+  try {
+    await page.goto(url);
+    await page.waitForFunction(() => ['plain-card', 'key-box', 'guard-link', 'theme-box', 'theme-name', 'late-word', 'pick-one', 'spread-box'].every((tag) => customElements.get(tag)));
+    await page.click('plain-card .up');
+    assert.equal(await page.textContent('plain-card output'), '1');
+    await page.press('key-box input', 'Enter');
+    assert.equal(await page.textContent('key-box output'), 'enter');
+    await page.click('guard-link a');
+    assert.equal(await page.textContent('guard-link output'), '1');
+    assert.equal(await page.textContent('theme-name output'), 'dark');
+    await page.waitForFunction(() => document.querySelector('late-word output').textContent === 'ready');
+    await page.click('pick-one .b');
+    await page.waitForFunction(() => new FormData(document.querySelector('form')).get('pick') === 'b');
+    assert.equal(await page.getAttribute('spread-box p', 'title'), 'spread');
+    // The app's own script ran, and its effect is on the same runtime (it follows its state).
+    assert.equal(await page.evaluate(() => window.ownScript), 'ran 0');
+    await page.evaluate(() => window.bump());
+    await page.waitForFunction(() => window.ownScript === 'ran 1');
+    assert.deepEqual(errors, []);
+    assert.deepEqual(asked, [`/_zubra/runtime/${app.file}`], 'one script, and no other');
   } finally {
     await page.close();
   }
