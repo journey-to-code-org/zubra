@@ -16,7 +16,7 @@ export const demos = [
     blurb: 'Live prices on every tick through prop: bindings, nested elements, and an SVG chart with pointer events.', build: 'frameworks' },
   { id: 'lit-chat', dir: 'examples/frameworks/lit-chat', title: 'Team chat', stack: 'Lit 3', group: 'Frameworks',
     blurb: 'Light-DOM Zubra elements inside a LitElement’s shadow root, with the user from @lit/context.', build: 'frameworks' },
-  { id: 'preact-habits', dir: 'examples/frameworks/preact-habits', title: 'Habit tracker', stack: 'Preact 10', group: 'Frameworks',
+  { id: 'preact-habits', dir: 'examples/frameworks/preact-habits', title: 'Habit tracker', stack: 'Preact 11', group: 'Frameworks',
     blurb: 'Objects as props, a contribution-style grid with keyboard navigation, and a Zubra form control in a Preact form.', build: 'frameworks' },
   { id: 'angular-booking', dir: 'examples/frameworks/angular-booking', title: 'Booking wizard', stack: 'Angular 22', group: 'Frameworks',
     blurb: 'Reactive forms whose controls are Zubra elements, with validation and a step indicator.', build: 'frameworks' },
