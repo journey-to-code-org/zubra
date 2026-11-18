@@ -100,7 +100,7 @@ The compiled ABI runs one way: a runtime runs what its own and older compilers w
 | `@zubra/server/express` | Stable | Plugin job; server example | Help desk |
 | `@zubra/server/fastify` | Stable | Plugin job | Its tests |
 | `@zubra/server/hono` | Stable | Plugin job; hypermedia examples | Hono bike shop |
-| `@zubra/server/build` | Experimental | Server (`build.test.js`, Chromium) | `buildRuntime()` and `createZubra({ runtime })`: an app's own build of the runtime. Needs esbuild, installed by the app |
+| `@zubra/server/build` | Experimental | Server (`build.test.js`, Chromium) | `buildRuntime()`, `buildApp()` and `createZubra({ runtime })`: an app's own build of the runtime, or of the runtime with its components and page scripts as one module. Needs esbuild, installed by the app |
 | `@zubra/server/edge` | Supported | WebAssembly compiler (`edge.test.js`); edge jobs | Worker examples |
 | `@zubra/server/hono-edge` | Supported | Hono bike shop on a Cloudflare Worker | `examples/edge/hono-bikes-worker` |
 

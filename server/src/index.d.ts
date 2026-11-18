@@ -140,7 +140,7 @@ export interface ZubraOptions {
    * that names something the build doesn't have is refused when it is compiled, with a message
    * that says to build again. Not with `imports['@zubra/runtime']`.
    */
-  runtime?: { file: string; code: string; names: string[] } | null;
+  runtime?: { file: string; code: string; names: string[]; components?: string[]; scripts?: boolean } | null;
 }
 
 export declare function createZubra(options?: ZubraOptions): Zubra;

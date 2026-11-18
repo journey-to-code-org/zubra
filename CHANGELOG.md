@@ -4,6 +4,14 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Added
+
+- **`buildApp()` from `@zubra/server/build`: the whole app as one module** (experimental). A page loaded the runtime, a module per component and each script of its own: four requests on the comparison's menu page, and on a slowed phone the requests, not the work in them, were most of the time between Zubra and the single-file libraries. `buildApp({ components, scripts })` builds what `buildRuntime()` does and puts every component, the plain modules they import and the page scripts you name into the same module; passed as `createZubra({ runtime })`, it is a page's only script and only preload. On that menu page, CPU slowed six times, thirty interleaved loads: 301 ms to 242 ms to the load event, level with Lit (244), and 12.7 KB in four files to 12.1 KB in one. With `@zubra/sync`, which stays the server's to send: 323 ms to 297 ms, five files to three.
+  - Every page loads the same module, so it is cached once; it defines every component of the app, whether the page uses it or not.
+  - A script you name runs on the components' copy of the runtime: `import { effect } from '@zubra/runtime'` in it is theirs.
+  - A component added since the build is refused when its page is made, with a message that says to build again. A component's own address (`/_zubra/components/<name>.js`) answers with an import of the module, so nothing defines an element twice.
+  - As `buildRuntime()`: needs esbuild installed by the app, production only, not at the edge.
+
 ## 5.23.0 — 2026-11-18
 
 ### Added
