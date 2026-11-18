@@ -53,7 +53,7 @@ const posix = (path) => path.split(sep).join('/');
  *
  * Everything that doesn't need a disk is in `core.js`, shared with `edge.js` (Workers).
  */
-export function createZubra({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = process.env.NODE_ENV === 'production', devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, runtime = null } = {}) {
+export function createZubra({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = process.env.NODE_ENV === 'production', devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, runtime = null, onError, streamTimeout } = {}) {
   const root = resolve(components);
   // The folder as the disk has it, links resolved: what a served module's real path must be inside.
   const realRoot = existsSync(root) ? realpathSync(root) : root;
@@ -197,6 +197,10 @@ export function createZubra({ components = 'components', packages = [], prefix =
 
   const core = createCore({
     warn,
+    // A streamed prop's error: its text reaches the browser in development only (core's `rejected`).
+    production,
+    onError,
+    streamTimeout,
     gaps,
     clientModules,
     inline,
