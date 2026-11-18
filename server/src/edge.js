@@ -42,7 +42,7 @@ function normalize(path) {
  * otherwise go). `dist/bundled`, from before the split, still works there: `zubra.js` is then
  * the whole core and the files beside it only pass its names on.
  */
-export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : null, components = {}, prefix = '/_zubra', cache = true, devtools = false, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false } = {}) {
+export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : null, components = {}, prefix = '/_zubra', cache = true, devtools = false, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, production = true, onError, streamTimeout } = {}) {
   if (!compiler) throw new Error("@zubra/server/edge: createZubra() needs the compiler's WebAssembly module (`wasm`), or a `compiler` from createCompiler()");
   const sources = new Map(); // path → source
   const files = new Map(); // name → path
@@ -79,6 +79,11 @@ export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : nul
 
   return createCore({
     warn,
+    // A Worker is production unless told otherwise (`production: false` in `wrangler dev`): a
+    // streamed prop's error reaches the browser as "Internal error".
+    production,
+    onError,
+    streamTimeout,
     gaps,
     clientModules,
     inline,

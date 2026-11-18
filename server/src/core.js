@@ -16,6 +16,17 @@ export { SOURCE_EXTENSION, TYPES };
 const RENDERS = 500;
 const RENDER_BYTES = 8 * 1024 * 1024;
 const RENDER_LARGEST = 512 * 1024;
+// How long a streamed prop may stay pending before its region is rejected (`streamTimeout`).
+const STREAM_TIMEOUT = 30_000;
+
+// Half of a surrogate pair: a high one not followed by a low one, or a low one not after a high one.
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+const wellFormed = (text) => (typeof text.isWellFormed === 'function' ? text.isWellFormed() : !LONE_SURROGATE.test(text));
+const toWellFormed = (text) => (typeof text.toWellFormed === 'function' ? text.toWellFormed() : text.replace(new RegExp(LONE_SURROGATE.source, 'g'), '\uFFFD'));
+
+function checkTimeout(value) {
+  if (typeof value !== 'number' || !(value >= 0)) throw new Error(`@zubra/server: streamTimeout is a number of milliseconds (0 for no limit), not ${String(value)}`);
+}
 
 /**
  * `request(body)`: the compiler (`{ ok, output, error }`). `files`: a Map from component name
@@ -25,11 +36,13 @@ const RENDER_LARGEST = 512 * 1024;
  * host serves under `<base>/` beyond the components' modules (`{ status, type, body }` or null).
  * `needs(name, code)`: the host's check on a compiled module (a package it needs being installed).
  */
-export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, changed = null, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, runtimeSplit = null, runtimeBuilt = null, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}` }) {
+export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, changed = null, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, runtimeSplit = null, runtimeBuilt = null, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}`, production = false, onError = null, streamTimeout = STREAM_TIMEOUT }) {
   if (gaps !== 'warn' && gaps !== 'ignore') throw new Error(`@zubra/server: gaps is "warn" or "ignore", not ${JSON.stringify(gaps)}`);
   if (clientModules !== 'all' && clientModules !== 'needed') throw new Error(`@zubra/server: clientModules is "all" or "needed", not ${JSON.stringify(clientModules)}`);
   if (typeof inline !== 'boolean') throw new Error(`@zubra/server: inline is true or false, not ${JSON.stringify(inline)}`);
   if (typeof preload !== 'boolean') throw new Error(`@zubra/server: preload is true or false, not ${JSON.stringify(preload)}`);
+  checkTimeout(streamTimeout);
+  if (onError !== null && typeof onError !== 'function') throw new Error('@zubra/server: onError is a function (error, { component, prop })');
   const memo = new Map();
   // `changed` (the Node server in development, with `cache`): asked whether the sources differ
   // from when it was last asked, at most once per run of synchronous work (a render, a request
@@ -185,6 +198,10 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     return response;
   };
   const render = (name, props = {}, slots = {}, pending = [], idPrefix = '', context = {}) => {
+    // (The tag is looked up only for a message: asking for it would be a request of its own.)
+    props = sendable(props, (path) => `<${tagOf(name)}>'s prop ${path}`);
+    slots = sendable(slots, (path) => `<${tagOf(name)}>'s slot ${path}`);
+    context = sendable(context, () => `<${tagOf(name)}>'s context`);
     const response = answer(name, props, slots, pending, idPrefix, context);
     if (!response.ok) throw new Error(response.error);
     // A value that isn't a safe URL (a user's `javascript:` link) is left out, as the element
@@ -202,6 +219,60 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     return response.output;
   };
   const css = (name) => once(`css:${name}`, () => call(pathOf(name), { emit: 'css' }));
+  /** A component's tag, for messages; its name when it has none to give (it doesn't compile). */
+  function tagOf(name) {
+    try {
+      return describe(name).tag;
+    } catch {
+      return name;
+    }
+  }
+  /**
+   * Props, slots or context as the compiler can read them (JSON). A number JSON can't carry
+   * (NaN, ±Infinity) or a BigInt is refused here, naming the component and where in the value
+   * it was, instead of arriving as null or failing in JSON.stringify. A string with half of a
+   * surrogate pair (text cut inside an emoji) is repaired to U+FFFD and reported: one stored
+   * value shouldn't make every page that shows it an error page. What JSON leaves out (a
+   * function, a symbol, undefined) it still leaves out: frameworks pass event handlers through
+   * props. A value is copied only where something in it was repaired.
+   */
+  function sendable(value, where) {
+    const ancestors = new Set();
+    const walk = (value, path) => {
+      if (typeof value === 'string') {
+        if (wellFormed(value)) return value;
+        const message = `@zubra/server: ${where(path)} has half of a surrogate pair (text cut inside an emoji or another character outside the BMP); it is shown as U+FFFD. Fix the stored text, or call toWellFormed() on it.`;
+        if (!warned.has(message)) {
+          warned.add(message);
+          warn(message);
+        }
+        return toWellFormed(value);
+      }
+      if (typeof value === 'number') {
+        if (Number.isFinite(value)) return value;
+        throw new Error(`@zubra/server: ${where(path)} is ${value}, which JSON can't carry (it would arrive as null). Pass a finite number, or null for none`);
+      }
+      if (typeof value === 'bigint') throw new Error(`@zubra/server: ${where(path)} is a BigInt, which JSON can't carry. Pass it as a number or a string`);
+      // (A value with toJSON, a Date among them, is what toJSON gives; a cycle is JSON's to report.)
+      if (!value || typeof value !== 'object' || typeof value.toJSON === 'function' || typeof value.then === 'function' || ancestors.has(value)) return value;
+      ancestors.add(value);
+      let copy = null;
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => {
+          const next = walk(item, `${path}[${index}]`);
+          if (next !== item) (copy ??= [...value])[index] = next;
+        });
+      } else {
+        for (const [key, item] of Object.entries(value)) {
+          const next = walk(item, path ? `${path}.${key}` : key);
+          if (next !== item) (copy ??= { ...value })[key] = next;
+        }
+      }
+      ancestors.delete(value);
+      return copy ?? value;
+    };
+    return walk(value, '');
+  }
   /**
    * The plain `.js` modules in the components folder that the browser imports: those a
    * component's browser module imports by relative path, and those they import in turn. Paths
@@ -557,6 +628,8 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   /** One page: render components into it, then `finish()` it (or use `head()` and `scripts()`). */
   function page(options = {}) {
     nonceAttribute(options); // a nonce that can't be one fails here, not in the middle of a page
+    if (options.streamTimeout !== undefined) checkTimeout(options.streamTimeout);
+    const limit = options.streamTimeout ?? streamTimeout;
     const used = [];
     let renders = 0;
     const provided = {};
@@ -586,17 +659,23 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
       },
       render(name, props = {}, slots) {
         const key = nameOf(name) ?? name;
-        use(key);
         renders += 1;
         const idPrefix = renders === 1 ? '' : `r${renders}-`;
         const promises = Object.entries(props).filter(([, value]) => value && typeof value.then === 'function');
-        if (!promises.length) return render(key, props, slots, [], idPrefix, provided);
+        // A component is the page's once it has rendered: one that failed (a name that isn't a
+        // component's) would otherwise fail again in head() and finish().
+        if (!promises.length) {
+          const html = render(key, props, slots, [], idPrefix, provided);
+          use(key);
+          return html;
+        }
         const given = Object.fromEntries(Object.entries(props).filter(([, value]) => !(value && typeof value.then === 'function')));
         const names = promises.map(([name]) => name);
         // A promise prop is handed over by inline scripts, which a page can't do without.
         if (!inline && options.nonce === undefined) throw new Error('@zubra/server: with inline: false, a prop given as a promise needs a nonce for the scripts that stream its value: page({ nonce })');
         const id = String(streamed++);
         const shell = withStreamId(render(key, given, slots, names, idPrefix, provided), id);
+        use(key);
         const entry = { key, id, given, slots, promises: new Map(promises), shell, count: 0, idPrefix };
         // Each pending region is a named range (`<?start name>`…`<?end>`) that a streamed
         // `<template for>` replaces (out-of-order streaming).
@@ -669,11 +748,43 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
       // deferred until the document is complete). A region that arrives after an element has
       // started reaches it as a property change.
       yield insertBefore(insertBefore(html, '</head>', head(used, options)), '</body>', scripts(used, true, options));
+      // Each value within the page's `streamTimeout`, or its region is rejected, so the response ends.
+      const timers = [];
+      const within = (promise, entry, name) => (limit > 0 && limit !== Infinity
+        ? Promise.race([promise, new Promise((_, reject) => {
+          timers.push(setTimeout(() => reject(new Error(`@zubra/server: <${tagOf(entry.key)}>'s prop ${name} didn't settle within ${limit} ms (streamTimeout)`)), limit));
+        })])
+        : promise);
       const waiting = pendingRenders.splice(0).flatMap((entry) =>
-        [...entry.promises].map(([name, promise]) => promise.then(
+        [...entry.promises].map(([name, promise]) => within(promise, entry, name).then(
           (value) => ({ entry, name, value }),
-          (error) => ({ entry, name, error: error instanceof Error ? error.message : String(error) }),
+          (error) => ({ entry, name, error: rejected(error, entry.key, name) }),
         )));
+      try {
+        yield* settled(waiting);
+      } finally {
+        for (const timer of timers) clearTimeout(timer);
+      }
+    }
+
+    /**
+     * What a rejected prop sends the browser: in production, "Internal error" (a database's
+     * error can carry hosts, users and queries); in development, its message. Either way the
+     * error goes to `onError(error, { component, prop })`, or to the log with its stack.
+     */
+    function rejected(error, key, name) {
+      const component = tagOf(key);
+      try {
+        if (onError) onError(error, { component, prop: name });
+        else warn(`@zubra/server: <${component}>'s prop ${name} was rejected: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      } catch (thrown) {
+        warn(`@zubra/server: onError threw: ${thrown instanceof Error ? thrown.stack ?? thrown.message : String(thrown)}`);
+      }
+      if (production) return 'Internal error';
+      return error instanceof Error ? error.message : String(error);
+    }
+
+    async function* settled(waiting) {
       // In the order they settle.
       const open = new Set(waiting.map((promise) => {
         const tagged = promise.then((result) => ({ result, tagged }));
