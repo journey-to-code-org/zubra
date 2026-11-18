@@ -11,6 +11,11 @@
 // plugin's (Solid 2 needs vite-plugin-solid 3). Aliases (`react18`: `npm:react@18.3.1`) are left alone, so a pinned second
 // version stays a pinned second version. Writes package.json, runs `npm install`, and prints what moved
 // (also to $GITHUB_STEP_SUMMARY when it's set).
+//
+// On `latest`, the frameworks and plugins also respect each other's peer ranges, as a new project's
+// install does: when solid-js 2 is `latest` but the `latest` vite-plugin-solid and @solidjs/start
+// still need solid-js 1, solid-js is held at the newest 1.x. A framework whose own tooling hasn't
+// caught up isn't a failure of ours; `next` still tries the new major, with its tooling's next.
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -66,8 +71,13 @@ export function pickVersion(tags, channel) {
   return best;
 }
 
-/** What to change in a package.json: [{ field, name, from, to }], for frameworks and companions only. */
-export function plan(pkg, channel, distTags, versionExists = () => false) {
+/**
+ * What to change in a package.json: [{ field, name, from, to, held? }], for frameworks and
+ * companions only. On `latest`, `peersOf(name, version)` (its peerDependencies) and
+ * `newestIn(name, range)` (the newest release in a range) hold a package back where another's
+ * peer range excludes where it would go; `held` says why.
+ */
+export function plan(pkg, channel, distTags, versionExists = () => false, peersOf = () => ({}), newestIn = () => undefined) {
   const changes = [];
   const leaders = {};
   for (const [pattern, leader] of Object.entries(LOCKSTEP)) {
@@ -85,12 +95,59 @@ export function plan(pkg, channel, distTags, versionExists = () => false) {
       if (to && to !== from.replace(/^[\^~]/, '')) changes.push({ field, name, from, to });
     }
   }
-  return changes;
+  return channel === 'latest' ? holdForPeers(pkg, changes, peersOf, newestIn) : changes;
+}
+
+/** The changes, with any package another's peer range excludes held at the newest release it allows. */
+function holdForPeers(pkg, changes, peersOf, newestIn) {
+  const planned = new Map();
+  for (const field of ['dependencies', 'devDependencies']) {
+    for (const [name, from] of Object.entries(pkg[field] ?? {})) {
+      if (from.startsWith('npm:') || from.startsWith('file:') || from.startsWith('workspace:')) continue;
+      if (!matches(name, FRAMEWORKS) && !matches(name, COMPANIONS)) continue;
+      planned.set(name, { field, name, from, to: from.replace(/^[\^~]/, '') });
+    }
+  }
+  for (const change of changes) Object.assign(planned.get(change.name), change);
+  // A held package's own peers can hold another in turn: until nothing moves.
+  for (let moved = true, rounds = 0; moved && rounds < 5; rounds++) {
+    moved = false;
+    for (const entry of planned.values()) {
+      for (const [peer, range] of Object.entries(peersOf(entry.name, entry.to) ?? {})) {
+        const target = planned.get(peer);
+        if (!target || peer === entry.name) continue;
+        const allowed = newestIn(peer, range);
+        if (allowed && compareVersions(target.to, allowed) > 0) {
+          Object.assign(target, { to: allowed, held: `${entry.name} ${entry.to} needs ${peer} ${range}` });
+          moved = true;
+        }
+      }
+    }
+  }
+  return [...planned.values()].filter(({ from, to }) => to !== from.replace(/^[\^~]/, '')).map(({ field, name, from, to, held }) => (held ? { field, name, from, to, held } : { field, name, from, to }));
 }
 
 function npmDistTags(name) {
   try {
     return JSON.parse(execFileSync('npm', ['view', name, 'dist-tags', '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+  } catch {
+    return undefined;
+  }
+}
+
+function npmPeers(name, version) {
+  try {
+    return JSON.parse(execFileSync('npm', ['view', `${name}@${version}`, 'peerDependencies', '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function npmNewestIn(name, range) {
+  try {
+    const found = JSON.parse(execFileSync('npm', ['view', `${name}@${range}`, 'version', '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }) || 'null');
+    const versions = [found].flat().filter(Boolean);
+    return versions.sort(compareVersions).at(-1);
   } catch {
     return undefined;
   }
@@ -113,8 +170,8 @@ function main(argv) {
   }
   const file = join(resolve(folder), 'package.json');
   const pkg = JSON.parse(readFileSync(file, 'utf8'));
-  const changes = plan(pkg, channel, npmDistTags, npmVersionExists);
-  const table = ['| Package | Pinned | Canary |', '|---|---|---|', ...changes.map(({ name, from, to }) => `| \`${name}\` | ${from} | ${to} |`)].join('\n');
+  const changes = plan(pkg, channel, npmDistTags, npmVersionExists, npmPeers, npmNewestIn);
+  const table = ['| Package | Pinned | Canary |', '|---|---|---|', ...changes.map(({ name, from, to, held }) => `| \`${name}\` | ${from} | ${to}${held ? ` (held: ${held})` : ''} |`)].join('\n');
   const report = `### ${folder} on \`${channel}\`\n\n${changes.length ? table : 'Every framework is already at this channel.'}\n`;
   console.log(report);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${report}\n`);

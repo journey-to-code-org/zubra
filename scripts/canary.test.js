@@ -60,3 +60,34 @@ test('a lockstep family follows its leader where the leader\'s version exists fo
     '@angular/core@22.3.0-rc.0', '@angular/build@22.3.0-rc.0', '@angular/ssr@22.3.0-next.5',
   ]);
 });
+
+test('on latest, a framework is held where its plugin\'s or meta-framework\'s peer range ends', () => {
+  // The day solid-js 2 became `latest`, with vite-plugin-solid and @solidjs/start still on Solid 1.
+  const tags = {
+    'solid-js': { latest: '2.0.1', next: '2.0.1' },
+    'vite-plugin-solid': { latest: '2.11.16', next: '3.0.0-next.27' },
+    '@solidjs/start': { latest: '2.2.3', rc: '2.0.0-rc.10' },
+    react: { latest: '19.3.1' },
+  };
+  const peers = {
+    'vite-plugin-solid@2.11.16': { 'solid-js': '^1.7.2', vite: '^8.0.0' },
+    'vite-plugin-solid@3.0.0-next.27': {},
+    '@solidjs/start@2.2.3': { 'solid-js': '^1.9.15' },
+  };
+  const releases = { 'solid-js': ['1.9.18', '1.9.19', '2.0.0', '2.0.1'] };
+  const peersOf = (name, version) => peers[`${name}@${version}`] ?? {};
+  // The newest release a caret range allows (all these tests need).
+  const newestIn = (name, range) => (releases[name] ?? []).filter((version) => version.split('.')[0] === range.replace(/^\^/, '').split('.')[0]).at(-1);
+  const app = { dependencies: { 'solid-js': '1.9.18', react: '19.3.1' }, devDependencies: { 'vite-plugin-solid': '2.11.15' } };
+  assert.deepEqual(plan(app, 'latest', (name) => tags[name], undefined, peersOf, newestIn), [
+    { field: 'dependencies', name: 'solid-js', from: '1.9.18', to: '1.9.19', held: 'vite-plugin-solid 2.11.16 needs solid-js ^1.7.2' },
+    { field: 'devDependencies', name: 'vite-plugin-solid', from: '2.11.15', to: '2.11.16' },
+  ]);
+  // A pinned meta-framework holds it as well (here it would otherwise move); held at the pin, nothing changes.
+  const start = { dependencies: { '@solidjs/start': '2.2.3', 'solid-js': '1.9.19' } };
+  assert.deepEqual(plan(start, 'latest', (name) => tags[name], undefined, peersOf, newestIn), []);
+  // `next` ignores peer ranges: it is there to try the new major, with its tooling's next.
+  assert.deepEqual(plan(app, 'next', (name) => tags[name], undefined, peersOf, newestIn).map(({ name, to }) => `${name}@${to}`), ['solid-js@2.0.1', 'vite-plugin-solid@3.0.0-next.27']);
+  // Without peer information (npm unreachable), latest moves as before.
+  assert.deepEqual(plan(app, 'latest', (name) => tags[name]).map(({ name, to }) => `${name}@${to}`), ['solid-js@2.0.1', 'vite-plugin-solid@2.11.16']);
+});
