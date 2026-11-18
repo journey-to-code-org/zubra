@@ -19,6 +19,8 @@ import { Signal } from '../src/signal.js';
 import { scope, tick } from '../src/effect.js';
 import { resource } from '../src/resource.js';
 import { tracked } from '../src/track.js';
+import { sinks } from '../src/signal.js';
+const hasSinks = (signal) => sinks(signal).length > 0;
 
 class Variable {
   #storage = new AsyncLocalStorage();
@@ -158,7 +160,7 @@ test('with the hook: a replaced run’s late reads and a timer left behind still
   late.set(1);
   await settle();
   assert.equal(runs, before);
-  assert.equal(Signal.subtle.hasSinks(late), false, 'the timer’s read, in the context, was refused');
+  assert.equal(hasSinks(late), false, 'the timer’s read, in the context, was refused');
   owner.dispose();
 });
 
@@ -166,7 +168,7 @@ test('with the hook, outside any fetcher nothing changes', () => {
   const plain = new Signal.State(3);
   assert.equal(asyncConsumer.get(), undefined);
   assert.equal(plain.get(), 3);
-  assert.equal(Signal.subtle.hasSinks(plain), false);
+  assert.equal(hasSinks(plain), false);
 });
 
 test('with the hook as patched here, untrack() after an await is not respected (the real hook must be)', async () => {
