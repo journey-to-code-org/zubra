@@ -71,6 +71,13 @@ export interface Zubra {
 export interface ZubraOptions {
   /** The folder of components (default `components`). */
   components?: string;
+  /**
+   * Folders of components in installed packages (`['@acme/kit/components']`), found as Node finds
+   * a package from the components folder. Their modules are served, each folder gets one import map
+   * entry, and their components render by name or by tag. A component of yours with the same tag
+   * as a package's wins, for the package's own components too.
+   */
+  packages?: string[];
   /** Where the browser modules are served (default `/_zubra`). */
   prefix?: string;
   /**
@@ -87,6 +94,11 @@ export interface ZubraOptions {
    * except in production; `ZUBRA_DEVTOOLS=1` turns it on there too).
    */
   devtools?: boolean;
+  /**
+   * More import map entries, for packages the components import beyond `@zubra/runtime` and
+   * `@zubra/sync` (both served and mapped by themselves): `{ 'date-fns': '/vendor/date-fns.js' }`.
+   */
+  imports?: Record<string, string>;
   /**
    * Told when a render leaves out an attribute whose value isn't a safe URL, or leaves part of a
    * component's HTML for the browser (default `console.warn`).
