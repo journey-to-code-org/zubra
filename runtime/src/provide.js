@@ -7,7 +7,7 @@
 // `unsubscribe` function. Providers announce themselves with a `context-provider` event, so a
 // consumer that asked before its provider existed can ask again. Because it is plain DOM events,
 // zubra components share context with any other implementation (Lit's @lit/context, …).
-import { Signal } from './signal.js';
+import { State, Computed } from './signal.js';
 import { $r, hooks, onMount, watch } from './element.js';
 
 export class ContextRequestEvent extends Event {
@@ -74,7 +74,7 @@ export function inject(context, fallback = context?.defaultValue) {
       if (Object.hasOwn(values, number)) fallback = values[number];
     } catch { /* not ours: keep the default */ }
   }
-  const value = new Signal.State(fallback);
+  const value = new State(fallback);
   let unsubscribe = null;
   let answered = false;
   let generation = 0;
@@ -106,5 +106,5 @@ export function inject(context, fallback = context?.defaultValue) {
       unsubscribe = null;
     };
   });
-  return new Signal.Computed(() => value.get());
+  return new Computed(() => value.get());
 }

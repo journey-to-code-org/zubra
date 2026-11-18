@@ -8,7 +8,7 @@
 //
 // Paths count element and comment children only. The browser merges and drops text nodes, so
 // text is reached through its element (an only child) or through an empty-comment anchor.
-import { Signal } from './signal.js';
+import { State, Computed, untrack, isSignal } from './signal.js';
 import { wrap, raw } from './deep.js';
 import { effect, root as rootScope, tick } from './effect.js';
 // @dev (left out of the production build: scripts/build-production.js)
@@ -16,13 +16,10 @@ import { dev as devEffects } from './effect.js';
 import { register as devRegister, listened as devListened } from './devhook.js';
 // @dev-end
 
-const { untrack } = Signal.subtle;
 const TEXT = 3;
 const COMMENT = 8;
 
 // ---- values --------------------------------------------------------------------------------
-
-const isSignal = (value) => value instanceof Signal.State || value instanceof Signal.Computed;
 
 /** Unwrap a signal, so templates can read `{count}` for `const count = state(0)`. */
 /** Where a message's topic is documented. */
@@ -125,10 +122,10 @@ export const state = (value, options) => {
   const at = current?.states?.length ?? 0;
   if (kept && at < kept.length && kind(kept[at]) === kind(value)) value = kept[at];
   // @hot-end
-  const signal = new Signal.State(wrap(value), options);
+  const signal = new State(wrap(value), options);
   // An array or plain object assigned later is wrapped the same way, so `items = [...]` followed
   // by `items.push(x)` keeps updating.
-  signal.set = (next) => Signal.State.prototype.set.call(signal, wrap(next));
+  signal.set = (next) => State.prototype.set.call(signal, wrap(next));
   current?.states?.push(signal);
   return signal;
 };
@@ -146,12 +143,12 @@ export function from(source, start) {
   const read = (value) => (typeof value === 'function' ? value() : isSignal(value) ? value.get() : value);
   // A fresh box each time the source changes, so an assignment made against one value of the
   // source is dropped once it moves on (even back to the same value).
-  const latest = new Signal.Computed(() => {
+  const latest = new Computed(() => {
     const value = read(source);
     return { value: start === undefined ? value : read(start) };
   });
-  const assigned = new Signal.State(null);
-  const linked = new Signal.Computed(() => {
+  const assigned = new State(null);
+  const linked = new Computed(() => {
     const base = latest.get();
     const own = assigned.get();
     return wrap(own && own.base === base ? own.value : base.value);
@@ -169,7 +166,7 @@ export function from(source, start) {
 // @hot
 const kind = (value) => (value === null || value === undefined ? 'empty' : Array.isArray(value) ? 'array' : typeof value);
 // @hot-end
-export const computed = (fn, options) => new Signal.Computed(fn, options);
+export const computed = (fn, options) => new Computed(fn, options);
 
 /**
  * Whether the element has started: false while its markup is the server's (and on the server),
@@ -476,7 +473,7 @@ function bind(part, node, hydrating, context) {
 /** The signal saying whether slot `name` has content (shared by hasSlot() and the slot). */
 function filledSignal(filled, name) {
   let signal = filled.get(name);
-  if (!signal) filled.set(name, (signal = new Signal.State(false)));
+  if (!signal) filled.set(name, (signal = new State(false)));
   return signal;
 }
 
@@ -976,7 +973,7 @@ function defineElement(tag, definition) {
         });
       }
       for (const [name, spec] of Object.entries(props)) {
-        this.#signals[name] = new Signal.State(clone(spec.default));
+        this.#signals[name] = new State(clone(spec.default));
         // A framework may have set the property before the element was defined; that landed
         // as an own property shadowing the accessor. Take it over.
         if (Object.hasOwn(this, name)) {
@@ -1116,7 +1113,7 @@ function defineElement(tag, definition) {
         });
       }
       this.#hooks = {
-        mount: [], unmount: [], host: this, props: $p, instance: ++instances, ids: 0, filled: new Map(), states: [], kept, hydrated: new Signal.State(false),
+        mount: [], unmount: [], host: this, props: $p, instance: ++instances, ids: 0, filled: new Map(), states: [], kept, hydrated: new State(false),
         internals: this.#internals, formReset: [], formRestore: [], formDisabled: [],
       };
       // @dev
@@ -1216,4 +1213,4 @@ function defineElement(tag, definition) {
 }
 
 /** @internal What the runtime's feature modules (blocks, when, each, await, slots) take from here. */
-export { adopt, APPLE, FORWARD, hooks, bind, blueprint, childRange, COMMENT, current, defineElement, formOf, hasContent, isClose, isContent, isOpen, listen, locate, mark, marker, matchingClose, PI, positions, READS, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, TEXT, toSheet, unmark, untrack };
+export { adopt, APPLE, FORWARD, hooks, bind, blueprint, childRange, COMMENT, current, defineElement, formOf, hasContent, isClose, isContent, isOpen, listen, locate, mark, marker, matchingClose, PI, positions, READS, routeTo, see, setMarker, slotName, slotRecord, standIns, standsFor, TEXT, toSheet, unmark };

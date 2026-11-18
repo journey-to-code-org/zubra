@@ -19,11 +19,10 @@
 // This module only declares the element: `context.js` (`@zubra/runtime/context`) defines it on
 // import, and the React and Vue adapters define it when a `ZubraContext` is first rendered, so an
 // app that never provides a context doesn't carry it.
-import { Signal } from './signal.js';
+import { untrack, isSignal } from './signal.js';
 import { effect, root } from './effect.js';
 import { ContextProviderEvent } from './provide.js';
 
-const isSignal = (value) => value instanceof Signal.State || value instanceof Signal.Computed;
 const unwrap = (value) => (isSignal(value) ? value.get() : value);
 
 const Base = globalThis.HTMLElement ?? class {};
@@ -39,7 +38,7 @@ export class ZubraContextElement extends Base {
     this.addEventListener('context-request', (event) => {
       if (this.#context === undefined || event.context !== this.#context || event.contextTarget === this) return;
       event.stopPropagation();
-      const current = Signal.subtle.untrack(() => unwrap(this.#value));
+      const current = untrack(() => unwrap(this.#value));
       if (!event.subscribe) return event.callback(current);
       const subscriber = { callback: event.callback };
       subscriber.unsubscribe = () => this.#subscribers.delete(subscriber);
@@ -76,10 +75,10 @@ export class ZubraContextElement extends Base {
       this.#watching = root(() => effect(() => {
         const value = next.get();
         if (first) first = false;
-        else Signal.subtle.untrack(() => this.#notify(value));
+        else untrack(() => this.#notify(value));
       }));
     }
-    this.#notify(Signal.subtle.untrack(() => unwrap(next)));
+    this.#notify(untrack(() => unwrap(next)));
   }
 
   connectedCallback() {

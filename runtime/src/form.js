@@ -2,7 +2,8 @@
 // lifecycle callbacks, and its value and reset when it has one two-way prop. Its module imports
 // this (`forming: $form`), so a page whose components aren't form controls doesn't load it.
 import { effect } from './effect.js';
-import { $r, hooks, see, untrack } from './element.js';
+import { $r, hooks, see } from './element.js';
+import { untrack } from './signal.js';
 
 // Disabled (inside a disabled <fieldset>, say) before the element's setup registered its hooks.
 // Chromium always calls formDisabledCallback after connectedCallback, so there this is never

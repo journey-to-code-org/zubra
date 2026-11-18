@@ -15,10 +15,9 @@
 // A run that was replaced or has settled, or a resource that was disposed, still reads through
 // `track()`, but no longer subscribes. The reads are watched by an effect owned where `tracked()` was called (a
 // component's setup), so a detached element holds none of them and catches up when it returns.
-import { Signal } from './signal.js';
+import { State, Computed, untrack, tracking } from './signal.js';
 import { effect } from './effect.js';
 
-const { untrack, currentComputed } = Signal.subtle;
 const THREW = Symbol('threw');
 
 function readOnce(computed) {
@@ -29,9 +28,9 @@ function readOnce(computed) {
 export function tracked(fetcher) {
   if (typeof fetcher !== 'function') throw new TypeError('zubra: tracked() takes a function');
   // Read by each run before it can wait, so the resource's effect runs again when it changes.
-  const again = new Signal.State(0);
+  const again = new State(0);
   // The run whose later reads are watched: set when it makes one, and when it settles.
-  const tail = new Signal.State(null);
+  const tail = new State(null);
   let latest = null;
 
   // When a read changes, run again. A new read is appended (and seen) without re-running.
@@ -56,11 +55,11 @@ export function tracked(fetcher) {
     const track = (read) => {
       if (typeof read !== 'function') throw new TypeError('zubra: track() takes a function that reads signals');
       // Before the first `await` the resource's effect is running, and tracks the read itself.
-      if (currentComputed()) return read();
+      if (tracking()) return read();
       // A replaced or finished run (a timer the fetcher left), or a disposed resource: its value
       // can't depend on the read any more, so read without subscribing.
       if (run !== latest || run.done || signal?.aborted) return untrack(read);
-      const computed = new Signal.Computed(read);
+      const computed = new Computed(read);
       run.reads.push({ computed, seen: readOnce(computed) });
       tail.set({ run });
       return computed.get(); // rethrows what `read` threw

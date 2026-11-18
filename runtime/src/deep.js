@@ -1,24 +1,23 @@
 // Deep reactivity for state: `let items = []` followed by `items.push(x)` updates the DOM.
 //
 // A `state()` holding an array or a plain object holds a proxy of it instead. Each property the
-// template (or a computed) reads through the proxy is tracked by its own `Signal.State`, created
+// template (or a computed) reads through the proxy is tracked by its own `State` (signal.js), created
 // on first read, and each write through the proxy bumps that property's signal, so only what
 // read the property re-runs. Nested arrays and objects are wrapped lazily, on read. Nothing here
-// is a new runtime concept: it's `Signal.State` per property, over the standard API.
+// is a new runtime concept: it's a `State` per property, over the engine's API.
 //
 // What's wrapped: arrays and plain objects (prototype `Object.prototype` or `null`). Class
 // instances, `Map`/`Set`, dates, DOM nodes, functions and promises are left as they are, since a
 // proxy would break their internals. `raw(value)` gives the original object back.
 // (`plan/decisions/deep-reactivity.md`.)
 
-import { Signal } from './signal.js';
+import { State, tracking } from './signal.js';
 
 const RAW = Symbol('zubra.raw');
 const ITERATE = Symbol('zubra.iterate'); // "the set of keys" (ownKeys, `in`, array length)
 const ITEMS = Symbol('zubra.items'); // "an array's items": any index, or its length
-const { currentComputed } = Signal.subtle;
 const proxies = new WeakMap(); // raw → proxy
-const signals = new WeakMap(); // raw → Map<key, Signal.State<number>>
+const signals = new WeakMap(); // raw → Map<key, State<number>>
 
 const isPlain = (value) => {
   if (value === null || typeof value !== 'object') return false;
@@ -41,12 +40,12 @@ export const dev = { propertyOf: new WeakMap(), wrote: null };
 function track(target, key) {
   // A read nothing is tracking (an event handler, an untracked loop) needs no signal: making one
   // per property read would be most of the cost of a long list.
-  if (currentComputed && !currentComputed()) return;
+  if (!tracking()) return;
   let map = signals.get(target);
   if (!map) signals.set(target, (map = new Map()));
   let signal = map.get(key);
   if (!signal) {
-    map.set(key, (signal = new Signal.State(0)));
+    map.set(key, (signal = new State(0)));
     // @dev
     dev.propertyOf.set(signal, { target, key });
     // @dev-end
