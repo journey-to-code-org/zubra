@@ -31,7 +31,7 @@ It covers light-DOM components:
 - every template part: text, attributes (with the URL and `srcset` checks), properties, events with modifiers, `zb-window`/`zb-document` listeners, refs, `class:`, `classes`, `style:`, `zb-if`, `zb-each` (keyed rows keep their focus and are moved, not rebuilt), `zb-switch`, `let:`;
 - light-DOM slots, with fallbacks and `hasSlot()`, kept live while React, Vue, Svelte or Lit add, remove and reorder the host's children;
 - `state()` (with deep mutation), `computed()`, `effect()`, `onMount`, `onUnmount`, `id`, `host`, `emit`;
-- form association: `formValue`, `validity`, a two-way prop as the form value, form reset;
+- form association: `formValue`, `validity`, a two-way prop as the form value, form reset, and the form's lifecycle (`onFormReset`, `onFormRestore`, `onFormDisabled`, written as the class's `formResetCallback`, `formStateRestoreCallback` and `formDisabledCallback`);
 - scoped styles, adopted by the document or the shadow root the element is in;
 - the framework adapters (`:state(hydrated)`, `zb-props`).
 

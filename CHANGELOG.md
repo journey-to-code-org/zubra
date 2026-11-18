@@ -4,6 +4,10 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Added
+
+- **`--emit element` provides `onFormReset`, `onFormRestore` and `onFormDisabled`** (#367). A plain element had `formValue` and `validity`, half of the form-associated API, and refused the other half, so a control that wanted to hear a disabled `<fieldset>` couldn't be a plain element (zubra-ui's `toggle-switch` worked around it with a `disabled` prop). The three hooks are now the class's `formResetCallback`, `formStateRestoreCallback(state, mode)` and `formDisabledCallback(disabled)`, written only for a component whose script asks for them. As with the runtime, a script's own `onFormReset` is the reset, in place of a single two-way prop going back to what it started as, and a control disabled before its script ran hears it once it has. `zubra convert` reads the hooks back. One difference from `--emit js`: in a component without `form-associated`, where the browser would never call them, the compiler says so ("`onFormDisabled()` needs form-associated on the component's host tag") where the runtime throws when the element starts.
+
 ### Changed
 
 - **The Preact example (`examples/frameworks/preact-habits`) is on Preact 11.2.0**, from 10.29.8, so the framework tests run against the Preact people install today. The example passes unchanged. It has no keyed list inside a component's slot, so what guards `moveBefore()` on a host (below) is the runtime's own browser test, not this example. The Preact starter (`npm create zubra -- --framework preact`) still asks for `^10.29.8`.

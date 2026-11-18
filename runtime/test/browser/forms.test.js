@@ -3,9 +3,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { useBrowser, open, here, compiler, engine } from './harness.js';
+import { useBrowser, open, here, compiler, engine, emitElement, elementRefused } from './harness.js';
 
-useBrowser({ stepper: join(here, 'fixtures/stepper.zb'), choose: join(here, 'fixtures/select-value.zb'), amount: join(here, 'fixtures/amount-field.zb') });
+useBrowser({ stepper: join(here, 'fixtures/stepper.zb'), choose: join(here, 'fixtures/select-value.zb'), amount: join(here, 'fixtures/amount-field.zb'), toggle: join(here, 'fixtures/toggle-field.zb') });
 
 const FORM = `<form id="order"><fieldset id="set"><label id="lbl">Qty <zb-stepper name="qty"></zb-stepper></label></fieldset>
   <input name="note" value="x"><button type="reset">Reset</button></form>`;
@@ -187,5 +187,97 @@ test('<select value> and <textarea value> are right in the server HTML, before J
   await page.evaluate(() => { document.querySelector('zb-choose').status = 'open'; });
   await page.waitForFunction(() => document.querySelector('select').value === 'open');
   assert.deepEqual(opened.messages, []);
+  await page.close();
+});
+
+// The form callbacks on a component --emit element takes too (#367): with ZUBRA_EMIT=element these
+// run on the plain element's own formResetCallback, formStateRestoreCallback and
+// formDisabledCallback.
+const TOGGLE = '<form id="f"><fieldset id="set"><zb-toggle-field name="t"></zb-toggle-field></fieldset><button type="reset">Reset</button></form>';
+const toggle = () => {
+  const el = document.querySelector('zb-toggle-field');
+  return { disabled: el.querySelector('button').disabled, text: el.querySelector('button').textContent, resets: el.querySelector('output').textContent, on: el.on };
+};
+
+test('the toggle fixture is a plain element under ZUBRA_EMIT=element', { skip: !emitElement && 'only with ZUBRA_EMIT=element' }, () => {
+  assert.equal(elementRefused.get(join(here, 'fixtures/toggle-field.zb')), undefined);
+});
+
+test('onFormDisabled hears a fieldset being disabled and enabled', async () => {
+  const { page, messages } = await open(TOGGLE, { modules: ['toggle'] });
+  const result = await page.evaluate(async (read) => {
+    const state = new Function(`return (${read})()`);
+    const el = document.querySelector('zb-toggle-field');
+    await el.updateComplete;
+    const before = state();
+    document.getElementById('set').disabled = true;
+    await el.updateComplete;
+    const during = state();
+    document.getElementById('set').disabled = false;
+    await el.updateComplete;
+    return [before.disabled, during.disabled, state().disabled, el.matches(':disabled')];
+  }, toggle.toString());
+  assert.deepEqual(result, [false, true, false, false]);
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
+test('onFormDisabled runs for a control that starts, or is put, inside a disabled fieldset', async () => {
+  const { page } = await open('<form><fieldset disabled id="set"><zb-toggle-field></zb-toggle-field></fieldset></form>', { modules: ['toggle'] });
+  const result = await page.evaluate(async () => {
+    const first = document.querySelector('zb-toggle-field');
+    const late = document.createElement('zb-toggle-field');
+    document.getElementById('set').append(late);
+    await late.updateComplete;
+    return [first, late].map((el) => el.querySelector('button').disabled);
+  });
+  assert.deepEqual(result, [true, true]);
+  await page.close();
+});
+
+test('onFormReset is the reset, in place of the two-way prop going back to its start', async () => {
+  const { page } = await open(TOGGLE, { modules: ['toggle'] });
+  const result = await page.evaluate(async (read) => {
+    const state = new Function(`return (${read})()`);
+    const el = document.querySelector('zb-toggle-field');
+    await el.updateComplete;
+    document.getElementById('f').reset();
+    await el.updateComplete;
+    return state();
+  }, toggle.toString());
+  // The prop started false: the script's own reset turns it on, once.
+  assert.deepEqual(result, { disabled: false, text: 'on', resets: '1', on: true });
+  await page.close();
+});
+
+test('onFormRestore gets the state and the mode', async () => {
+  const { page } = await open(TOGGLE, { modules: ['toggle'] });
+  const result = await page.evaluate(async () => {
+    const el = document.querySelector('zb-toggle-field');
+    await el.updateComplete;
+    el.formStateRestoreCallback('on', 'restore'); // what the browser calls when restoring
+    await el.updateComplete;
+    const restored = el.on;
+    el.formStateRestoreCallback('on', 'autocomplete');
+    await el.updateComplete;
+    return [restored, el.on];
+  });
+  assert.deepEqual(result, [true, false]);
+  await page.close();
+});
+
+test('disabled before the script ran (an engine that calls formDisabledCallback before connecting) still reaches onFormDisabled', async () => {
+  const { page } = await open('<form id="f"></form>', { modules: ['toggle'] });
+  const result = await page.evaluate(async () => {
+    const el = document.createElement('zb-toggle-field');
+    el.formDisabledCallback(true); // Chromium calls it after connectedCallback; this is the other order
+    document.getElementById('f').append(el);
+    await el.updateComplete;
+    const early = el.querySelector('button').disabled;
+    el.formDisabledCallback(false);
+    await el.updateComplete;
+    return [early, el.querySelector('button').disabled];
+  });
+  assert.deepEqual(result, [true, false]);
   await page.close();
 });

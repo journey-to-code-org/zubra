@@ -1,0 +1,15 @@
+<!-- A switch that submits with its form, and hears the form's reset, restore and disabling.
+     Nothing here is beyond --emit element, so the form callbacks are tested on both outputs. -->
+<script>
+  import { onFormReset, onFormRestore, onFormDisabled } from '@zubra/runtime'
+
+  let off = false
+  let resets = 0
+  onFormDisabled((disabled) => (off = disabled))
+  onFormReset(() => { resets++; on = true })
+  onFormRestore((saved, mode) => (on = saved === 'on' && mode === 'restore'))
+</script>
+<zb-toggle-field form-associated on:model={false}>
+  <button type="button" disabled={off} aria-pressed={on} onclick={() => (on = !on)}>{on ? 'on' : 'off'}</button>
+  <output>{resets}</output>
+</zb-toggle-field>

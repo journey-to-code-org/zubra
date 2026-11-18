@@ -267,3 +267,88 @@ fn a_jsx_component_reads_like_any_other() {
         assert!(!module.contains(runtime), "no `{runtime}` in:\n{module}");
     }
 }
+
+#[test]
+fn a_form_control_gets_the_form_callbacks_its_script_asks_for() {
+    // #367: onFormDisabled, onFormReset and onFormRestore are the browser's callbacks on the class.
+    let module = element(
+        "form-callbacks",
+        r#"<script>
+  import { onFormDisabled, onFormReset, onFormRestore } from '@zubra/runtime'
+  let off = false
+  onFormDisabled((disabled) => (off = disabled))
+  onFormReset(() => (checked = true))
+  onFormRestore((state) => (checked = state === 'on'))
+</script>
+<my-switch form-associated checked:model={false}>
+  <button type="button" disabled={off} onclick={() => (checked = !checked)}>x</button>
+</my-switch>"#,
+    )
+    .unwrap();
+    for expected in [
+        "static formAssociated = true;",
+        "formDisabledCallback(disabled) {",
+        "formStateRestoreCallback(state, mode) {",
+        "for (const run of this.#formRestore) run(state, mode);",
+        // The script's reset is the reset; the two-way prop's default one is what's left without it.
+        "formResetCallback() {\n    if (this.#formReset.length) {",
+        // Disabled before the script ran.
+        "if (this.#disabledEarly) for (const run of this.#formDisabled) run(true);",
+    ] {
+        assert!(module.contains(expected), "{expected}: {module}");
+    }
+    assert!(!module.contains("@zubra/runtime'"), "{module}");
+
+    // A control that asks for none of them has none of it.
+    let plain = element(
+        "form-no-callbacks",
+        r#"<my-check form-associated checked:model={false}><button onclick={() => (checked = !checked)}>x</button></my-check>"#,
+    )
+    .unwrap();
+    for absent in [
+        "formDisabledCallback",
+        "formStateRestoreCallback",
+        "#formReset",
+        "#disabledEarly",
+    ] {
+        assert!(!plain.contains(absent), "{absent}: {plain}");
+    }
+    assert!(
+        plain.contains("formResetCallback() {\n    if (this.#reset === undefined"),
+        "{plain}"
+    );
+
+    // Without a two-way prop, onFormReset is the whole callback.
+    let own = element(
+        "form-own-reset",
+        r#"<script>
+  import { onFormReset } from '@zubra/runtime'
+  let n = 0
+  onFormReset(() => (n = 0))
+</script>
+<my-count form-associated><button onclick={() => n++}>{n}</button></my-count>"#,
+    )
+    .unwrap();
+    assert!(
+        own.contains("formResetCallback() {\n    for (const run of this.#formReset) run();\n  }"),
+        "{own}"
+    );
+}
+
+#[test]
+fn a_form_callback_needs_a_form_associated_element() {
+    let error = element(
+        "form-callback-plain",
+        r#"<script>
+  import { onFormDisabled } from '@zubra/runtime'
+  onFormDisabled(() => {})
+</script>
+<my-thing><p>x</p></my-thing>"#,
+    )
+    .expect_err("the browser would never call it");
+    assert_eq!(
+        error.message,
+        "`onFormDisabled()` needs form-associated on the component's host tag"
+    );
+    assert!(error.help.unwrap().contains("<my-thing form-associated>"));
+}
