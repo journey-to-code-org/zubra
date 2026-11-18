@@ -27,6 +27,8 @@ const pageModules = {
   name: 'page-modules',
   setup(builder) {
     builder.onResolve({ filter: /^\/[a-z-]+\.js$/ }, (args) => ({ path: args.path, external: true }));
+    // ZUBRA_ENGINE=core: the wrappers' engine is the page's (harness.js serves it as signal.js).
+    if (process.env.ZUBRA_ENGINE === 'core') builder.onResolve({ filter: /^\.\/signal\.js$/ }, (args) => ({ path: join(args.resolveDir, 'signal-core.js') }));
   },
 };
 
