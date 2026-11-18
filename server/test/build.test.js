@@ -1,0 +1,186 @@
+// buildRuntime() (experimental): an app's own build of the runtime, one module with only what its
+// components name, served in place of the base and every file beside it.
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
+import { chromium } from 'playwright';
+import { createZubra } from '../src/index.js';
+import { buildRuntime } from '../src/build.js';
+
+const components = mkdtempSync(join(tmpdir(), 'zubra-build-'));
+const write = (name, source) => writeFileSync(join(components, name), source);
+// Nothing of what is split off.
+write('plain-card.zb', '<script>\n  let count = 0\n</script>\n<plain-card label="Plain">\n  <button class="up" onclick={() => count++}>{label}</button> <output>{count}</output>\n</plain-card>\n');
+// An event modifier in the template: the compiler names its binder.
+write('key-box.zb', '<script>\n  let said = ""\n</script>\n<key-box>\n  <input onkeydown.enter={() => (said = "enter")}> <output>{said}</output>\n</key-box>\n');
+// An event helper called by the script: the script's own import names it.
+write('guard-link.zb', "<script>\n  import { prevent } from '@zubra/runtime'\n  let went = 0\n  const go = prevent(() => went++)\n</script>\n<guard-link>\n  <a href=\"/elsewhere\" onclick={go}>go</a> <output>{went}</output>\n</guard-link>\n");
+// Context, both ends.
+write('theme-box.zb', "<script>\n  import { provide } from '@zubra/runtime'\n  import { theme } from './theme.js'\n  import './theme-name.zb'\n  provide(theme, 'dark')\n</script>\n<theme-box>\n  <theme-name></theme-name>\n</theme-box>\n");
+write('theme-name.zb', "<script>\n  import { inject } from '@zubra/runtime'\n  import { theme } from './theme.js'\n  const name = inject(theme)\n</script>\n<theme-name>\n  <output>{name}</output>\n</theme-name>\n");
+// A plain module beside them, which names the runtime itself.
+write('theme.js', "import { createContext } from '@zubra/runtime';\nexport const theme = createContext('light');\n");
+// resource().
+write('late-word.zb', "<script>\n  import { resource } from '@zubra/runtime'\n  const word = resource(async () => 'ready')\n</script>\n<late-word>\n  <output>{word.value ?? 'waiting'}</output>\n</late-word>\n");
+// A form control with a helper, in a shadow root.
+write('pick-one.zb', "<script>\n  import { formValue } from '@zubra/runtime'\n  let value = 'a'\n  formValue(() => value)\n</script>\n<pick-one shadow form-associated>\n  <button class=\"b\" onclick={() => (value = 'b')}>b</button>\n</pick-one>\n");
+
+// Spread attributes: their binder is an entry of its own (`@zubra/runtime/spread`).
+write('spread-box.zb', '<script>\n  let attrs = { title: "spread", "data-n": 1 }\n</script>\n<spread-box>\n  <p {...attrs}>p</p>\n</spread-box>\n');
+
+const layout = (body, script = '') => `<!doctype html><html><head><meta charset="utf-8"><title>t</title></head><body>${body}${script}</body></html>`;
+const preloaded = (html) => [...html.matchAll(/<link rel="modulepreload" href="([^"]+)"/g)].map((match) => match[1]);
+const runtime_ = (list) => list.filter((url) => url.startsWith('/_zubra/runtime/')).map((url) => url.slice('/_zubra/runtime/'.length)).sort();
+/** The page of `tags`, each rendered once (theme-box has a theme-name inside; pick-one is in a form). */
+function pageOf(zubra, tags, script) {
+  const page = zubra.page();
+  const body = tags.map((tag) => (tag === 'pick-one' ? `<form>${page.render(tag).replace('<pick-one', '<pick-one name="pick"')}</form>` : page.render(tag))).join('');
+  return page.finish(layout(body, script));
+}
+
+let browser;
+let runtime;
+const servers = [];
+before(async () => {
+  browser = await chromium.launch();
+  runtime = await buildRuntime({ components });
+});
+after(async () => {
+  await browser?.close();
+  for (const server of servers) server.close();
+  rmSync(components, { recursive: true, force: true });
+});
+async function serving(zubra, html) {
+  const server = createServer((request, response) => {
+    if (zubra.handle(request, response)) return;
+    response.writeHead(200, { 'content-type': 'text/html' }).end(html);
+  });
+  await new Promise((done) => server.listen(0, '127.0.0.1', done));
+  servers.push(server);
+  return `http://127.0.0.1:${server.address().port}`;
+}
+const ALL = ['plain-card', 'key-box', 'guard-link', 'theme-box', 'late-word', 'pick-one', 'spread-box'];
+const text = async (zubra, path) => (await zubra.fetch(new Request(`http://localhost${path}`))).text();
+
+test('buildRuntime: one module with the names the app imports from the runtime, and nothing they do not reach', async () => {
+  assert.match(runtime.file, /^app-[0-9a-f]{10}\.js$/);
+  // From the components, from the plain module beside them (createContext), and by entry or file.
+  for (const name of ['$component', '$r', '$t', '$hydrate', '$modified', '$form', '$shadow', 'spread', 'prevent', 'provide', 'inject', 'createContext', 'resource', 'formValue']) assert.ok(runtime.names.includes(name), name);
+  for (const name of ['$await', '$each', 'watch', 'validity', 'keys']) assert.ok(!runtime.names.includes(name), `${name} isn't asked for`);
+  const built = await import(`data:text/javascript;base64,${Buffer.from(runtime.code).toString('base64')}`).catch((error) => error);
+  // (It is a browser module; what matters here is that it parses and exports exactly the names.)
+  if (!(built instanceof Error)) assert.deepEqual(Object.keys(built).sort(), [...runtime.names].sort());
+  assert.doesNotMatch(runtime.code, /from\s*["']\.\//, 'it imports nothing of the runtime');
+  // The same build twice is the same file; `keep` adds to it.
+  assert.equal((await buildRuntime({ components })).file, runtime.file);
+  const kept = await buildRuntime({ components, keep: ['watch', 'keys'] });
+  assert.ok(kept.names.includes('watch') && kept.names.includes('keys') && kept.file !== runtime.file);
+  // Smaller than what these pages load without it: the base and the five files beside it.
+  const zubra = createZubra({ components, production: true });
+  let split = 0;
+  for (const file of ['zubra.js', 'form.js', 'modifiers.js', 'provide.js', 'resource.js', 'shadow.js']) split += gzipSync(await text(zubra, `/_zubra/runtime/${file}`)).length;
+  const own = gzipSync(runtime.code).length;
+  assert.ok(own < split - 2000, `${own} B against ${split} B`);
+});
+
+test('buildRuntime says what is wrong: no runtime here to build, a name the runtime does not have', async () => {
+  await assert.rejects(buildRuntime({ components, imports: { '@zubra/runtime': 'https://cdn.example/zubra.js' } }), /served from somewhere else/);
+  await assert.rejects(buildRuntime({ components, keep: ['nothingLikeThis'] }), /doesn't have a name a module imports.*nothingLikeThis/s);
+});
+
+test('with a built runtime every module takes the runtime from it, whichever entry or file it named, and a page preloads it alone', async () => {
+  const zubra = createZubra({ components, production: true, runtime });
+  const at = `../runtime/${runtime.file}`;
+  const guard = await text(zubra, '/_zubra/components/guard-link.js');
+  assert.ok(guard.includes(`import { prevent } from '${at}';`), guard.slice(0, 300));
+  assert.ok(guard.includes(`from "${at}";`));
+  assert.doesNotMatch(guard, /@zubra\/runtime|runtime\/(?:zubra|modifiers)\.js/);
+  assert.ok((await text(zubra, '/_zubra/components/theme.js')).startsWith(`import { createContext } from '${at}';`));
+  assert.doesNotMatch(await text(zubra, '/_zubra/components/pick-one.js'), /@zubra\/runtime|runtime\/(?:zubra|form|shadow)\.js/);
+  const html = pageOf(zubra, ALL);
+  assert.deepEqual(runtime_(preloaded(html)), [runtime.file]);
+  assert.ok(html.includes(`"@zubra/runtime":"/_zubra/runtime/${runtime.file}"`), 'the bare name is the built module too');
+  // And the runtime's other entries, for a script that names one.
+  for (const entry of ['spread', 'primitives', 'motion', 'track']) assert.ok(html.includes(`"@zubra/runtime/${entry}":"/_zubra/runtime/${runtime.file}"`), entry);
+  assert.doesNotMatch(await text(zubra, '/_zubra/components/spread-box.js'), /@zubra\/runtime|runtime\/spread\.js/);
+  const served = await zubra.fetch(new Request(`http://localhost/_zubra/runtime/${runtime.file}`));
+  assert.equal(await served.text(), runtime.code);
+  assert.match(served.headers.get('cache-control'), /immutable/);
+});
+
+test("with a built runtime the runtime's own files say they would be a second copy, and development serves the runtime as it always did", async () => {
+  const zubra = createZubra({ components, production: true, runtime });
+  for (const file of ['zubra.js', 'core.js', 'form.js', 'spread.js']) assert.match(await text(zubra, `/_zubra/runtime/${file}`), /^throw new Error\("@zubra\/server: this app serves a built runtime .*second copy/, file);
+  assert.doesNotMatch(await text(zubra, '/_zubra/runtime/remark.js'), /^throw /);
+  const development = createZubra({ components, production: false, runtime });
+  assert.doesNotMatch(await text(development, '/_zubra/runtime/base.js'), /^throw /);
+  assert.ok(!pageOf(development, ALL).includes(runtime.file));
+});
+
+test('a component that names what the built runtime lacks is refused when it is compiled, with what to do', () => {
+  const stale = { ...runtime, names: runtime.names.filter((name) => name !== 'prevent') };
+  const zubra = createZubra({ components, production: true, runtime: stale });
+  assert.throws(() => zubra.module('guard-link'), /guard-link\.zb imports `prevent` from @zubra\/runtime, which the built runtime doesn't have\. Build it again \(buildRuntime\(\)\)/);
+  assert.doesNotThrow(() => zubra.module('plain-card'));
+});
+
+test('in a browser: every feature works on the built runtime alone, and a page script gets what was kept', async () => {
+  const kept = await buildRuntime({ components, keep: ['watch'] });
+  const zubra = createZubra({ components, production: true, runtime: kept });
+  const script = `<script type="module">
+    import { state, watch, provide } from '@zubra/runtime';
+    window.checked = [typeof state, typeof watch, typeof provide].join(' ');
+  </script>`;
+  const html = pageOf(zubra, ALL, script);
+  const url = await serving(zubra, html);
+  const page = await browser.newPage();
+  const errors = [];
+  const asked = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => message.type() === 'error' && errors.push(message.text()));
+  page.on('request', (request) => asked.push(new URL(request.url()).pathname));
+  try {
+    await page.goto(url);
+    await page.waitForFunction(() => ['plain-card', 'key-box', 'guard-link', 'theme-box', 'theme-name', 'late-word', 'pick-one', 'spread-box'].every((tag) => customElements.get(tag)));
+    assert.equal(await page.evaluate(() => window.checked), 'function function function');
+    await page.click('plain-card .up');
+    assert.equal(await page.textContent('plain-card output'), '1');
+    await page.press('key-box input', 'Enter');
+    assert.equal(await page.textContent('key-box output'), 'enter');
+    await page.click('guard-link a');
+    assert.equal(await page.textContent('guard-link output'), '1');
+    assert.equal(new URL(page.url()).pathname, '/');
+    assert.equal(await page.textContent('theme-name output'), 'dark');
+    await page.waitForFunction(() => document.querySelector('late-word output').textContent === 'ready');
+    await page.click('pick-one .b');
+    await page.waitForFunction(() => new FormData(document.querySelector('form')).get('pick') === 'b');
+    assert.equal(await page.getAttribute('spread-box p', 'title'), 'spread');
+    assert.deepEqual(errors, []);
+    assert.deepEqual(runtime_(asked), [kept.file], 'one runtime file, and no other');
+  } finally {
+    await page.close();
+  }
+});
+
+test('in a browser: a script that asks the runtime for a name that was not kept fails by that name', async () => {
+  const zubra = createZubra({ components, production: true, runtime });
+  const html = pageOf(zubra, ['plain-card'], '<script type="module">import { watch } from "@zubra/runtime"; window.got = typeof watch;</script>');
+  const url = await serving(zubra, html);
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    await page.goto(url);
+    await page.waitForFunction(() => customElements.get('plain-card'));
+    await page.click('plain-card .up');
+    assert.equal(await page.textContent('plain-card output'), '1', "the page's components are unharmed");
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /does not provide an export named 'watch'/);
+  } finally {
+    await page.close();
+  }
+});

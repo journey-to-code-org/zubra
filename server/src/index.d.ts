@@ -133,6 +133,14 @@ export interface ZubraOptions {
    * `runtime/zubra.js` from `@zubra/runtime`'s `dist/bundled`, in production either way.)
    */
   bundle?: boolean;
+  /**
+   * Experimental. The app's own build of the runtime, from `buildRuntime()` of
+   * `@zubra/server/build`: one module with only what its components use, served in production
+   * in place of the runtime's base and the files beside it. Development ignores it. A component
+   * that names something the build doesn't have is refused when it is compiled, with a message
+   * that says to build again. Not with `imports['@zubra/runtime']`.
+   */
+  runtime?: { file: string; code: string; names: string[] } | null;
 }
 
 export declare function createZubra(options?: ZubraOptions): Zubra;

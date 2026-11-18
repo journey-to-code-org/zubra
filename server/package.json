@@ -22,6 +22,10 @@
       "types": "./src/adapters.d.ts",
       "default": "./src/hono.js"
     },
+    "./build": {
+      "types": "./src/build.d.ts",
+      "default": "./src/build.js"
+    },
     "./edge": {
       "types": "./src/edge.d.ts",
       "default": "./src/edge.js"
@@ -36,7 +40,13 @@
   },
   "peerDependencies": {
     "@zubra/compiler": "^5.22.0",
-    "@zubra/runtime": "^5.22.0"
+    "@zubra/runtime": "^5.22.0",
+    "esbuild": ">=0.21.0"
+  },
+  "peerDependenciesMeta": {
+    "esbuild": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@minify-html/node": "0.18.1",

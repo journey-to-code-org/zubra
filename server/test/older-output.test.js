@@ -66,6 +66,19 @@ test("an older module's $element comes from legacy.js beside the core, and the r
   assert.match(String(elsewhere.serve('/_zubra/components/zb-since-518.js').body), /from "https:\/\/cdn\.example\/zubra\/legacy\.js"/);
 });
 
+test("an app's built runtime can't serve an older module, and says so when it is compiled", () => {
+  const built = createCore({
+    request: (body) => (body.emit === 'js' ? { ok: true, output: 'import { $define } from "@zubra/runtime";\nexport default $define("a-b", {});' } : { ok: true, output: null }),
+    files: new Map([['a-b', '/c/a-b.zb']]),
+    sourcesOf: (path) => ({ [path]: '<a-b></a-b>' }),
+    base: '/_zubra',
+    where: 'components/',
+    assets: () => null,
+    runtimeBuilt: { file: 'app-0000000000.js', code: '', names: ['$component'] },
+  });
+  assert.throws(() => built.module('a-b'), /components\/a-b was compiled by an older Zubra \(it asks for \$define\), which a built runtime can't serve/);
+});
+
 test("current output, which names neither, isn't touched", () => {
   const current = 'import { $component, $r, $t } from "@zubra/runtime";\nimport { $define as mine } from "./mine.js";\nexport default $component("zb-since-518", {});';
   const { body } = coreOver(current).serve('/_zubra/components/zb-since-518.js');
