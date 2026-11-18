@@ -10,10 +10,9 @@
 // pending the previous value stays (`loading` is true), so the UI doesn't flash empty.
 // `dispose()` (or `using`, through `Symbol.dispose`) stops it early: the run in flight is
 // aborted and nothing re-runs it. Otherwise it lives as long as the scope that created it.
-import { Signal } from './signal.js';
+import { State, untrack } from './signal.js';
 import { DISPOSE, effect } from './effect.js';
 
-const { untrack } = Signal.subtle;
 
 /** Marks a resource, so `<zb-await>` follows its state instead of awaiting it once. */
 export const RESOURCE = Symbol.for('zubra.resource');
@@ -25,10 +24,10 @@ export const RESOURCE = Symbol.for('zubra.resource');
  */
 export function resource(fetcher, { initial } = {}) {
   if (typeof fetcher !== 'function') throw new TypeError('zubra: resource() takes a function that returns a value or a promise');
-  const value = new Signal.State(initial);
-  const error = new Signal.State(undefined);
-  const status = new Signal.State('pending');
-  const version = new Signal.State(0);
+  const value = new State(initial);
+  const error = new State(undefined);
+  const status = new State('pending');
+  const version = new State(0);
   let current = null; // the latest run's promise
 
   const stop = effect(() => {

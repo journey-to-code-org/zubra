@@ -1,8 +1,7 @@
-// Effects and ownership, built only on the Signals API.
+// Effects and ownership, built on the engine's reactions (signal.js).
 //
-// The Signals proposal intentionally leaves effects and scheduling to libraries; this is ours.
-// It follows the pattern from the proposal's README (one Watcher, flushed in a microtask) and
-// adds what components need:
+// The engine leaves effects and scheduling to this file. It follows the pattern from the Signals
+// proposal's README (one set of reactions, flushed in a microtask) and adds what components need:
 //
 //   effect(fn)        run fn now, re-run it (batched) when what it read changes; returns dispose
 //   scope(fn)         an ownership root: effects created inside belong to it
@@ -20,11 +19,10 @@
 // Pausing: a scope can be paused (an element left the DOM) and resumed (it came back). Paused
 // effects are unwatched, so long-lived signals hold no reference to them, but each keeps its
 // cached result and the versions it last saw. On resume it is re-validated and re-runs only if
-// something it depends on changed while it was away — the version check in Signal.Computed does
-// exactly that, so no extra bookkeeping is needed here.
-import { Signal } from './signal.js';
+// something it depends on changed while it was away — the engine's re-validation does exactly
+// that, so no extra bookkeeping is needed here.
+import { untrack, reactions } from './signal.js';
 
-const { untrack } = Signal.subtle;
 const MAX_ROUNDS = 100;
 
 let owner = null;          // the Effect or Scope currently running
@@ -48,7 +46,7 @@ export const DISPOSE = Symbol.dispose ?? Symbol.for('Symbol.dispose');
 export const dev = { label: null, flushed: null };
 // @dev-end
 
-const watcher = new Signal.subtle.Watcher(() => {
+const watcher = reactions(() => {
   scheduled ??= new Promise((resolve) => queueMicrotask(() => {
     try { flush(); } finally { scheduled = null; resolve(); }
   }));
@@ -143,7 +141,7 @@ class Effect extends Owner {
     // @dev
     this.label = dev.label;
     // @dev-end
-    this.computed = new Signal.Computed(() => {
+    this.computed = watcher.create(() => {
       this.disposeChildren();
       this.runCleanup();
       const previous = owner;
@@ -163,7 +161,7 @@ class Effect extends Owner {
   run() {
     // untrack: if this effect was created inside another effect, the parent must not end up
     // depending on whatever the child reads.
-    untrack(() => this.computed.get());
+    watcher.run(this.computed);
   }
 
   runCleanup() {
@@ -246,8 +244,7 @@ export function flush() {
   // @dev-end
   try {
     for (let round = 0; ; round++) {
-      const pending = watcher.getPending();
-      watcher.watch(); // re-arm before running, so writes made by effects schedule another round
+      const pending = watcher.pending();
       if (pending.length === 0) {
         // @dev
         if (ran.length) dev.flushed?.(ran);
