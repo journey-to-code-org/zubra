@@ -24,3 +24,25 @@ export interface BuildRuntimeOptions extends Omit<ZubraOptions, 'runtime'> {
  * options you pass `createZubra`, and the result as its `runtime`.
  */
 export declare function buildRuntime(options?: BuildRuntimeOptions): Promise<BuiltRuntime>;
+
+/** The app's one module: a built runtime that also holds the components and the page scripts named. */
+export interface BuiltApp extends BuiltRuntime {
+  /** The components it defines. One it doesn't hold is refused when its page is made. */
+  components: string[];
+  /** Whether it has page scripts of the app's own (then every page loads it, components or not). */
+  scripts: boolean;
+}
+
+export interface BuildAppOptions extends BuildRuntimeOptions {
+  /** Paths of browser modules of your own to include, run for their effects: a page's live-update script, `@zubra/actions`' form script. What they import from `@zubra/runtime` is the components' copy. */
+  scripts?: string[];
+}
+
+/**
+ * Experimental. Build one module for the whole app: the runtime as `buildRuntime()` makes it,
+ * every component, the plain modules they import, and `scripts`. With it as
+ * `createZubra({ runtime })`, a page's only script is that module, where it loaded the runtime,
+ * each component and each script of its own. Every page loads the same one, so it is cached
+ * once; it defines every component of the app, on the page or not.
+ */
+export declare function buildApp(options?: BuildAppOptions): Promise<BuiltApp>;
