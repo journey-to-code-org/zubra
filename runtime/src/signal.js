@@ -17,6 +17,7 @@
 //   tracking()               whether a read now would be tracked (something is computing)
 //   reactions(notify)        what effect.js builds effects on (below)
 //   sources(v)               a computed's dependencies, for the DevTools (development only)
+//   sinks(v)                 what is subscribed to a signal (for tests: nothing leaks)
 //   Signal, isNative         the public `Signal` export of @zubra/runtime
 //
 // A reaction is a computation the engine re-validates on request: `create(fn)` makes one,
@@ -29,13 +30,14 @@ export const Signal = globalThis.Signal ?? Implementation;
 export const isNative = Signal !== Implementation;
 export const { State, Computed } = Signal;
 export const { untrack } = Signal.subtle;
-const { currentComputed, introspectSources, Watcher } = Signal.subtle;
+const { currentComputed, introspectSources, introspectSinks, Watcher } = Signal.subtle;
 
 export const isState = (value) => value instanceof State;
 export const isComputed = (value) => value instanceof Computed;
 export const isSignal = (value) => value instanceof State || value instanceof Computed;
 export const tracking = () => currentComputed() !== undefined;
 export const sources = (value) => introspectSources(value);
+export const sinks = (value) => introspectSinks(value);
 
 /** Reactions on one Watcher, flushed by the caller (the proposal's own pattern for effects). */
 export function reactions(notify) {
