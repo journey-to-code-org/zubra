@@ -11,16 +11,13 @@
 // signals by name. Without that build, an element still shows its tag, props and bindings,
 // unlocated and with fewer names.
 //
-// The dependencies are read through `Signal.subtle.introspectSources`, the Signals proposal's
-// own introspection, so the same view works on the polyfill and on a native `Signal`.
-import { Signal, isNative } from './signal.js';
+// The dependencies are read through the engine's `sources()` (signal.js), so the same view works
+// on any engine behind it.
+import { isNative, sources as introspectSources, untrack, isComputed, isState } from './signal.js';
 import { dev as effects } from './effect.js';
 import { dev as deep, raw } from './deep.js';
 import { elements, listeners, hooks, early } from './devhook.js';
 
-const { introspectSources, untrack } = Signal.subtle;
-const isComputed = (value) => value instanceof Signal.Computed;
-const isState = (value) => value instanceof Signal.State;
 
 // The most recent flush since connecting: the effects it re-ran, and the signals written since
 // the one before.

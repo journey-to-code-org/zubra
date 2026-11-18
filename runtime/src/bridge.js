@@ -19,10 +19,9 @@
 //
 // `deep: true` also tracks what's inside an array or plain object, so `items.push(x)` notifies
 // as `items = [...items, x]` does. Without it a mutation inside the value isn't a change.
-import { Signal } from './signal.js';
+import { untrack, isSignal } from './signal.js';
 import { effect, root } from './effect.js';
 
-const isSignal = (value) => value instanceof Signal.State || value instanceof Signal.Computed;
 
 function check(source, name) {
   if (typeof source !== 'function' && !isSignal(source)) {
@@ -60,7 +59,7 @@ export function subscribe(source, callback, { deep = false } = {}) {
     effect(() => {
       const value = read(source);
       if (deep) touch(value);
-      Signal.subtle.untrack(() => callback(value));
+      untrack(() => callback(value));
     });
   });
   return () => owner.dispose();
@@ -90,7 +89,7 @@ export function toStore(source, options = {}) {
   };
   if (writable(source)) {
     store.set = (value) => source.set(value);
-    store.update = (fn) => source.set(fn(Signal.subtle.untrack(() => read(source))));
+    store.update = (fn) => source.set(fn(untrack(() => read(source))));
   }
   return store;
 }

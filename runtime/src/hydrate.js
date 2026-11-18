@@ -2,8 +2,8 @@
 // by the template's shape, finding the parts in it, and putting back markers something stripped
 // (remark.js, loaded only then). Compiled components import it (`hydrating: $hydrate`) unless
 // their app never renders on a server (@zubra/unplugin's `hydrate: false`).
-import { $r, blueprint, childRange, hasContent, isClose, isOpen, locate, positions, untrack } from './element.js';
-import { Signal } from './signal.js';
+import { $r, blueprint, childRange, hasContent, isClose, isOpen, locate, positions } from './element.js';
+import { State, untrack } from './signal.js';
 
 let remarker = null; // remark.js, once loaded
 let remarking = null; // its import
@@ -59,7 +59,7 @@ export const $hydrate = {
    */
   adopt(root, template, parts, claimed, filled) {
     const stripped = claimed && hasComment(template) && !hasComment(root);
-    const restored = stripped && !!remarker?.remark(root, template, parts, { blueprint, isOpen, isClose, read: $r, untrack, State: Signal.State, filled });
+    const restored = stripped && !!remarker?.remark(root, template, parts, { blueprint, isOpen, isClose, read: $r, untrack, State, filled });
     const nodes = signature(childRange(root)) === signature(childRange(template)) ? locate(childRange(root), parts, true) : null;
     return [nodes, stripped && !restored];
   },

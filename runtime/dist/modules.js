@@ -59,7 +59,8 @@ export default {
   ],
   "form.js": [
     "effect.js",
-    "element.js"
+    "element.js",
+    "signal.js"
   ],
   "forms.js": [],
   "hydrate.js": [
