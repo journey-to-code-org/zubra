@@ -156,6 +156,14 @@ export interface ZubraOptions {
    * limit. Default 30000.
    */
   streamTimeout?: number;
+  /**
+   * `true`: `handle` and `fetch` answer in Brotli, or gzip, when the request's `accept-encoding`
+   * takes one (with `vary: accept-encoding`), each file compressed once and kept. Off by
+   * default: turn it on where nothing in front of the server compresses (a plain Node host),
+   * and leave it off behind a CDN, a proxy or middleware that does. Files under 1 KB go as they
+   * are. Not at the edge, where the platform compresses.
+   */
+  compress?: boolean;
 }
 
 export declare function createZubra(options?: ZubraOptions): Zubra;
