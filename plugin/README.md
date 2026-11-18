@@ -40,6 +40,7 @@ const stars = ref(1);
 |---|---|
 | a `.jsx` / `.tsx` file | a React component (`@zubra/runtime/react`, React 18 and 19) |
 | a `.vue` file | a Vue 3 component (`@zubra/runtime/vue`) |
+| a `.svelte` file | the custom element class, in any project |
 | another `.zb` component | the custom element class |
 | any other file | the project's framework (detected from the React or Vue Vite plugin), or the element class when there is none |
 

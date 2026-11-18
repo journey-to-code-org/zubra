@@ -12,6 +12,7 @@
 //
 // - from a `.jsx`/`.tsx` file: a React component (`@zubra/runtime/react`);
 // - from a `.vue` file: a Vue component (`@zubra/runtime/vue`);
+// - from a `.svelte` file: the custom element class, in any project (Svelte renders elements);
 // - from anything else (plain JS/TS, another `.zb`): the custom element class. In a project
 //   using React or Vue, plain `.js`/`.ts` files get that framework's component.
 //
@@ -48,6 +49,8 @@ export function variantFor(query, importer, project) {
   const [file] = split(importer);
   if (COMPONENT.test(file)) return 'element'; // a component, or a wrapper (`x.zb?zubra=react`)
   if (file.endsWith('.vue')) return 'vue';
+  // Svelte uses custom elements directly, whatever the project around it is.
+  if (file.endsWith('.svelte')) return 'element';
   // JSX is React's, or Vue's in a Vue project (vue-jsx); Solid and Preact use custom elements
   // directly.
   if (/\.[jt]sx$/.test(file)) return project === 'vue' ? 'vue' : project === 'react' || project === 'element' ? 'react' : 'element';
