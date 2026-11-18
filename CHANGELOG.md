@@ -10,6 +10,7 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ### Fixed
 
+- **`@zubra/server`'s types have `packages` and `imports`** (#375). `createZubra` took both, the guide documents `packages` ("Components from a package") and the tests use both, and `ZubraOptions` had neither, so a TypeScript server that followed the guide didn't compile: "'packages' does not exist in type 'ZubraOptions'". A test now compares the options the function reads with the ones the type declares.
 - **A light-DOM host routes `moveBefore()` to its slots, so Preact 11 can reorder slotted children** (#370). Frameworks manage an element's children through the host, and the host passed `insertBefore`, `appendChild`, `removeChild` and the rest on to its slots, but not `moveBefore`. Preact 11 reorders keyed children with `moveBefore()` where the browser has it (Chromium and Firefox), so reversing a keyed list inside a component threw "The node before which the new node is to be inserted is not a child of this node" and the list kept its old order. `host.moveBefore(node, before)` now places the node as `insertBefore` does, and a node already in its slot is moved there with its state kept. It is defined only where the browser has the method, since frameworks ask for it by name. The same in `--emit element` output, whose own helper for moving a row now calls the platform's `moveBefore` and not one a host overrides. Found by open.parlor's conformance suite on Preact 11.2; `examples/frameworks` pinned Preact 10, which only uses `insertBefore`.
 
 
