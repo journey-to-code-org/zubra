@@ -20,6 +20,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { StringDecoder } from 'node:string_decoder';
 import * as nodeStream from 'node:stream';
+import { brotliCompressSync, gzipSync, constants as zlib } from 'node:zlib';
 const { Transform } = nodeStream;
 import { findCompiler } from './compiler.js';
 import { versionAt, versionSkew } from './versions.js';
@@ -27,6 +28,22 @@ import * as runtimeLists from '@zubra/runtime/modules';
 import { createCore, joinPath, parseAttributes, propsFrom, SOURCE_EXTENSION as SOURCE, TYPES } from './core.js';
 
 export { findCompiler, parseAttributes, propsFrom };
+
+// `compress`: from about a packet's worth of text up (everything served is JavaScript, CSS or
+// JSON; an error's few words and a module of one line go as they are).
+const SMALLEST = 1024;
+const KEPT_MOST = 500;
+/** Brotli if the request's `accept-encoding` takes it, else gzip if it takes that, else none. */
+function encodingFor(accepts) {
+  if (typeof accepts !== 'string') return null;
+  const taken = new Set();
+  for (const part of accepts.toLowerCase().split(',')) {
+    const [name, ...params] = part.split(';').map((piece) => piece.trim());
+    const q = params.find((param) => param.startsWith('q='));
+    if (!q || Number(q.slice(2)) > 0) taken.add(name);
+  }
+  return taken.has('br') ? 'br' : taken.has('gzip') ? 'gzip' : null;
+}
 
 findCompiler(); // (points @zubra/compiler at a native CLI when its WebAssembly build is missing)
 const compiler = await import('@zubra/compiler');
@@ -52,8 +69,10 @@ const posix = (path) => path.split(sep).join('/');
  * Off by default in 5.x; it has no effect in development or with the DevTools.
  *
  * Everything that doesn't need a disk is in `core.js`, shared with `edge.js` (Workers).
+ * `compress: true`: `handle` and `fetch` answer in Brotli or gzip when the request takes one, each
+ * file compressed once and kept; off by default, for a host with nothing in front that compresses.
  */
-export function createZubra({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = process.env.NODE_ENV === 'production', devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, runtime = null } = {}) {
+export function createZubra({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = process.env.NODE_ENV === 'production', devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, runtime = null, compress = false } = {}) {
   const root = resolve(components);
   // The folder as the disk has it, links resolved: what a served module's real path must be inside.
   const realRoot = existsSync(root) ? realpathSync(root) : root;
@@ -242,9 +261,47 @@ export function createZubra({ components = 'components', packages = [], prefix =
     if (typeof req.url !== 'string' || !req.url.startsWith('/') || req.url.startsWith('//')) return false;
     const served = core.serve(new URL(req.url, 'http://x').pathname);
     if (!served) return false;
-    res.writeHead(served.status, { 'content-type': served.type, 'cache-control': core.cacheControlOf(served) });
-    res.end(served.body);
+    const path = new URL(req.url, 'http://x').pathname;
+    const { body, headers } = compress ? encoded(served, path, req.headers?.['accept-encoding']) : { body: served.body, headers: {} };
+    res.writeHead(served.status, { 'content-type': served.type, 'cache-control': core.cacheControlOf(served), ...headers });
+    res.end(body);
     return true;
+  }
+
+  // `compress`: what `handle` and `fetch` answer goes out in Brotli or gzip when the request
+  // says it reads one. A file is compressed once and kept, by its path, for as long as it is
+  // the same text. Files that stay as they are until a restart get the smallest encoding
+  // (Brotli 11 takes about 36 ms for the runtime's base, once); ones an edit may change (in
+  // development, or with `cache: false`) a quick one.
+  const lasting = cache && !changed;
+  const kept = new Map();
+  const same = (a, b) => (typeof a === 'string' ? a === b : typeof b !== 'string' && a.equals(b));
+  function encoded(served, path, accepts) {
+    const { body } = served;
+    if (Buffer.byteLength(body) < SMALLEST) return { body, headers: {} };
+    // `vary` on the plain answer too: a shared cache must not hand it to a browser that asked for Brotli, or the reverse.
+    const headers = { vary: 'accept-encoding' };
+    const encoding = encodingFor(accepts);
+    if (!encoding) return { body, headers };
+    let entry = kept.get(path);
+    if (!entry || !same(entry.body, body)) {
+      // A path can be spelled without end (`%7A` for `z`), so what is kept has a limit.
+      if (kept.size >= KEPT_MOST) kept.clear();
+      kept.set(path, (entry = { body }));
+    }
+    entry[encoding] ??= encoding === 'br'
+      ? brotliCompressSync(body, { params: { [zlib.BROTLI_PARAM_QUALITY]: lasting ? 11 : 4, [zlib.BROTLI_PARAM_SIZE_HINT]: Buffer.byteLength(body) } })
+      : gzipSync(body, { level: lasting ? 9 : 6 });
+    return { body: entry[encoding], headers: { ...headers, 'content-encoding': encoding, 'content-length': String(entry[encoding].length) } };
+  }
+
+  /** `fetch` with `compress`: core's answer, encoded the same way. */
+  async function fetchEncoded(request) {
+    const path = new URL(request.url).pathname;
+    const served = core.serve(path);
+    if (!served) return null;
+    const { body, headers } = encoded(served, path, request.headers.get('accept-encoding'));
+    return new Response(body, { status: served.status, headers: { 'content-type': served.type, 'cache-control': core.cacheControlOf(served), ...headers } });
   }
 
   /** One page, as in core.js, and `stream(html)`: the same chunks as a Node Readable. */
@@ -336,7 +393,7 @@ export function createZubra({ components = 'components', packages = [], prefix =
     render: core.render,
     page,
     handle,
-    fetch: core.fetch,
+    fetch: compress ? fetchEncoded : core.fetch,
     importMap: core.importMap,
     head: core.head,
     scripts: core.scripts,
