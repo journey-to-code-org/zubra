@@ -4,6 +4,16 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Security
+
+- **A streamed prop's error stays on the server.** When a prop given as a promise rejected, `@zubra/server` sent the error's message to the browser as it was, for the component's `<zb-catch>` to show: a database's error (hosts, users, queries) reached the visitor. In production the browser now gets "Internal error"; development keeps the message. The error goes to the new `createZubra({ onError: (error, { component, prop }) => … })`, or to `warn` with its stack. `@zubra/server/edge` is production unless given `production: false`. Found by call-store- serving real data.
+
+### Fixed
+
+- **A streamed page always ends.** A prop given as a promise that never settled held the response open for ever. After `streamTimeout` (30 s by default; `createZubra({ streamTimeout })`, or `page({ streamTimeout })` for one page; `0` for none) it is rejected like any other error, and the stream ends.
+- **A render that failed doesn't break the page.** `page.render()` of a name that isn't a component threw, as it should, but recorded the name first, so `head()`, `scripts()` and `finish()` threw too, for the whole page. A component is now the page's once it has rendered.
+- **Prop values JSON can't carry fail where they came from.** `NaN` and `±Infinity` arrived as `null` ("must be a number, found null"), a `BigInt` threw "Do not know how to serialize a BigInt", and a string with half a surrogate pair (text cut inside an emoji) failed every page that showed it with "the request isn't JSON: unexpected end of hex escape". The first three are now refused naming the component and where in the value (`<book-card>'s prop book.price is a BigInt…`); the last renders with U+FFFD in its place and a warning saying where. Functions and `undefined` are still left out, as JSON leaves them; a Date is still its ISO string. The same for slots and context.
+
 ### Added
 
 - **`buildApp()` from `@zubra/server/build`: the whole app as one module** (experimental). A page loaded the runtime, a module per component and each script of its own: four requests on the comparison's menu page, and on a slowed phone the requests, not the work in them, were most of the time between Zubra and the single-file libraries. `buildApp({ components, scripts })` builds what `buildRuntime()` does and puts every component, the plain modules they import and the page scripts you name into the same module; passed as `createZubra({ runtime })`, it is a page's only script and only preload. On that menu page, CPU slowed six times, thirty interleaved loads: 301 ms to 242 ms to the load event, level with Lit (244), and 12.7 KB in four files to 12.1 KB in one. With `@zubra/sync`, which stays the server's to send: 323 ms to 297 ms, five files to three.
