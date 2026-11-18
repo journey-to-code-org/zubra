@@ -57,6 +57,12 @@ fn hook_of(definition: &str) -> Option<&'static str> {
         "formValue"
     } else if has("this.#validity = read") {
         "validity"
+    } else if has("this.#formReset.push") {
+        "onFormReset"
+    } else if has("this.#formRestore.push") {
+        "onFormRestore"
+    } else if has("this.#formDisabled.push") {
+        "onFormDisabled"
     } else if has("this.#slot(name)") {
         "hasSlot"
     } else if has("this.#started") {

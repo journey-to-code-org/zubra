@@ -9,6 +9,9 @@ test('the importer decides: React files, Vue files, components, everything else'
     assert.equal(variantFor('', '/app/App.jsx', project), project === 'vue' ? 'vue' : 'react');
     assert.equal(variantFor('', '/app/App.vue', project), 'vue');
     assert.equal(variantFor('', '/app/App.vue?vue&type=script&setup=true&lang.ts', project), 'vue', 'a .vue file\'s script block');
+    assert.equal(variantFor('', '/app/Editor.svelte', project), 'element', 'Svelte renders elements, in any project (#377)');
+    assert.equal(variantFor('', '/app/Editor.svelte?svelte&type=script&lang.ts', project), 'element', 'a .svelte file\'s virtual module');
+    assert.equal(variantFor('react', '/app/Editor.svelte', project), 'react', 'unless asked');
     assert.equal(variantFor('', '/app/inbox.zb', project), 'element', 'components import elements');
     assert.equal(variantFor('', '/app/badge.zb?zubra=react', project), 'element', 'a wrapper imports its element');
     assert.equal(variantFor('', '/app/util.ts', project), project, 'plain files get the project\'s framework');

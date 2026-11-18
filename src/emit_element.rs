@@ -50,6 +50,9 @@ const PROVIDED: &[&str] = &[
     "emit",
     "formValue",
     "validity",
+    "onFormReset",
+    "onFormRestore",
+    "onFormDisabled",
     "hasSlot",
     "hydrated",
     "isSafeUrl",
@@ -194,6 +197,17 @@ pub fn emit(
                     .with_help(format!(
                         "an element has {}; for more, {HINT}",
                         PROVIDED.join(", ")
+                    )));
+                }
+                // The browser only calls the form callbacks on a form-associated element.
+                if imported.starts_with("onForm") && !component.form_associated {
+                    return Err(Diagnostic::new(
+                        component.tag_span,
+                        format!("`{imported}()` needs form-associated on the component's host tag"),
+                    )
+                    .with_help(format!(
+                        "write <{} form-associated>: the browser calls a form control's callbacks only on an element that is one",
+                        component.tag
                     )));
                 }
                 runtime_imports.push((imported, local));
@@ -373,6 +387,18 @@ pub fn emit(
             "validity" => {
                 emitter.members.insert("validity");
                 "(read) => {\n      this.#validity = read;\n    }".to_owned()
+            }
+            "onFormReset" => {
+                emitter.members.insert("formReset");
+                "(run) => {\n      this.#formReset.push(run);\n    }".to_owned()
+            }
+            "onFormRestore" => {
+                emitter.members.insert("formRestore");
+                "(run) => {\n      this.#formRestore.push(run);\n    }".to_owned()
+            }
+            "onFormDisabled" => {
+                emitter.members.insert("formDisabled");
+                "(run) => {\n      this.#formDisabled.push(run);\n    }".to_owned()
             }
             "hasSlot" => {
                 let live = emitter.helper("live");
@@ -578,6 +604,15 @@ pub fn emit(
     if model.is_some() {
         out.push_str("  #reset; // the two-way prop's starting value, for a form reset\n");
     }
+    if members.contains("formReset") {
+        out.push_str("  #formReset = [];\n");
+    }
+    if members.contains("formRestore") {
+        out.push_str("  #formRestore = [];\n");
+    }
+    if members.contains("formDisabled") {
+        out.push_str("  #formDisabled = [];\n  #disabledEarly = false; // disabled before the script ran (see #start)\n");
+    }
 
     // Constructor.
     out.push_str("\n  constructor() {\n    super();\n");
@@ -740,6 +775,9 @@ pub fn emit(
             "    this.#reset = structuredClone(this.#props.{model});\n"
         ));
     }
+    if members.contains("formDisabled") {
+        out.push_str("    // Disabled (by a disabled <fieldset>, say) before the script had registered onFormDisabled().\n    if (this.#disabledEarly) for (const run of this.#formDisabled) run(true);\n");
+    }
     out.push_str("  }\n");
 
     // The script and the template.
@@ -833,12 +871,28 @@ pub fn emit(
     // Forms.
     if component.form_associated {
         out.push_str("\n  // ---- form control: what <input> has, from ElementInternals\n\n  get form() {\n    return this.#internals.form;\n  }\n  get validity() {\n    return this.#internals.validity;\n  }\n  get validationMessage() {\n    return this.#internals.validationMessage;\n  }\n  get willValidate() {\n    return this.#internals.willValidate;\n  }\n  checkValidity() {\n    return this.#internals.checkValidity();\n  }\n  reportValidity() {\n    return this.#internals.reportValidity();\n  }\n");
+        // onFormReset() in the script is the reset; without it, a control with one two-way prop
+        // goes back to what it started as.
+        let own_reset = if members.contains("formReset") {
+            "    if (this.#formReset.length) {\n      for (const run of this.#formReset) run();\n      return;\n    }\n"
+        } else {
+            ""
+        };
         if let Some(model) = &model {
             let event = format!("{}change", model.to_ascii_lowercase());
             out.push_str(&format!(
-                "  /** A form reset brings {model} back to what it started as. */\n  formResetCallback() {{\n    if (this.#reset === undefined || Object.is(this.#props.{model}, this.#reset)) return;\n    this.{model} = structuredClone(this.#reset);\n    this.#fire({}, this.#props.{model}); // a reset is the control's own change\n  }}\n",
-                json(&event)
+                "  /** A form reset brings {model} back to what it started as{unless}. */\n  formResetCallback() {{\n{own_reset}    if (this.#reset === undefined || Object.is(this.#props.{model}, this.#reset)) return;\n    this.{model} = structuredClone(this.#reset);\n    this.#fire({}, this.#props.{model}); // a reset is the control's own change\n  }}\n",
+                json(&event),
+                unless = if own_reset.is_empty() { "" } else { ", unless the script has its own onFormReset()" }
             ));
+        } else if members.contains("formReset") {
+            out.push_str("  /** The form was reset: what the script gave onFormReset() runs. */\n  formResetCallback() {\n    for (const run of this.#formReset) run();\n  }\n");
+        }
+        if members.contains("formRestore") {
+            out.push_str("  /** The browser restored a value (back and forward, autofill): what the script gave onFormRestore() runs. */\n  formStateRestoreCallback(state, mode) {\n    for (const run of this.#formRestore) run(state, mode);\n  }\n");
+        }
+        if members.contains("formDisabled") {
+            out.push_str("  /** Disabled or enabled, by its own attribute or a disabled <fieldset>: what the script gave onFormDisabled() runs. */\n  formDisabledCallback(disabled) {\n    this.#disabledEarly = disabled && !this.#started;\n    for (const run of this.#formDisabled) run(disabled);\n  }\n");
         }
     }
 
