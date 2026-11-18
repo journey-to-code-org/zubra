@@ -27,6 +27,7 @@ const DEV_ONLY = ['devhook.js', 'devtools.js', 'mismatch.js'];
 // side). `private.test.js` checks each name's every use in `src/`.
 export const PRIVATE = {
   'signal-impl.js': ['kind', 'wrapper', 'version', 'dirty', 'value', 'error', 'computation', 'notify', 'onWatched', 'onUnwatched', 'lastCleanEpoch', 'sinks', 'sinkSlots', 'sources', 'sourceVersions', 'sourceSlots', 'nextSource', 'pending', 'seen'],
+  'signal-core.js': ['kind', 'wrapper', 'version', 'dirty', 'value', 'error', 'computation', 'lastCleanEpoch', 'sinks', 'sinkSlots', 'sources', 'sourceVersions', 'sourceSlots', 'nextSource', 'group', 'live', 'seen'],
   'effect.js': ['parent', 'children', 'cleanup', 'computed', 'runCleanup', 'disposeChildren'],
 };
 

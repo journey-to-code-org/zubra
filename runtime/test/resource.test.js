@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 import { Signal } from '../src/signal.js';
 import { effect, scope, tick, DISPOSE } from '../src/effect.js';
 import { resource } from '../src/resource.js';
+import { sinks } from '../src/signal.js';
+const hasSinks = (signal) => sinks(signal).length > 0;
 
-const { hasSinks } = Signal.subtle;
 
 const later = () => new Promise((resolve) => setTimeout(resolve, 5));
 

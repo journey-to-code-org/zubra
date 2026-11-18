@@ -6,6 +6,8 @@ import { Signal } from '../src/signal.js';
 import { scope, tick } from '../src/effect.js';
 import { resource as plain } from '../src/resource.js';
 import { tracked } from '../src/track.js';
+import { sinks } from '../src/signal.js';
+const hasSinks = (signal) => sinks(signal).length > 0;
 
 const resource = (fetcher, options) => plain(tracked(fetcher), options);
 
@@ -197,7 +199,7 @@ test('a replaced run’s read is ignored while the current run is still waiting'
   assert.equal(runs, 2, 'no re-run from the replaced run’s read');
   gates.forEach((go) => go());
   await settle();
-  assert.equal(Signal.subtle.hasSinks(old), false, 'once the current run settles, the replaced run’s read is let go');
+  assert.equal(hasSinks(old), false, 'once the current run settles, the replaced run’s read is let go');
   owner.dispose();
 });
 
@@ -277,12 +279,12 @@ test('after dispose, nothing re-runs and the later reads are let go', async () =
     resource(async ({ track }) => { runs++; await later(); return track(() => page.get()); });
   });
   await settle();
-  assert.equal(Signal.subtle.hasSinks(page), true);
+  assert.equal(hasSinks(page), true);
   owner.dispose();
   page.set(2);
   await settle();
   assert.equal(runs, 1);
-  assert.equal(Signal.subtle.hasSinks(page), false, 'no watcher keeps `page`');
+  assert.equal(hasSinks(page), false, 'no watcher keeps `page`');
 });
 
 test('dispose() on the resource itself lets the later reads go', async () => {
@@ -294,7 +296,7 @@ test('dispose() on the resource itself lets the later reads go', async () => {
   await settle();
   r.dispose();
   await tick();
-  assert.equal(Signal.subtle.hasSinks(page), false);
+  assert.equal(hasSinks(page), false);
   owner.dispose();
 });
 
@@ -307,7 +309,7 @@ test('a disposed resource’s fetcher still reads, without subscribing', async (
   owner.dispose();
   await settle();
   assert.equal(seen, 7);
-  assert.equal(Signal.subtle.hasSinks(page), false);
+  assert.equal(hasSinks(page), false);
 });
 
 test('a paused owner stops following later reads until it resumes', async () => {
@@ -318,7 +320,7 @@ test('a paused owner stops following later reads until it resumes', async () => 
   });
   await settle();
   owner.pause();
-  assert.equal(Signal.subtle.hasSinks(page), false, 'a detached element holds nothing');
+  assert.equal(hasSinks(page), false, 'a detached element holds nothing');
   page.set(2);
   await settle();
   assert.equal(runs, 1);
@@ -355,6 +357,6 @@ test('a read after the run settled (a timer the fetcher left) does not subscribe
   late.set(1);
   await settle();
   assert.equal(runs, 1);
-  assert.equal(Signal.subtle.hasSinks(late), false);
+  assert.equal(hasSinks(late), false);
   owner.dispose();
 });

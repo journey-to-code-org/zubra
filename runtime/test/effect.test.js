@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Signal } from '../src/signal.js';
 import { effect, scope, root, flush, tick, DISPOSE } from '../src/effect.js';
+import { sinks } from '../src/signal.js';
+const hasSinks = (signal) => sinks(signal).length > 0;
 
-const { hasSinks } = Signal.subtle;
 
 function captureErrors() {
   const errors = [];
@@ -238,9 +239,9 @@ test('resuming a parent that must re-run replaces its children instead of resumi
 test('500 paused effects on one long-lived signal hold no subscriptions', () => {
   const shared = new Signal.State(0);
   const roots = Array.from({ length: 500 }, () => scope(() => effect(() => { shared.get(); })));
-  assert.equal(Signal.subtle.introspectSinks(shared).length, 500);
+  assert.equal(sinks(shared).length, 500);
   roots.forEach((root) => root.pause());
-  assert.equal(Signal.subtle.introspectSinks(shared).length, 0);
+  assert.equal(sinks(shared).length, 0);
   roots.forEach((root) => root.dispose());
 });
 
