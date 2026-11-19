@@ -64,12 +64,13 @@ class Node {
     this.equals = Object.is;
     this.computation = null;
     this.lastCleanEpoch = -1;
-    this.sinks = null;          // live consumers (lazy)
-    this.sinkSlots = null;
-    this.sources = null;        // dependencies (consumers only, lazy)
-    this.sourceVersions = null;
-    this.sourceSlots = null;
-    this.nextSource = 0;
+    // Live consumers, two entries each: the consumer, and where this node is in its `deps`
+    // (lazy). One array, not two, made only when needed: most nodes have one or two.
+    this.sinks = null;
+    // Dependencies (consumers only, lazy), three entries each: the source, the version of it
+    // last seen, and where this node is in the source's `sinks` (0 when not live).
+    this.deps = null;
+    this.nextSource = 0;        // in dependencies, not entries
     this.group = null;          // reactions only: whose `notify` hears it
     this.live = false;          // reactions only: watched
     this.seen = 0;              // reactions only: de-duplication stamp for pending()
@@ -78,68 +79,83 @@ class Node {
 
 const isLive = (node) => (node.kind === REACTION ? node.live : node.sinks !== null && node.sinks.length > 0);
 
+// Most nodes have one to three dependencies and sinks. `push` on a short array leaves room for
+// about 20 entries; a copy at the exact length is cheaper to keep alive. Past SMALL entries, push.
+const SMALL = 12;
+/** Subscribe `consumer` to `producer`, as its dependency number `slotInConsumer`; returns where it went in `producer.sinks` (counted in sinks, not entries). */
 function link(producer, consumer, slotInConsumer) {
-  if (producer.sinks === null) { producer.sinks = []; producer.sinkSlots = []; }
-  if (producer.sinks.length === 0) {
+  const sinks = producer.sinks;
+  if (sinks === null || sinks.length === 0) {
     // Becoming live: what it depends on now needs its back-link too.
-    const sources = producer.sources;
-    if (sources !== null) {
-      for (let i = 0; i < sources.length; i++) producer.sourceSlots[i] = link(sources[i], producer, i);
+    const deps = producer.deps;
+    if (deps !== null) for (let j = 0; j < deps.length; j += 3) deps[j + 2] = link(deps[j], producer, j / 3);
+    if (sinks === null) {
+      producer.sinks = [consumer, slotInConsumer];
+      return 0;
     }
   }
-  producer.sinkSlots.push(slotInConsumer);
-  return producer.sinks.push(consumer) - 1;
+  const index = sinks.length >> 1;
+  if (sinks.length < SMALL) producer.sinks = [...sinks, consumer, slotInConsumer];
+  else sinks.push(consumer, slotInConsumer);
+  return index;
 }
 
+/** Remove sink number `slot` from `producer.sinks`, moving the last one into its place. */
 function unlink(producer, slot) {
   const sinks = producer.sinks;
-  if (sinks.length === 1) {
-    const sources = producer.sources;
-    if (sources !== null) for (let i = 0; i < sources.length; i++) unlink(sources[i], producer.sourceSlots[i]);
+  if (sinks.length === 2) {
+    const deps = producer.deps;
+    if (deps !== null) for (let j = 0; j < deps.length; j += 3) unlink(deps[j], deps[j + 2]);
   }
-  const last = sinks.length - 1;
-  const slots = producer.sinkSlots;
-  if (slot < last) {
+  const last = sinks.length - 2;
+  const at = slot * 2;
+  if (at < last) {
     const moved = sinks[last];
-    sinks[slot] = moved;
-    slots[slot] = slots[last];
-    moved.sourceSlots[slots[slot]] = slot;
+    const movedSlot = sinks[last + 1];
+    sinks[at] = moved;
+    sinks[at + 1] = movedSlot;
+    moved.deps[movedSlot * 3 + 2] = slot;
   }
   sinks.pop();
-  slots.pop();
+  sinks.pop();
 }
 
 function track(producer) {
   const consumer = active;
   if (consumer === null) return;
-  if (consumer.sources === null) { consumer.sources = []; consumer.sourceVersions = []; consumer.sourceSlots = []; }
-  const i = consumer.nextSource++;
-  const sources = consumer.sources;
-  const previous = sources[i];
-  if (previous !== producer) {
-    const live = isLive(consumer);
-    if (previous !== undefined && live) unlink(previous, consumer.sourceSlots[i]);
-    sources[i] = producer;
-    consumer.sourceSlots[i] = live ? link(producer, consumer, i) : 0;
+  const n = consumer.nextSource++;
+  const deps = consumer.deps;
+  const j = n * 3;
+  if (deps === null || j === deps.length) {
+    // A new dependency, appended (the three entries in order, so the array has no holes).
+    const slot = isLive(consumer) ? link(producer, consumer, n) : 0;
+    if (deps === null) consumer.deps = [producer, producer.version, slot];
+    else if (deps.length < SMALL) consumer.deps = [...deps, producer, producer.version, slot];
+    else deps.push(producer, producer.version, slot);
+    return;
   }
-  consumer.sourceVersions[i] = producer.version;
+  if (deps[j] !== producer) {
+    const live = isLive(consumer);
+    if (live) unlink(deps[j], deps[j + 2]);
+    deps[j] = producer;
+    deps[j + 2] = live ? link(producer, consumer, n) : 0;
+  }
+  deps[j + 1] = producer.version;
 }
 
 function trimSources(consumer) {
-  const sources = consumer.sources;
-  if (sources === null) return;
-  const count = consumer.nextSource;
-  if (count === sources.length) return;
-  if (isLive(consumer)) for (let i = count; i < sources.length; i++) unlink(sources[i], consumer.sourceSlots[i]);
-  sources.length = count;
-  consumer.sourceVersions.length = count;
-  consumer.sourceSlots.length = count;
+  const deps = consumer.deps;
+  if (deps === null) return;
+  const count = consumer.nextSource * 3;
+  if (count === deps.length) return;
+  if (isLive(consumer)) for (let j = count; j < deps.length; j += 3) unlink(deps[j], deps[j + 2]);
+  deps.length = count;
 }
 
 function markSinks(producer) {
   const sinks = producer.sinks;
   if (sinks === null) return;
-  for (let i = 0; i < sinks.length; i++) {
+  for (let i = 0; i < sinks.length; i += 2) {
     const consumer = sinks[i];
     if (consumer.dirty) continue;
     consumer.dirty = true;
@@ -157,12 +173,11 @@ function refresh(node) {
 }
 
 function sourcesChanged(node) {
-  const sources = node.sources;
-  if (sources === null) return false;
-  const versions = node.sourceVersions;
-  for (let i = 0; i < sources.length; i++) {
-    const source = sources[i];
-    const seen = versions[i];
+  const deps = node.deps;
+  if (deps === null) return false;
+  for (let j = 0; j < deps.length; j += 3) {
+    const source = deps[j];
+    const seen = deps[j + 1];
     if (source.version !== seen) return true;
     refresh(source);
     if (source.version !== seen) return true;
@@ -271,14 +286,16 @@ export function reactions(notify) {
     },
   };
   return {
-    create(fn) {
-      const node = new Node(REACTION, null);
+    /** A reaction that calls `fn` with `this` as `owner` (an effect, which `owner()` gives back). */
+    create(fn, owner) {
+      const node = new Node(REACTION, owner);
       node.computation = fn;
       node.value = UNSET;
       node.dirty = true;
       node.group = group;
       return node;
     },
+    owner: (node) => node.wrapper,
     run(node) {
       const previous = active;
       active = null;
@@ -288,8 +305,8 @@ export function reactions(notify) {
     watch(node) {
       if (node.live) return;
       node.live = true;
-      const sources = node.sources;
-      if (sources !== null) for (let i = 0; i < sources.length; i++) node.sourceSlots[i] = link(sources[i], node, i);
+      const deps = node.deps;
+      if (deps !== null) for (let j = 0; j < deps.length; j += 3) deps[j + 2] = link(deps[j], node, j / 3);
       // A dirty reaction isn't listed: whoever watches one runs it next (effect.js, on creating
       // and on resuming an effect), and a list entry nothing flushes would keep it alive.
     },
@@ -297,8 +314,8 @@ export function reactions(notify) {
       for (const node of nodes) {
         if (!node.live) continue;
         node.live = false;
-        const sources = node.sources;
-        if (sources !== null) for (let i = 0; i < sources.length; i++) unlink(sources[i], node.sourceSlots[i]);
+        const deps = node.deps;
+        if (deps !== null) for (let j = 0; j < deps.length; j += 3) unlink(deps[j], deps[j + 2]);
       }
     },
     pending() {
@@ -321,14 +338,20 @@ export function reactions(notify) {
 export function sources(value) {
   const node = value instanceof Node ? value : isObject(value) ? computedNode(value) : undefined;
   if (!node) throw new TypeError('zubra: sources() takes a computed or an effect');
-  return (node.sources ?? []).map((source) => source.wrapper);
+  const deps = node.deps ?? [];
+  const out = [];
+  for (let j = 0; j < deps.length; j += 3) out.push(deps[j].wrapper);
+  return out;
 }
 
 /** What is subscribed to a state or a computed (only what is live: a watched effect, or what it reads). */
 export function sinks(value) {
   const node = isObject(value) ? (stateNode(value) ?? computedNode(value)) : undefined;
   if (!node) throw new TypeError('zubra: sinks() takes a state or a computed');
-  return (node.sinks ?? []).map((sink) => sink.wrapper ?? sink);
+  const sinks = node.sinks ?? [];
+  const out = [];
+  for (let i = 0; i < sinks.length; i += 2) out.push(sinks[i].wrapper ?? sinks[i]);
+  return out;
 }
 
 // The public `Signal` export: enough of the old shape that `new Signal.State(0)` and
