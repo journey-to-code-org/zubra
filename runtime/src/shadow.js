@@ -6,6 +6,9 @@ import { adopt, isContent, toSheet } from './element.js';
 
 const globalSheets = [];
 const shadowRoots = new Set(); // WeakRef<ShadowRoot>
+// Refs to collected roots are dropped once the set doubles, so a page that makes and removes
+// shadow components without ever calling adoptStyles() doesn't keep one per element it made.
+let pruneAt = 256;
 
 /**
  * Add stylesheets (CSS text or `CSSStyleSheet`s) to every zubra shadow root, now and later — for
@@ -30,6 +33,10 @@ export const $shadow = {
     const root = host.shadowRoot ?? host.attachShadow({ mode: 'open' });
     adopt(root, [...globalSheets, ...sheets]);
     shadowRoots.add(new WeakRef(root));
+    if (shadowRoots.size >= pruneAt) {
+      for (const ref of shadowRoots) if (!ref.deref()) shadowRoots.delete(ref);
+      pruneAt = Math.max(256, shadowRoots.size * 2);
+    }
     // The server's copy of the styles, for before this ran; the adopted sheet replaces it.
     const serverStyles = root.firstElementChild;
     if (serverStyles?.localName === 'style' && serverStyles.hasAttribute('data-zubra')) serverStyles.remove();

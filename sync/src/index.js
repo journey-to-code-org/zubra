@@ -115,6 +115,11 @@ export function receivePresence({ room, peer, state }) {
   if (peer === tab) return;
   for (const handler of rooms.get(room) ?? []) handler(peer, state);
 }
+/** Stop handing `room`'s presence to `handler`; a room no one here is in is forgotten. */
+function leaveRoom(room, handler) {
+  const handlers = rooms.get(room);
+  if (handlers?.delete(handler) && handlers.size === 0) rooms.delete(room);
+}
 function sendPresence(room, state) {
   const message = { room, peer: tab, state };
   if (state === null) joined.delete(room);
@@ -262,7 +267,7 @@ function live(name, keyOf, fields, peersSignal) {
     const state = sending ? mine() : null;
     if (next !== room) {
       if (room !== null) {
-        rooms.get(room)?.delete(onPeer);
+        leaveRoom(room, onPeer);
         if (sending) sendPresence(room, null);
         others.clear();
         publish();
@@ -290,7 +295,7 @@ function live(name, keyOf, fields, peersSignal) {
   onUnmount(() => {
     clearInterval(timer);
     if (room !== null) {
-      rooms.get(room)?.delete(onPeer);
+      leaveRoom(room, onPeer);
       if (sending) sendPresence(room, null);
     }
   });

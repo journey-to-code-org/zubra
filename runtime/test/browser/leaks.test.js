@@ -18,6 +18,7 @@ useBrowser({
   rating: join(here, 'fixtures/rating.zb'),
   badge: join(here, 'fixtures/badge.zb'),
   inbox: join(here, 'fixtures/inbox.zb'),
+  'slot-card-shadow': join(here, 'fixtures/slot-card-shadow.zb'),
 }, {
   'shared-state.js': "import { state } from '@zubra/runtime';\nexport const shared = state(1);\nwindow.shared = shared;\n",
 });
@@ -142,3 +143,32 @@ for (const framework of ['React', 'Vue']) {
     await page.close();
   });
 }
+
+test("shadow components made and removed don't leave a reference each behind", { skip }, async () => {
+  const { page } = await open('<p>shadow</p>', { modules: ['slot-card-shadow'] });
+  const count = async () => {
+    const client = await page.context().newCDPSession(page);
+    for (let round = 0; round < 3; round++) await client.send('HeapProfiler.collectGarbage');
+    const { result: prototype } = await client.send('Runtime.evaluate', { expression: 'WeakRef.prototype' });
+    const { objects } = await client.send('Runtime.queryObjects', { prototypeObjectId: prototype.objectId });
+    const { result } = await client.send('Runtime.callFunctionOn', { objectId: objects.objectId, functionDeclaration: 'function () { return this.length; }', returnByValue: true });
+    await client.detach();
+    return result.value;
+  };
+  for (let round = 0; round < 30; round++) {
+    await page.evaluate(async () => {
+      const host = document.createElement('div');
+      document.body.append(host);
+      const made = Array.from({ length: 200 }, () => document.createElement('slot-card-shadow'));
+      host.append(...made);
+      await Promise.all(made.map((el) => el.updateComplete));
+      host.remove();
+    });
+    await count(); // let what was removed be collected along the way
+  }
+  // 6000 made. Dev builds keep up to about a thousand more for devtools (devhook.js `early`).
+  const refs = await count();
+  assert.ok(refs < 2000, `${refs} WeakRefs after 6000 shadow components came and went`);
+  assert.deepEqual(await collected(page, ['slot-card-shadow']), { 'slot-card-shadow': 0 });
+  await page.close();
+});

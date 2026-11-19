@@ -552,3 +552,31 @@ test('handle(): a body that says it is past maxBytes is refused before it is rea
     server.close();
   }
 });
+
+test('a live stream closed while its backlog is read starts no keep-alive', async () => {
+  // A log whose first read waits until the test lets it go.
+  const log = memoryLog();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const after = log.after.bind(log);
+  log.after = async (...args) => { await gate; return after(...args); };
+  const sync = createSyncServer({ log, authorize: allowAnyone, heartbeat: 5 });
+  const started = new Set();
+  const realSet = globalThis.setInterval, realClear = globalThis.clearInterval;
+  globalThis.setInterval = (...args) => { const timer = realSet(...args); started.add(timer); return timer; };
+  globalThis.clearInterval = (timer) => { started.delete(timer); realClear(timer); };
+  try {
+    const cut = new AbortController();
+    const response = await live(sync, 'p1', 0, cut.signal);
+    cut.abort();
+    await response.body.cancel().catch(() => {});
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(started.size, 0, 'an interval is still running for a stream that has gone');
+  } finally {
+    for (const timer of started) realClear(timer);
+    globalThis.setInterval = realSet;
+    globalThis.clearInterval = realClear;
+    sync.close?.();
+  }
+});
