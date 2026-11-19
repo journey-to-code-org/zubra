@@ -39,10 +39,24 @@ export const DISPOSE = Symbol.dispose ?? Symbol.for('Symbol.dispose');
 // @dev
 /**
  * For the DevTools hook (devtools.js), in development only: `label` is what the effect being
- * created binds (element.js sets it around each binding), and `flushed` hears which effects each
- * flush re-ran.
+ * created binds (element.js sets it around each binding), `flushed` hears which effects each
+ * flush re-ran and how long it took (ms), and `live`, once devtools.js sets it (when the pane
+ * connects, so a page that never opens it pays nothing), counts the owners (scopes and effects)
+ * and the effects made since then and neither disposed nor garbage-collected. (A removed
+ * element's are paused, not disposed, in case it comes back: they leave the count when they're
+ * collected.)
  */
-export const dev = { label: null, flushed: null };
+export const dev = { label: null, flushed: null, live: null };
+let collected = null;
+/** Count from now on (devtools.js, on connecting). */
+export function countLive() {
+  dev.live ??= { owners: 0, effects: 0 };
+  collected ??= new FinalizationRegistry((kind) => { dev.live[kind]--; });
+  return dev.live;
+}
+
+/** The effect a subscriber of a signal is (or whose reaction it is); null for a computed. */
+export const effectOf = (sink) => (sink instanceof Effect ? sink : (watcher.owner(sink) ?? null));
 // @dev-end
 
 const watcher = reactions(() => {
@@ -105,6 +119,13 @@ class Owner {
     this.next = null;
     this.disposed = false;
     this.paused = false;
+    // @dev
+    this.counted = dev.live !== null;
+    if (this.counted) {
+      dev.live.owners++;
+      collected.register(this, 'owners', this);
+    }
+    // @dev-end
     if (parent) {
       const last = parent.last;
       if (last === null) parent.first = this;
@@ -133,6 +154,12 @@ class Owner {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    // @dev
+    if (this.counted) {
+      dev.live.owners--;
+      collected.unregister(this); // (an effect's two registrations: Effect.dispose counted its own)
+    }
+    // @dev-end
     this.disposeChildren();
     const parent = this.parent;
     if (parent !== null) {
@@ -188,6 +215,10 @@ class Effect extends Owner {
     this.cleanup = undefined;
     // @dev
     this.label = dev.label;
+    if (this.counted) {
+      dev.live.effects++;
+      collected.register(this, 'effects', this);
+    }
     // @dev-end
     this.fn = fn;
     // The reaction calls `compute` on this effect: one method for every effect, not a closure each.
@@ -210,6 +241,9 @@ class Effect extends Owner {
 
   dispose() {
     if (this.disposed) return;
+    // @dev
+    if (this.counted) dev.live.effects--;
+    // @dev-end
     super.dispose();
     unwatchLater(this.computed);
     try { this.runCleanup(); } catch (error) { report(error); }
@@ -279,13 +313,14 @@ export function flush() {
   flushing = true;
   // @dev
   const ran = [];
+  const started = performance.now();
   // @dev-end
   try {
     for (let round = 0; ; round++) {
       const pending = watcher.pending();
       if (pending.length === 0) {
         // @dev
-        if (ran.length) dev.flushed?.(ran);
+        if (ran.length) dev.flushed?.(ran, performance.now() - started);
         // @dev-end
         return;
       }

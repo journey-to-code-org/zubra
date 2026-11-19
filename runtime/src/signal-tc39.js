@@ -22,6 +22,13 @@ export const tracking = () => currentComputed() !== undefined;
 export const sources = (value) => introspectSources(value);
 export const sinks = (value) => introspectSinks(value);
 
+// @dev
+/** Which engine this is, for the DevTools. */
+export const engine = 'tc39';
+/** The proposal keeps no count of changes. */
+export const changes = () => null;
+// @dev-end
+
 /** Reactions on one Watcher, flushed by the caller (the proposal's own pattern for effects). */
 const OWNER = Symbol('owner');
 
