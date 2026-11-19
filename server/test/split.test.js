@@ -74,7 +74,7 @@ test('in production a page preloads the base, and of the split files only those 
 });
 
 test("each module takes a name from the file that has it, by address; a plain module's and @zubra/sync's too", async () => {
-  const zubra = createZubra({ components, production: true });
+  const zubra = createZubra({ minify: false, components, production: true });
   const text = async (path) => (await zubra.fetch(new Request(`http://localhost${path}`))).text();
   const guard = await text('/_zubra/components/guard-link.js');
   assert.match(guard, /import \{ prevent \} from '\.\.\/runtime\/modifiers\.js';/);
@@ -89,7 +89,7 @@ test("each module takes a name from the file that has it, by address; a plain mo
 });
 
 test("where `imports` says where the runtime is, every name is taken from that, as before the split", async () => {
-  const zubra = createZubra({ components, production: true, imports: { '@zubra/runtime': 'https://cdn.example/zubra/core.js' } });
+  const zubra = createZubra({ minify: false, components, production: true, imports: { '@zubra/runtime': 'https://cdn.example/zubra/core.js' } });
   const text = async (path) => (await zubra.fetch(new Request(`http://localhost${path}`))).text();
   const guard = await text('/_zubra/components/guard-link.js');
   assert.match(guard, /import \{ prevent \} from '@zubra\/runtime'/);
@@ -100,7 +100,7 @@ test("where `imports` says where the runtime is, every name is taken from that, 
 
 for (const [name, production, base] of [['in production', true, 'zubra.js'], ['in development', false, 'base.js']]) {
   test(`in a browser ${name}: every split feature works, and the page asks for the files it was told to and no others`, async () => {
-    const zubra = createZubra({ components, production });
+    const zubra = createZubra({ minify: false, components, production });
     const html = pageOf(zubra, ['plain-card', 'key-box', 'guard-link', 'theme-box', 'late-word', 'pick-one']);
     const url = await serving(zubra, html);
     const page = await browser.newPage();

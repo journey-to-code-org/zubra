@@ -28,6 +28,9 @@
 //! `"loaded": "<handle>"` where it would have `"files"`, and gets the answer the files would. A
 //! compiler that doesn't have the handle answers not ok with `"reload": true`: load the files
 //! again (see `loaded.rs`).
+//! `command: "minify"` takes no component either: `code` (an ES module, a component's as
+//! this compiler wrote it) answers with it minified, the CSS in its definition's `styles` too (see
+//! `minify.rs`); a module that doesn't parse is an error.
 //! `command: "join"` takes no component: `modules` (`[{ path, code }]`, browser modules) and `at`
 //! (the path the result is served at), and answers with them as one module, or, not ok and with
 //! `"apart": true`, with why they have to stay separate (see `joined.rs`).
@@ -79,6 +82,17 @@ fn respond(request: &Map<String, Value>) -> Value {
     // `join`: several browser modules (`modules`: `[{ path, code }]`) as one, to be served at
     // `at` (see `joined.rs`). Where joining them would change what one of them sees, the answer
     // is not ok, with the reason as `error` and `"apart": true`: serve them as they are.
+    if text("command") == Some("minify") {
+        let Some(code) = text("code") else {
+            return failure("`code` is required: the module to minify");
+        };
+        return match crate::minify::minify(code) {
+            Ok(output) => {
+                json!({ "ok": true, "output": output, "error": null, "warnings": [], "diagnostics": [] })
+            }
+            Err(reason) => failure(&reason),
+        };
+    }
     if text("command") == Some("join") {
         let Some(at) = text("at") else {
             return failure("`at` is required: the path the joined module is served at");

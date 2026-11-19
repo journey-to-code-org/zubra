@@ -93,7 +93,7 @@ test('buildRuntime says what is wrong: no runtime here to build, a name the runt
 });
 
 test('with a built runtime every module takes the runtime from it, whichever entry or file it named, and a page preloads it alone', async () => {
-  const zubra = createZubra({ components, production: true, runtime });
+  const zubra = createZubra({ minify: false, components, production: true, runtime });
   const at = `../runtime/${runtime.file}`;
   const guard = await text(zubra, '/_zubra/components/guard-link.js');
   assert.ok(guard.includes(`import { prevent } from '${at}';`), guard.slice(0, 300));

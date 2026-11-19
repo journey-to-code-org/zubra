@@ -40,6 +40,7 @@ mod ir;
 mod joined;
 mod jsx;
 mod loaded;
+mod minify;
 mod namespaces;
 mod parser;
 mod pure;
