@@ -1,0 +1,15 @@
+{
+  "name": "counter-slice-enhance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild client.js --bundle --minify --format=esm --outfile=dist/client.js",
+    "start": "NODE_ENV=production node server.js"
+  },
+  "dependencies": {
+    "@enhance/element": "1.4.6",
+    "@enhance/ssr": "4.0.3",
+    "counter-slice-backend": "file:../shared"
+  },
+  "devDependencies": { "esbuild": "0.28.2" }
+}
