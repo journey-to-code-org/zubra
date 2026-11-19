@@ -17,11 +17,11 @@
   "license": "Apache-2.0",
   "homepage": "https://github.com/krausest/js-framework-benchmark#readme",
   "dependencies": {
-    "@zubra/runtime": "5.7.0"
+    "@zubra/runtime": "5.23.0"
   },
   "devDependencies": {
-    "@zubra/compiler": "5.7.0",
-    "@zubra/unplugin": "5.7.0",
+    "@zubra/compiler": "5.23.0",
+    "@zubra/unplugin": "5.23.0",
     "esbuild": "0.28.2"
   }
 }
