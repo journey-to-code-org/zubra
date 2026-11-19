@@ -165,6 +165,14 @@ export interface ZubraOptions {
    */
   compress?: boolean;
   /**
+   * `true` (for development): a page reloads when the server is back after going away, which is
+   * what a restart on a saved file (`node --watch`) looks like from the browser. `page.finish()`
+   * and `page.scripts()` add a small script (`<prefix>/reload.js`) that keeps an event stream to
+   * `<prefix>/reload` open; `handle` and `fetch` answer both. The page is loaded again, so what a
+   * component held in the browser starts over. Default: false. Not at the edge.
+   */
+  reload?: boolean;
+  /**
    * Signals mode (experimental): the runtime's reactivity on the TC39 Signals API in place of
    * Zubra's own engine. `state()` then returns a real `Signal.State`, the runtime's `Signal`
    * export is the proposal's whole API, and a browser's native `Signal` is used when it has one.

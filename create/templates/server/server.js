@@ -1,8 +1,8 @@
 // The whole server: it renders the page with its components already in the HTML, serves their
 // browser modules, and runs the form's server function. No bundler and no build step.
 //
-//   npm run dev     restarts when this file or anything in src/ changes, so an edited component
-//                   or 'use server' function is there when you reload
+//   npm run dev     restarts when this file or anything in src/ changes, and the open page
+//                   reloads, so an edited component or 'use server' function shows on save
 //   npm start       the same server with NODE_ENV=production (compiled once, cached)
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -14,10 +14,11 @@ import { notes } from './src/notes.js';
 const production = process.env.NODE_ENV === 'production';
 const components = 'src/components';
 
-// `cache: false` compiles on each request, so an edit to a .zb file shows when you reload.
+// `cache: false` compiles on each request, so an edit to a .zb file is in the next page.
 // `compress` sends the modules in Brotli or gzip (a third of the bytes); take it out if your
 // host or a proxy in front compresses already.
-const zubra = createZubra({ components, cache: production, compress: true });
+// `reload`: in development the page loads again when this server is back from a restart.
+const zubra = createZubra({ components, cache: production, compress: true, reload: !production });
 // The functions marked 'use server' in the components, served at /_zb/action/<tag>/<name>.
 const actions = await createActions({ components });
 
@@ -41,10 +42,11 @@ export const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(html);
   } catch (error) {
     console.error(error);
-    if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+    if (!res.headersSent) res.writeHead(500, { 'content-type': `text/${production ? 'plain' : 'html'}; charset=utf-8` });
     // In development the page says what the terminal says: a component's error comes with its
-    // file, line and often a fix.
-    res.end(production ? 'Something went wrong' : String(error?.message ?? error));
+    // file, line and often a fix. It is a page like any other, so it reloads when the fix is saved.
+    const said = String(error?.message ?? error).replace(/[&<]/g, (char) => (char === '&' ? '&amp;' : '&lt;'));
+    res.end(production ? 'Something went wrong' : `<!doctype html><title>Error</title><pre>${said}</pre>${zubra.page().scripts()}`);
   }
 });
 
