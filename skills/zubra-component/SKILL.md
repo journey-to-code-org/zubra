@@ -94,4 +94,4 @@ The server evaluates the deterministic subset (props, arithmetic, ternaries, tem
 
 ## Reference
 
-The Zubra README is the full reference; read a section only when a rule above isn't enough: https://github.com/journey-to-code-org/zubra#writing-a-component, `#directives`, `#classes-styles-events-and-references`, `#script-state-and-hooks`, `#events`, `#slots`, `#forms`, `#styles`, `#async-data`, `#server-rendering-and-hydration`. The registry holds twenty-five tested, accessible components to copy the shape from (`npx zubra add --list`; `registry/components/` in the Zubra repository).
+The Zubra reference has every rule; read a section only when a rule above isn't enough: https://github.com/journey-to-code-org/zubra/blob/main/docs/reference.md#writing-a-component, `#directives`, `#classes-styles-events-and-references`, `#script-state-and-hooks`, `#events`, `#slots`, `#forms`, `#styles`, `#async-data`, `#server-rendering-and-hydration`. The registry holds twenty-five tested, accessible components to copy the shape from (`npx zubra add --list`; `registry/components/` in the Zubra repository).

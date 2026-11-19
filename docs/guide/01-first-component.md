@@ -38,7 +38,7 @@ In a page, import the module and write the tag:
 </script>
 ```
 
-In React, Vue and other frameworks, importing the file gives you a component (React and Vue) or defines the element (everyone else). Typings are written next to the file, so props and events are checked and autocompleted. Each framework's page in the [README](../../README.md#using-components-in-an-app) has the details.
+In React, Vue and other frameworks, importing the file gives you a component (React and Vue) or defines the element (everyone else). Typings are written next to the file, so props and events are checked and autocompleted. Each framework's page in the [README](../reference.md#using-components-in-an-app) has the details.
 
 ## The dev loop
 
