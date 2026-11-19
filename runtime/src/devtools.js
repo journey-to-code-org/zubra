@@ -14,7 +14,7 @@
 // The dependencies are read through the engine's `sources()` (signal.js), so the same view works
 // on any engine behind it.
 import { isNative, sources as introspectSources, untrack, isComputed, isState } from './signal.js';
-import { dev as effects } from './effect.js';
+import { children, dev as effects } from './effect.js';
 import { dev as deep, raw } from './deep.js';
 import { elements, listeners, hooks, early } from './devhook.js';
 
@@ -74,7 +74,7 @@ const up = (node) => node.parentNode ?? node.host ?? null;
 
 /** Every effect `owner` owns, depth first (a component's own: child components have their own roots). */
 function effectsOf(owner, out = []) {
-  for (const child of owner.children ?? []) {
+  for (const child of children(owner)) {
     if (child.disposed) continue;
     if (child.computed) out.push(child);
     effectsOf(child, out);
