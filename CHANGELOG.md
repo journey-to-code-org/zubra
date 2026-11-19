@@ -28,7 +28,7 @@ The next release is 6.0.0: Zubra's own reactive engine is the default, and the T
 ### Fixed
 
 - **Memory that grew for as long as a page or server ran.** Found by an audit that made and removed thousands of elements of each kind and counted what stayed:
-  - **Shadow components**: each kept a reference to its shadow root after it was gone, and only `adoptStyles()` let them go, so a page that never called it kept one per shadow element it ever made (about 48 bytes each). Collected roots are now dropped as the set grows.
+  - **Shadow components**: each kept a reference to its shadow root after it was gone, and only `adoptStyles()` let them go, so a page that never called it kept one per shadow element it ever made (about 48 bytes each). A root's reference now goes when the root is collected.
   - **`@zubra/sync`**: each document an element left kept an empty entry for its presence room, in the page and, with WebRTC, in the mesh (which also made one for every goodbye from a room it hadn't seen). Moving through a thousand documents kept a thousand. A room no one on the page is in is forgotten.
   - **`@zubra/sync/server`**: a live stream that closed while its backlog was being read (a viewer who left during a long first load) started its keep-alive anyway, and nothing stopped it: an interval every 15 s for the life of the server, holding the request. It doesn't start for a stream that has gone.
   - **`@zubra/server`**: each warning was remembered so as to be said once, and a surrogate-pair warning names its place in the data (`reviews[57].name`), so a server rendering such data kept every place it ever saw. After a thousand different warnings it starts again, so one may be said a second time.
