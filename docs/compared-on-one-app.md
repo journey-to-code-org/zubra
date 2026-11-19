@@ -34,7 +34,7 @@ Zubra 5.23.0, measured 2026-11-18. Medians from one machine with two cores, the 
 
 - **Answering a tap on a slow phone.** Adding an item takes 243 to 288 ms. SvelteKit is next at 383, and the rest take 544 to 806. The Add form names the parts of the page it changes (`data-zb-updates`, from `@zubra/actions`), so its post updates them without reloading the page.
 - **Pages served.** About 4,500 to 4,800 menu pages a second on one core, ahead of WebUI and FAST (about 3,700 to 3,800) and well ahead of the rest.
-- **Little code.** The sync build is the shortest at 180 lines; the stream build (208) is level with Lit (203) and Enhance (204).
+- **Little code.** The sync build is the shortest at 180 lines; the stream build (208) is about level with Lit (203) and Enhance (204). The copies in this repository have been through `zubra fmt`, which wraps one long tag and adds 8 lines to each.
 
 ### Where Zubra is behind
 

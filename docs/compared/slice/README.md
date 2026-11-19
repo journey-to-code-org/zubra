@@ -21,6 +21,6 @@ The code and numbers behind [Compared on one app](../../compared-on-one-app.md):
 | `measure/measure.mjs` | The measuring script; `measure/RESULTS.md` and `results.json` are its output from 2026-11-18 |
 | `shared/` | The stylesheet every build serves, and the backend's interface |
 
-Each `package.json` pins exact versions. Lockfiles are left out.
+Each `package.json` pins exact versions. Lockfiles are left out. The two `slice-item.zb` files have been through `zubra fmt` since they were measured, as this repository requires: one long tag is wrapped, 8 lines more in each, and nothing else differs.
 
 A correction to any build is welcome as an issue or a pull request: the builds were all written by Zubra's author from each project's documentation, and someone who knows a tool better will see what was missed.
