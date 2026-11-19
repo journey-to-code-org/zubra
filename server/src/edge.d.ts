@@ -1,7 +1,7 @@
 import type { Compiler } from '@zubra/compiler/wasm';
-import type { ComponentInfo, Page, PageOptions, PropInfo } from './index.js';
+import type { ComponentInfo, ErrorPage, Page, PageOptions, PropInfo } from './index.js';
 
-export type { ComponentInfo, PageOptions, PropInfo };
+export type { ComponentInfo, ErrorPage, PageOptions, PropInfo };
 
 /** A page on a host without Node: as Node's, minus `stream()` (a Node Readable); use `streamResponse()`. */
 export type EdgePage = Omit<Page, 'stream'>;
@@ -12,6 +12,8 @@ export interface EdgeZubra {
   describe(name: string): ComponentInfo;
   render(name: string, props?: Record<string, unknown>, slots?: Record<string, string>): string;
   page(options?: PageOptions): EdgePage;
+  /** The answer to a request that failed (see `Zubra.errorPage` in the Node entry). A Worker is production unless `production: false`: then only "Something went wrong". */
+  errorPage(error: unknown, options?: Pick<PageOptions, 'nonce'>): ErrorPage;
   /** A Response for the components' browser modules under the prefix, or null for any other request. */
   fetch(request: Request): Promise<Response | null>;
   importMap(options?: PageOptions): string;

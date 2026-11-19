@@ -1,6 +1,14 @@
 export interface PropInfo { name: string; attribute: string; type: string; default: unknown; model: boolean; required: boolean }
 export interface ComponentInfo { tag: string; shadow: boolean; form: boolean; props: PropInfo[]; events: string[]; slots: string[] }
 
+/** What `errorPage()` gives: send it as the response. */
+export interface ErrorPage {
+  status: 500;
+  /** `text/html; charset=utf-8` in development, `text/plain; charset=utf-8` in production. */
+  type: string;
+  body: string;
+}
+
 export interface PageOptions {
   /**
    * The nonce of this response's Content-Security-Policy (`script-src 'nonce-…'`,
@@ -45,6 +53,18 @@ export interface Zubra {
   render(name: string, props?: Record<string, unknown>, slots?: Record<string, string>): string;
   /** One page's renders, CSS and scripts. */
   page(options?: PageOptions): Page;
+  /**
+   * The answer to a request that failed, for the app's own `catch`: status 500, and in
+   * development an HTML page with the error's message and where it was thrown (with `reload`, it
+   * goes away when the fix is saved); in production "Something went wrong" as plain text, never
+   * the message. `options.nonce`: the page's nonce, for the script.
+   *
+   *   } catch (error) {
+   *     const failed = zubra.errorPage(error);
+   *     res.writeHead(failed.status, { 'content-type': failed.type }).end(failed.body);
+   *   }
+   */
+  errorPage(error: unknown, options?: Pick<PageOptions, 'nonce'>): ErrorPage;
   /** Node's http: serves the browser modules and runtime under the prefix; true when it answered. */
   handle(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse): boolean;
   /** Fetch-style servers: a Response for the prefix's paths, or null. */
