@@ -2,10 +2,12 @@
   "name": "zubra-js-framework-benchmark",
   "private": true,
   "type": "module",
-  "description": "Zubra's implementation for krausest/js-framework-benchmark (frameworks/keyed/zubra, in its layout), and a runner that checks it with the benchmark's own steps.",
+  "description": "Zubra's implementation for krausest/js-framework-benchmark (frameworks/keyed/zubra, in its layout), a runner that checks it with the benchmark's own steps, and a script-time profiler. `build` uses the published packages, as the benchmark's repository would; `build:checkout` this checkout's runtime and plugin, with the compiler $ZUBRA_COMPILER names.",
   "scripts": {
     "build": "cd frameworks/keyed/zubra && npm install --no-audit --no-fund && npm run build-prod",
-    "test": "node run.mjs"
+    "build:checkout": "cd frameworks/keyed/zubra && npm install --no-audit --no-fund && npm install --no-save --no-audit --no-fund --install-links=false ../../../../../runtime ../../../../../plugin && npm run build-prod",
+    "test": "node run.mjs",
+    "profile": "node profile.mjs"
   },
   "devDependencies": {
     "playwright": "1.63.0"

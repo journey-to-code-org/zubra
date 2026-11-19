@@ -27,6 +27,7 @@ import { createUnplugin } from 'unplugin';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 import { addProps, zubraImports } from './props.js';
+import { kindOf, tagsIn, withImports } from './auto-import.js';
 import { solidOf } from './solid.js';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createRequire } from 'node:module';
@@ -281,6 +282,79 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
     return app;
   }
 
+  // `autoImport`: folders of components, and folders of them in packages (`@acme/kit/components`,
+  // as @zubra/server's `packages` names them). An app's Svelte, Vue or JSX file that uses one of
+  // their tags gets the import that defines the element, as if it were written there.
+  const autoSources = options.autoImport ? [options.autoImport].flat() : [];
+  let autoByTag = null; // tag → the component's file
+  const warnedTwice = new Set();
+  /** Where a package's folder is: through `exports` (`./components/*`), else the folder itself. */
+  function packageFolder(specifier, from) {
+    const [name, ...rest] = specifier.startsWith('@') ? [specifier.split('/').slice(0, 2).join('/'), ...specifier.split('/').slice(2)] : specifier.split('/');
+    const sub = rest.join('/');
+    for (let dir = from; ; dir = dirname(dir)) {
+      const home = resolve(dir, 'node_modules', name);
+      if (existsSync(resolve(home, 'package.json'))) {
+        const exported = JSON.parse(readFileSync(resolve(home, 'package.json'), 'utf8')).exports;
+        const pattern = exported && sub ? exported[`./${sub}/*`] : null;
+        const target = typeof pattern === 'string' ? pattern : pattern?.import ?? pattern?.default;
+        return resolve(home, typeof target === 'string' && target.endsWith('/*') ? target.slice(0, -2) : sub);
+      }
+      if (dirname(dir) === dir) return null;
+    }
+  }
+  function autoComponents(context) {
+    if (autoByTag) return autoByTag;
+    autoByTag = new Map();
+    const base = resolve(root ?? process.cwd());
+    for (const source of autoSources) {
+      const local = source.startsWith('.') || isAbsolute(source);
+      const name = source.replace(/\/$/, '');
+      const folder = local ? resolve(base, source) : packageFolder(name, base);
+      if (!folder || !existsSync(folder)) throw new Error(`@zubra/unplugin: autoImport: ${source} isn't a folder${local ? '' : ' of an installed package'} (looked from ${base})`);
+      (function walk(dir) {
+        for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+          if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+          const path = resolve(dir, entry.name);
+          if (entry.isDirectory()) walk(path);
+          else if (entry.name.endsWith('.zb')) {
+            let tag;
+            try { ({ tag } = interfaceOf(path)); } catch { continue; } // reported when something imports it
+            const first = autoByTag.get(tag);
+            if (!first) autoByTag.set(tag, path);
+            else if (first !== path && !warnedTwice.has(path)) {
+              warnedTwice.add(path);
+              context?.warn?.(`autoImport: <${tag}> is ${relativePath(first)}; ${relativePath(path)} has the same tag and is not imported for it`);
+            }
+          }
+        }
+      })(folder);
+    }
+    return autoByTag;
+  }
+  /** `code` with the imports its tags need, or null when it needs none. */
+  function autoImported(context, code, id) {
+    if (!autoSources.length) return null;
+    const [path, query] = split(id);
+    const kind = kindOf(path);
+    // The whole file only: a block of it (`App.vue?vue&type=template`) has had its turn.
+    if (!kind || /(?:^|&)type=/.test(query) || inPackage(path)) return null;
+    const tags = tagsIn(code);
+    if (!tags.length) return null;
+    const components = autoComponents(context);
+    const already = new Set(zubraImports(code).filter((specifier) => specifier.startsWith('.')).map((specifier) => resolve(dirname(path), specifier)));
+    const specifiers = [];
+    for (const tag of tags) {
+      const component = components.get(tag);
+      if (!component || already.has(component)) continue;
+      // By its path from this file, a package's too: every bundler resolves that the same way.
+      const specifier = relative(dirname(path), component).split(sep).join('/');
+      // The element itself, whatever a `.zb` import would give this kind of file.
+      specifiers.push(`${specifier.startsWith('.') ? specifier : `./${specifier}`}?element`);
+    }
+    return specifiers.length ? withImports(code, kind, specifiers) : null;
+  }
+
   const writeIfChanged = (target, contents) => {
     // Only when changed, so watchers don't loop.
     if (!existsSync(target) || readFileSync(target, 'utf8') !== contents) writeFileSync(target, contents);
@@ -370,7 +444,16 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
     // A component added, removed, renamed or retagged changes which tags the app defines. Found
     // again on next need; each component's tag is cached while its file is unchanged.
     watchChange(id) {
-      if (id.endsWith('.zb')) appByTag = null;
+      if (id.endsWith('.zb')) appByTag = autoByTag = null;
+    },
+
+    // `autoImport`, in every bundler but Vite, whose own `transform` below does it first.
+    transformInclude(id) {
+      return autoSources.length > 0 && kindOf(split(id)[0]) != null;
+    },
+    transform(code, id) {
+      const added = autoImported(this, code, id);
+      return added == null ? null : { code: added, map: null };
     },
 
     loadInclude(id) {
@@ -492,13 +575,16 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
       },
       // Svelte and Solid use the elements directly: in their server builds, the hosts get
       // `zb-props` (see props.js), for @zubra/server's injectShadowRoots().
-      async transform(code, id, transformOptions) {
+      async transform(original, id, transformOptions) {
+        const imported = autoImported(this, original, id);
+        const code = imported ?? original;
+        const unchanged = imported == null ? null : { code, map: null };
         const dialect = project === 'svelte' ? 'svelte' : project === 'solid' ? 'solid' : null;
-        if (!dialect) return null;
+        if (!dialect) return unchanged;
         const server = transformOptions?.ssr === true || this?.environment?.config?.consumer === 'server';
         const [path] = split(id);
-        if (!server || path.includes('/node_modules/') || COMPONENT.test(path)) return null;
-        if (dialect === 'svelte' ? !path.endsWith('.svelte') : !/\.[jt]sx$/.test(path)) return null;
+        if (!server || path.includes('/node_modules/') || COMPONENT.test(path)) return unchanged;
+        if (dialect === 'svelte' ? !path.endsWith('.svelte') : !/\.[jt]sx$/.test(path)) return unchanged;
         const tags = new Map();
         for (const specifier of zubraImports(code)) {
           const resolved = specifier.startsWith('.') ? resolve(dirname(path), specifier) : (await this.resolve(specifier, id, { skipSelf: true }))?.id;
@@ -512,7 +598,7 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
           }
         }
         const code2 = addProps(code, tags, dialect);
-        return code2 == null ? null : { code: code2, map: null };
+        return code2 == null ? unchanged : { code: code2, map: null };
       },
     },
   };
