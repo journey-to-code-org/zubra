@@ -63,6 +63,7 @@ The compiled ABI runs one way: a runtime runs what its own and older compilers w
 | `@zubra/runtime/zag` | Stable | Runtime; registry | Registry `combo-box` |
 | `@zubra/runtime/primitives` | Stable | Runtime; registry | Registry menus, tabs |
 | `@zubra/runtime/motion` | Supported | Runtime (both outputs) | Zubra UI motion components |
+| Signals mode (`signals: true` in `@zubra/unplugin`, `@zubra/server` and `buildRuntime()`: `signal-tc39.js` as the engine) | Experimental | Runtime in signals mode (unit, browser, production, Sync); Plugin (`plugin.test.js`); Server (`signals.test.js`) | Nothing yet: for interoperating with other Signals libraries and tools |
 | `@zubra/runtime/track` | Experimental | Runtime (unit, browser) | Async `resource()` fetchers in `.zb` scripts; nothing outside its tests yet |
 | `@zubra/runtime/react` | Stable | Framework and meta-framework examples | React and Next.js examples |
 | `@zubra/runtime/vue` | Stable | Framework and meta-framework examples | Vue and Nuxt examples |

@@ -63,6 +63,7 @@ export async function buildApp(options = {}) {
 }
 
 async function build({ keep = [], esbuild, scripts = [], ...options }, whole) {
+  const signals = options.signals === true;
   let bundler = esbuild;
   if (!bundler) {
     try {
@@ -140,16 +141,27 @@ async function build({ keep = [], esbuild, scripts = [], ...options }, whole) {
       });
     },
   };
+  // Signals mode: the TC39 engine where the runtime imports its engine.
+  const engine = {
+    name: 'zubra-engine',
+    setup(bundle) {
+      bundle.onResolve({ filter: /^\.\/signal\.js$/ }, (args) => (args.resolveDir === production ? { path: join(production, 'signal-tc39.js') } : undefined));
+    },
+  };
+  if (signals && !existsSync(join(production, 'signal-tc39.js'))) throw new Error('@zubra/server/build: signals: true needs @zubra/runtime 6.0 or later, which has signals mode (signal-tc39.js)');
   let result;
   try {
     // remark.js stays the runtime's own file, beside this one: it imports nothing, and is only
     // loaded when server markup needs repair.
-    result = await bundler.build({ stdin: { contents: entry, resolveDir: production, sourcefile: 'app-runtime.js' }, bundle: true, minify: true, format: 'esm', target: 'es2022', write: false, external: ['./remark.js'], logLevel: 'silent', plugins: whole ? [plugin] : [] });
+    result = await bundler.build({ stdin: { contents: entry, resolveDir: production, sourcefile: 'app-runtime.js' }, bundle: true, minify: true, format: 'esm', target: 'es2022', write: false, external: ['./remark.js'], logLevel: 'silent', plugins: [...(whole ? [plugin] : []), ...(signals ? [engine] : [])] });
   } catch (error) {
     throw new Error(whole && !/No matching export/.test(error.errors?.[0]?.text ?? '') ? `@zubra/server/build: ${error.errors?.[0]?.text ?? error.message}` : `@zubra/server/build: the runtime doesn't have a name a module imports: ${error.errors?.[0]?.text ?? error.message}`);
   }
   const code = result.outputFiles[0].text;
   const file = `app-${createHash('sha256').update(code).digest('hex').slice(0, 10)}.js`;
-  return whole ? { file, code, names, components, scripts: own.length > 0 } : { file, code, names };
+  const built = whole ? { file, code, names, components, scripts: own.length > 0 } : { file, code, names };
+  // (So that a server with a different `signals` refuses it.)
+  if (signals) built.signals = true;
+  return built;
 }
 

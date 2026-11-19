@@ -4,6 +4,19 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+The next release is 6.0.0: Zubra's own reactive engine is the default, and the TC39 Signals API is an experimental mode (the project's `plan/decisions/reactive-engine.md`). Components, templates and the script API don't change, and neither does compiled output: code compiled by 5.18 and later runs on either engine. What changes is only for code that relied on a state being the proposal's object; `signals: true` keeps 5.x's behaviour for that code.
+
+### Changed
+
+- **Zubra's own reactive engine is the default; the TC39 Signals API is signals mode, experimental.** The model doesn't change: state, computeds and effects, dependencies tracked as they're read, lazy, cached and glitch-free computeds with the equality cut-off, no virtual DOM, setup run once, each binding its own effect. The engine (`runtime/src/signal.js`) is one the runtime owns, so how an app updates no longer depends on a Stage 1 API, or on a browser shipping a native `Signal` that behaves differently. An effect is one node the graph marks directly, where on the API it was a Computed and a Watcher's links to it. In Node, creating and disposing 2,000 effects went from 6.6 ms to 1.5 ms, selecting one row of 1,000 from 0.54 ms to 0.47 ms. What every page of `@zubra/server` loads, file by file, went from 16.1 KB to 15.1 KB compressed, and the whole script API from 20.5 KB to 19.5 KB.
+  - **What changes for code** (none of it for components, templates or the script API):
+    - A native `globalThis.Signal` is no longer used, and `isNative` is always `false`.
+    - The runtime's `Signal` export is `State`, `Computed` and `subtle.untrack`/`subtle.currentComputed`. `new Signal.State(0)` and `Signal.subtle.untrack(fn)` work as before; `Signal.subtle.Watcher`, the introspection functions and the `watched`/`unwatched` options don't exist. The typings say so.
+    - What `state()` and `computed()` return is not an instance of another library's `Signal.State`, so it can't be handed to another Signals library as one. Zubra's own bridges (`subscribe`, `toStore`, React and Vue `useSignal`, `@zubra/sync`) work as before.
+    - The Signals Inspector shows Zubra apps in signals mode only. Zubra DevTools work on both engines.
+  - **Signals mode:** `signals: true` in `@zubra/unplugin`, in `createZubra()` of `@zubra/server` and `@zubra/server/edge`, and in `buildRuntime()` and `buildApp()`. Each puts `signal-tc39.js` where the runtime's engine is: the API, native where a browser has it, Zubra's implementation (`signal-impl.js`) otherwise, as in 5.x. `@zubra/server` then serves the runtime file by file in production too, since its one-file builds hold Zubra's engine. A built runtime must be built with the same option as the server that sends it, or the server refuses it. At the edge, serve `dist/production` with `signal-tc39.js` as `signal.js`, and not with `bundle`.
+  - **Both engines are tested.** Every runtime suite (unit, browser, the production build) and Sync's run on both, and CI has a job for signals mode. The unit tests take `ZUBRA_ENGINE=signals` through a module hook (`node --import ./test/engine/register.js`), and the browser harness serves the engine it names.
+
 ### Security
 
 - **A streamed prop's error stays on the server.** When a prop given as a promise rejected, `@zubra/server` sent the error's message to the browser as it was, for the component's `<zb-catch>` to show: a database's error (hosts, users, queries) reached the visitor. In production the browser now gets "Internal error"; development keeps the message. The error goes to the new `createZubra({ onError: (error, { component, prop }) => … })`, or to `warn` with its stack. `@zubra/server/edge` is production unless given `production: false`. Found by call-store- serving real data.

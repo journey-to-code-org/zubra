@@ -87,6 +87,12 @@ export interface EdgeOptions {
    * limit. Default 30000.
    */
   streamTimeout?: number;
+  /**
+   * Signals mode (experimental): say so when you serve the runtime with its TC39 engine, that is
+   * `@zubra/runtime`'s `dist/production` with `signal-tc39.js` in place of `signal.js`. Not with
+   * `bundle`, whose files hold Zubra's engine. Default `false`.
+   */
+  signals?: boolean;
 }
 
 export declare function createZubra(options: EdgeOptions): EdgeZubra;
