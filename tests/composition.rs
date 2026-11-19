@@ -519,3 +519,52 @@ fn a_parent_needs_the_browser_when_a_child_does() {
         ]
     );
 }
+
+#[test]
+fn reacts_names_for_class_and_for_warn_with_the_html_name() {
+    // A child that declares `className` as a prop is given it; everything else gets no class.
+    let styled = "<zb-styled class-name=\"\"><p>{className}</p></zb-styled>";
+    let app = "<script>\n  import './styled.zb'\n  let on = true\n</script>\n<zb-app>\n  <button className=\"more\" onClick={() => (on = !on)}>+</button>\n  <label htmlFor=\"name\">Name</label>\n  <zb-if test={on}><p className={on ? 'a' : 'b'}>x</p></zb-if>\n  <zb-styled className=\"given\"></zb-styled>\n  <p class=\"plain\" for=\"x\">fine</p>\n  <p classname=\"own\">an attribute of the page's own, as far as HTML goes</p>\n</zb-app>";
+    let loader = |specifier: &str, _from: &str| {
+        (specifier == "./styled.zb")
+            .then(|| ("styled.zb".to_owned(), styled.to_owned()))
+            .ok_or_else(|| "not found".to_owned())
+    };
+    let warnings = zubra::warnings_with(app, "app.zb", &loader);
+    let found: Vec<(usize, usize, &str, Option<&str>)> = warnings
+        .iter()
+        .map(|warning| {
+            (
+                warning.span.line,
+                warning.span.column,
+                warning.message.as_str(),
+                warning.help.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(found.len(), 3, "{found:?}");
+    assert_eq!(
+        found[0],
+        (
+            6,
+            11,
+            "`className` is React's name for the `class` attribute, and HTML has no such attribute: <button> gets no class",
+            Some("write `class`")
+        )
+    );
+    assert_eq!(
+        found[1],
+        (
+            7,
+            10,
+            "`htmlFor` is React's name for the `for` attribute, and HTML has no such attribute: <label> gets no for",
+            Some("write `for`")
+        )
+    );
+    // Inside a block too.
+    assert_eq!((found[2].0, found[2].3), (8, Some("write `class`")));
+
+    // A JSX component writes them React's way, and they are `class` and `for` by then.
+    let jsx = "export default function XLabel() {\n  return <x-label><label className=\"a\" htmlFor=\"b\">x</label></x-label>;\n}\n";
+    assert!(zubra::warnings_with(jsx, "x-label.zb.tsx", &loader).is_empty());
+}
