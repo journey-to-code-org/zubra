@@ -36,6 +36,14 @@ export interface ZubraOptions {
    */
   signals?: boolean;
   /**
+   * Folders of components, an app's (`'./src/components'`, from `root`) or a package's
+   * (`'@acme/ui/components'`): a `.svelte`, `.vue`, `.jsx` or `.tsx` file of the app that uses one
+   * of their tags gets the import that defines the element written for it (`…/tool-bar.zb?element`),
+   * so no file has to list them. A component is known by its host tag, not its file's name; only
+   * the tags a file opens are imported. Default: none.
+   */
+  autoImport?: string | string[];
+  /**
    * Where the app's own components are, to find which of a package's components it has its own
    * copy of (the app's stands in for the package's). Default: Vite's root, or the current folder.
    */
