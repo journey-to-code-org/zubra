@@ -80,8 +80,9 @@ const RESERVED_CUSTOM_ELEMENTS: &[&str] = &[
 
 /// A script binding as the build sees it.
 #[derive(Clone, Debug)]
-enum Local {
-    Value(Value),
+enum Local<'v> {
+    /// Borrowed when it is a prop's value, or a path into one (`const sorted = … : rows`).
+    Value(Cow<'v, Value>),
     /// An arrow function the server can call (`const money = (cents) => …`).
     Function(crate::pure::Val),
     /// Declared, but its value only exists at runtime (a function, an import, a call result…).
@@ -520,7 +521,7 @@ fn lower_component<'t>(
             continue;
         };
         let lookup = |name: &str| match find_local(&locals, name) {
-            Some(Local::Value(value)) => Some(crate::pure::Val::Json(value.clone())),
+            Some(Local::Value(value)) => Some(crate::pure::Val::Json(Value::clone(value))),
             Some(Local::Function(function)) => Some(function.clone()),
             Some(Local::Runtime) => None,
             None => props
@@ -564,7 +565,7 @@ fn lower_component<'t>(
 fn lower_rest<'t>(
     component: &'t ast::ComponentAst,
     props: &[Prop],
-    locals: &[(String, Local)],
+    locals: &[(String, Local<'_>)],
     supply: &Supply<'t>,
     id_base: Option<&String>,
     host_id: Option<&str>,
@@ -1038,13 +1039,13 @@ pub(crate) fn needs_text_anchor(siblings: &[ast::Node], node: &ast::Node, block_
 /// The script's bindings. A prop's name is the prop in the script (2.0): with `values` (the
 /// props' values, once known) a binding that reads one is evaluated with it; before that (prop
 /// defaults can use script bindings) it's runtime-only.
-fn evaluate_script_with(
+fn evaluate_script_with<'v>(
     script: &ast::Script,
     prop_names: &[String],
-    values: Option<&[Prop]>,
+    values: Option<&'v [Prop]>,
     known: &HashMap<String, Option<Value>>,
-) -> Result<Vec<(String, Local)>, Diagnostic> {
-    let mut locals: Vec<(String, Local)> = Vec::new();
+) -> Result<Vec<(String, Local<'v>)>, Diagnostic> {
+    let mut locals: Vec<(String, Local<'v>)> = Vec::new();
     let mut seen = HashSet::new();
     for name in &script.runtime_names {
         if !seen.insert(name.clone()) {
@@ -1065,7 +1066,7 @@ fn evaluate_script_with(
     // Imports whose values are known (enums from TypeScript modules): values at build time.
     for binding in &script.imported_values {
         if let Some(Ok(value)) = binding.init.as_ref().map(|init| init.evaluate(&|_| None)) {
-            locals.push((binding.name.clone(), Local::Value(value)));
+            locals.push((binding.name.clone(), Local::Value(Cow::Owned(value))));
         }
     }
     for binding in &script.bindings {
@@ -1078,7 +1079,7 @@ fn evaluate_script_with(
         // Ids and injected context: what the server knows (see `lower_component`).
         if let Some(value) = known.get(&binding.name) {
             let local = match value {
-                Some(value) => Local::Value(value.clone()),
+                Some(value) => Local::Value(Cow::Owned(value.clone())),
                 None => Local::Runtime,
             };
             locals.push((binding.name.clone(), local));
@@ -1100,7 +1101,7 @@ fn evaluate_script_with(
                         };
                         let lookup = |name: &str| match find_local(&locals, name) {
                             Some(Local::Value(value)) => {
-                                Some(crate::pure::Val::Json(value.clone()))
+                                Some(crate::pure::Val::Json(Value::clone(value)))
                             }
                             Some(Local::Function(function)) => Some(function.clone()),
                             Some(Local::Runtime) => None,
@@ -1109,10 +1110,26 @@ fn evaluate_script_with(
                             }
                             None => None,
                         };
-                        match crate::pure::evaluate(source, &lookup)
-                            .and_then(crate::pure::Val::into_json)
-                        {
-                            Ok(value) => Local::Value(value),
+                        // The same names, lent where they last the render: a prop's value, or
+                        // a binding that is one.
+                        let lend = |name: &str| -> Option<&'v Value> {
+                            match find_local(&locals, name) {
+                                Some(Local::Value(Cow::Borrowed(value))) => Some(*value),
+                                Some(_) => None,
+                                None if prop_names.iter().any(|prop| prop == name) => {
+                                    prop(name).map(|prop| &prop.value)
+                                }
+                                None => None,
+                            }
+                        };
+                        match crate::pure::evaluate_answer(source, &lookup, &lend) {
+                            Ok(crate::pure::Answer::Lent(value)) => {
+                                Local::Value(Cow::Borrowed(value))
+                            }
+                            Ok(crate::pure::Answer::Val(value)) => match value.into_json() {
+                                Ok(value) => Local::Value(Cow::Owned(value)),
+                                Err(_) => Local::Runtime,
+                            },
                             Err(_) => Local::Runtime,
                         }
                     }
@@ -1158,13 +1175,13 @@ fn evaluate_script_with(
                     Local::Runtime
                 } else {
                     let lookup = |name: &str| match find_local(&locals, name) {
-                        Some(Local::Value(value)) => Some(value.clone()),
+                        Some(Local::Value(value)) => Some(Value::clone(value)),
                         Some(Local::Runtime | Local::Function(_)) => None,
                         None => prop(name).map(|prop| prop.value.clone()),
                     };
-                    Local::Value(init.evaluate(&lookup).map_err(|message| {
+                    Local::Value(Cow::Owned(init.evaluate(&lookup).map_err(|message| {
                         Diagnostic::new(binding.span, format!("in `{}`: {message}", binding.name))
-                    })?)
+                    })?))
                 }
             }
         };
@@ -1173,7 +1190,7 @@ fn evaluate_script_with(
     Ok(locals)
 }
 
-fn find_local<'l>(locals: &'l [(String, Local)], name: &str) -> Option<&'l Local> {
+fn find_local<'l, 'v>(locals: &'l [(String, Local<'v>)], name: &str) -> Option<&'l Local<'v>> {
     locals
         .iter()
         .rev()
@@ -1185,7 +1202,7 @@ fn find_local<'l>(locals: &'l [(String, Local)], name: &str) -> Option<&'l Local
 /// a prop the component doesn't declare), the others their defaults.
 fn evaluate_props(
     component: &ast::ComponentAst,
-    locals: &[(String, Local)],
+    locals: &[(String, Local<'_>)],
     mut overrides: serde_json::Map<String, Value>,
 ) -> Result<Vec<Prop>, Diagnostic> {
     let mut props = Vec::new();
@@ -1284,7 +1301,7 @@ fn evaluate_props(
 /// script name, `Some(Ok(value))` otherwise.
 fn prop_default(
     declaration: &ast::PropDecl,
-    locals: &[(String, Local)],
+    locals: &[(String, Local<'_>)],
 ) -> Result<Option<Result<Value, String>>, Diagnostic> {
     Ok(match &declaration.default {
         PropDefault::Required => None,
@@ -1329,7 +1346,7 @@ fn prop_default(
                 Some(Err(runtime)) => Some(Err(runtime)),
                 None => {
                     let lookup = |name: &str| match find_local(locals, name) {
-                        Some(Local::Value(value)) => Some(value.clone()),
+                        Some(Local::Value(value)) => Some(Value::clone(value)),
                         _ => None,
                     };
                     Some(Ok(expression
@@ -1378,7 +1395,7 @@ fn host_attribute(prop: &Prop) -> Option<String> {
 /// `'a`: the values they're rendered with.
 struct Context<'a, 't> {
     component: &'t ast::ComponentAst,
-    locals: &'a [(String, Local)],
+    locals: &'a [(String, Local<'a>)],
     props: &'a [Prop],
     supply: &'a Supply<'t>,
     /// Shadow-DOM components use native `<slot>` elements.
@@ -1677,7 +1694,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
             return (!prop.unknown).then_some(&prop.value);
         }
         match find_local(self.locals, name) {
-            Some(Local::Value(value)) => Some(value),
+            Some(Local::Value(value)) => Some(&**value),
             _ => None,
         }
     }

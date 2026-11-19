@@ -175,6 +175,37 @@ pub fn evaluate_lent(
     })
 }
 
+/// What [`evaluate_answer`] gives: one of the values the caller lent, itself, or a value of its
+/// own.
+#[derive(Debug)]
+pub enum Answer<'v> {
+    Lent(&'v Value),
+    Val(Val),
+}
+
+/// As [`evaluate_lent`], but when the result is one of the lent values (`rows`, `config.items`,
+/// `sortKey ? sortedRows : rows` while `sortKey` is empty, `items ?? []` while there are items)
+/// it is given back as itself, not copied: a script's `const sorted = … : rows` is then the
+/// rows the request sent.
+pub fn evaluate_answer<'v>(
+    source: &str,
+    lookup: &dyn Fn(&str) -> Option<Val>,
+    lend: &Lend<'_, 'v>,
+) -> Result<Answer<'v>> {
+    with_expression(source, |parsed| {
+        let (expression, source) = parsed.ok_or(Unsupported)?;
+        let mut evaluator = Evaluator {
+            source,
+            lookup,
+            lend: Some(lend),
+            frames: Vec::new(),
+            steps: 0,
+            fixed: 0,
+        };
+        evaluator.answer(expression)
+    })
+}
+
 /// Enough for a few thousand rows of list work; more than that belongs in the browser.
 const STEP_LIMIT: usize = 1_000_000;
 const DEPTH_LIMIT: usize = 64;
@@ -210,6 +241,96 @@ struct Evaluator<'a, 'v> {
     /// In a statement body, the frames below this one are what the function closed over: read
     /// only. Its own parameters and `let`s, in the frames above, are what it may assign.
     fixed: usize,
+}
+
+impl<'v> Evaluator<'_, 'v> {
+    /// [`Self::eval`] at the top of an expression (no arrow's parameters in scope), giving a
+    /// lent value back as itself: a path to one, or the branch `?:`, `&&`, `||` or `??` picks
+    /// when that is one. The test and the left side are worked out as [`Self::eval`] does.
+    fn answer(&mut self, expression: &Expression<'_>) -> Result<Answer<'v>> {
+        debug_assert!(self.frames.is_empty());
+        if let Some(value) = self.lent(expression) {
+            return Ok(Answer::Lent(value));
+        }
+        self.steps += 1;
+        if self.steps > STEP_LIMIT {
+            return Err(Unsupported);
+        }
+        match expression {
+            Expression::ParenthesizedExpression(inner) => self.answer(&inner.expression),
+            Expression::ConditionalExpression(conditional) => {
+                if truthy(&self.eval(&conditional.test)?) {
+                    self.answer(&conditional.consequent)
+                } else {
+                    self.answer(&conditional.alternate)
+                }
+            }
+            Expression::LogicalExpression(logical) => {
+                let decided = match self.answer(&logical.left)? {
+                    Answer::Lent(left) => {
+                        let decided = match logical.operator {
+                            LogicalOperator::And => !crate::expression::is_truthy(left),
+                            LogicalOperator::Or => crate::expression::is_truthy(left),
+                            LogicalOperator::Coalesce => !left.is_null(),
+                        };
+                        decided.then_some(Answer::Lent(left))
+                    }
+                    Answer::Val(left) => {
+                        let decided = match logical.operator {
+                            LogicalOperator::And => !truthy(&left),
+                            LogicalOperator::Or => truthy(&left),
+                            LogicalOperator::Coalesce => !is_nullish(&left),
+                        };
+                        decided.then_some(Answer::Val(left))
+                    }
+                };
+                match decided {
+                    Some(left) => Ok(left),
+                    None => self.answer(&logical.right),
+                }
+            }
+            _ => self.eval(expression).map(Answer::Val),
+        }
+    }
+
+    /// The lent value this path reads, as [`Self::peek`] finds it with no parameters in scope.
+    fn lent(&self, expression: &Expression<'_>) -> Option<&'v Value> {
+        match expression {
+            Expression::Identifier(identifier) => {
+                self.lend.and_then(|lend| lend(identifier.name.as_str()))
+            }
+            Expression::StaticMemberExpression(member) if !member.optional => {
+                match self.lent(&member.object)? {
+                    Value::Object(fields) => fields.get(member.property.name.as_str()),
+                    _ => None,
+                }
+            }
+            Expression::ComputedMemberExpression(member) if !member.optional => {
+                let object = self.lent(&member.object)?;
+                // A literal key (`lines[1]`, `row["id"]`) or a lent one (`row[column.key]`).
+                let (at, field) = match &member.expression {
+                    Expression::NumericLiteral(literal) => (Some(literal.value), None),
+                    Expression::StringLiteral(literal) => (None, Some(literal.value.as_str()?)),
+                    key => match self.lent(key)? {
+                        Value::Number(number) => (Some(number.as_f64()?), None),
+                        Value::String(text) => (None, Some(text.as_str())),
+                        _ => return None,
+                    },
+                };
+                match (at, field, object) {
+                    (_, Some(field), Value::Object(fields)) => fields.get(field),
+                    (Some(at), _, Value::Array(items)) => {
+                        if at.fract() != 0.0 || at < 0.0 {
+                            return None;
+                        }
+                        items.get(at as usize)
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 /// How a statement ended.
@@ -321,10 +442,10 @@ impl Evaluator<'_, '_> {
                     );
                     if let Some(expression) = template.expressions.get(index) {
                         let value = self.eval(expression)?;
-                        text.push_str(&js_string(&value)?);
+                        push_js_string(&mut text, &value)?;
                     }
                 }
-                Ok(string(&text))
+                Ok(owned(text))
             }
             Expression::Identifier(identifier) => {
                 let name = identifier.name.as_str();
@@ -473,7 +594,24 @@ impl Evaluator<'_, '_> {
             Expression::BinaryExpression(binary) => {
                 let left = self.eval(&binary.left)?;
                 let right = self.eval(&binary.right)?;
-                let value = binary_op(binary.operator, &left, &right)?;
+                let value = match (binary.operator, left) {
+                    // `text + more`: added to the string the left side made, as `binary_op`
+                    // would (`js_string` refuses an object on the right, as it does there).
+                    (BinaryOperator::Addition, Val::Json(Value::String(mut text))) => {
+                        let held;
+                        let more = match &right {
+                            Val::Json(Value::String(more)) => more.as_str(),
+                            right => {
+                                held = js_string(right)?;
+                                held.as_str()
+                            }
+                        };
+                        within(text.len() + more.len())?;
+                        text.push_str(more);
+                        owned(text)
+                    }
+                    (operator, left) => binary_op(operator, &left, &right)?,
+                };
                 self.charge(&value)?;
                 Ok(value)
             }
@@ -1163,7 +1301,7 @@ impl Evaluator<'_, '_> {
                     last = each.end;
                 }
                 out.extend_from_slice(&units[last.min(units.len())..]);
-                Ok(string(&String::from_utf16_lossy(&out)))
+                Ok(owned(String::from_utf16_lossy(&out)))
             }
             "split" => {
                 let limit = match second {
@@ -1280,7 +1418,7 @@ impl Evaluator<'_, '_> {
                         parts.iter().map(String::len).sum::<usize>()
                             + separator.len().saturating_mul(parts.len()),
                     )?;
-                    Ok(string(&parts.join(&separator)))
+                    Ok(owned(parts.join(&separator)))
                 }
                 "slice" => {
                     let (start, end) = range(items.len(), &arg(0), &arg(1))?;
@@ -1463,10 +1601,23 @@ impl Evaluator<'_, '_> {
                 _ => Err(Unsupported),
             },
             Val::Json(Value::String(text)) => {
-                let units: Vec<u16> = text.encode_utf16().collect();
-                let from_units = |units: &[u16]| string(&String::from_utf16_lossy(units));
+                // UTF-16 code units, as JavaScript counts a string, made when a method needs
+                // them. An ASCII string's units are its bytes: `slice`, `substring` and `at`
+                // read those where they are.
+                let wide = std::cell::OnceCell::new();
+                let units = || -> &Vec<u16> { wide.get_or_init(|| text.encode_utf16().collect()) };
+                let ascii = text.is_ascii();
+                let length = || if ascii { text.len() } else { units().len() };
+                let piece = |from: usize, to: usize| {
+                    if ascii {
+                        string(&text[from..to])
+                    } else {
+                        owned(String::from_utf16_lossy(&units()[from..to]))
+                    }
+                };
+                let from_units = |units: &[u16]| owned(String::from_utf16_lossy(units));
                 if let Val::RegExp(regexp) = arg(0) {
-                    return self.string_regexp(&units, name, &regexp, arg(1));
+                    return self.string_regexp(units(), name, &regexp, arg(1));
                 }
                 match name {
                     "includes" => Ok(bool(text.contains(js_string(&arg(0))?.as_str()))),
@@ -1474,30 +1625,30 @@ impl Evaluator<'_, '_> {
                     "endsWith" => Ok(bool(text.ends_with(js_string(&arg(0))?.as_str()))),
                     "indexOf" => {
                         let needle: Vec<u16> = js_string(&arg(0))?.encode_utf16().collect();
-                        Ok(int(find_units(&units, &needle).map_or(-1, |at| at as i64)))
+                        Ok(int(find_units(units(), &needle).map_or(-1, |at| at as i64)))
                     }
                     "slice" => {
-                        let (start, end) = range(units.len(), &arg(0), &arg(1))?;
-                        Ok(from_units(&units[start..end.max(start)]))
+                        let (start, end) = range(length(), &arg(0), &arg(1))?;
+                        Ok(piece(start, end.max(start)))
                     }
                     "substring" => {
                         let clamp = |value: &Val, default: usize| -> Result<usize> {
                             Ok(match value {
                                 Val::Undefined => default,
-                                value => to_integer(value)?.clamp(0, units.len() as i64) as usize,
+                                value => to_integer(value)?.clamp(0, length() as i64) as usize,
                             })
                         };
-                        let (a, b) = (clamp(&arg(0), 0)?, clamp(&arg(1), units.len())?);
-                        Ok(from_units(&units[a.min(b)..a.max(b)]))
+                        let (a, b) = (clamp(&arg(0), 0)?, clamp(&arg(1), length())?);
+                        Ok(piece(a.min(b), a.max(b)))
                     }
                     "at" | "charAt" => {
                         let at = if name == "at" {
-                            relative(units.len(), to_integer(&arg(0))?)
+                            relative(length(), to_integer(&arg(0))?)
                         } else {
                             usize::try_from(to_integer(&arg(0))?).ok()
                         };
-                        match at.filter(|at| *at < units.len()) {
-                            Some(at) => Ok(from_units(&units[at..=at])),
+                        match at.filter(|at| *at < length()) {
+                            Some(at) => Ok(piece(at, at + 1)),
                             None if name == "at" => Ok(Val::Undefined),
                             None => Ok(string("")),
                         }
@@ -1506,8 +1657,8 @@ impl Evaluator<'_, '_> {
                     "trimStart" => Ok(string(text.trim_start_matches(is_js_space))),
                     "trimEnd" => Ok(string(text.trim_end_matches(is_js_space))),
                     // Only the locale-free mappings that every engine agrees on (ASCII).
-                    "toUpperCase" if text.is_ascii() => Ok(string(&text.to_ascii_uppercase())),
-                    "toLowerCase" if text.is_ascii() => Ok(string(&text.to_ascii_lowercase())),
+                    "toUpperCase" if text.is_ascii() => Ok(owned(text.to_ascii_uppercase())),
+                    "toLowerCase" if text.is_ascii() => Ok(owned(text.to_ascii_lowercase())),
                     "padStart" | "padEnd" => {
                         let length = to_integer(&arg(0))?.max(0) as usize;
                         within(length)?;
@@ -1515,6 +1666,7 @@ impl Evaluator<'_, '_> {
                             Val::Undefined => vec![b' ' as u16],
                             value => js_string(&value)?.encode_utf16().collect(),
                         };
+                        let units = units();
                         if units.len() >= length || fill.is_empty() {
                             return Ok(Val::json(Value::String(text.clone())));
                         }
@@ -1525,9 +1677,9 @@ impl Evaluator<'_, '_> {
                             .copied()
                             .collect();
                         let joined: Vec<u16> = if name == "padStart" {
-                            [padding, units].concat()
+                            [&padding[..], units].concat()
                         } else {
-                            [units, padding].concat()
+                            [units, &padding[..]].concat()
                         };
                         Ok(from_units(&joined))
                     }
@@ -1537,7 +1689,7 @@ impl Evaluator<'_, '_> {
                             return Err(Unsupported);
                         }
                         within(text.len().saturating_mul(count as usize))?;
-                        Ok(string(&text.repeat(count as usize)))
+                        Ok(owned(text.repeat(count as usize)))
                     }
                     "split" => match arg(0) {
                         Val::Json(Value::String(separator)) if !separator.is_empty() => {
@@ -1559,7 +1711,7 @@ impl Evaluator<'_, '_> {
                                 text.matches(from.as_str()).count()
                             };
                             within(text.len() + found.saturating_mul(to.len()))?;
-                            Ok(string(&if name == "replace" {
+                            Ok(owned(if name == "replace" {
                                 text.replacen(from.as_str(), &to, 1)
                             } else {
                                 text.replace(from.as_str(), &to)
@@ -1582,10 +1734,10 @@ impl Evaluator<'_, '_> {
                         if !(0..=100).contains(&digits) {
                             return Err(Unsupported);
                         }
-                        Ok(string(&to_fixed(value, digits as usize)))
+                        Ok(owned(to_fixed(value, digits as usize)))
                     }
                     "toString" if matches!(arg(0), Val::Undefined) => {
-                        Ok(string(&format_number(value)))
+                        Ok(owned(format_number(value)))
                     }
                     _ => Err(Unsupported),
                 }
@@ -1774,20 +1926,20 @@ fn global(name: &str, arguments: &[Val]) -> Result<Val> {
         } else {
             to_number(&first)?
         }),
-        "String" => Ok(string(&if arguments.is_empty() {
+        "String" => Ok(owned(if arguments.is_empty() {
             String::new()
         } else {
             js_string(&first)?
         })),
         "Boolean" => Ok(bool(truthy(&first))),
-        "encodeURIComponent" | "encodeURI" => Ok(string(&crate::regexp::encode_uri(
+        "encodeURIComponent" | "encodeURI" => Ok(owned(crate::regexp::encode_uri(
             &js_string(&first)?,
             name == "encodeURIComponent",
         ))),
         // Where the browser throws a URIError, it reports it.
         "decodeURIComponent" | "decodeURI" => {
             crate::regexp::decode_uri(&js_string(&first)?, name == "decodeURIComponent")
-                .map(|text| string(&text))
+                .map(owned)
                 .ok_or(Unsupported)
         }
         "parseInt" if arguments.len() == 1 => {
@@ -1828,6 +1980,20 @@ fn number(value: f64) -> Result<Val> {
 
 fn string(text: &str) -> Val {
     Val::json(Value::String(text.to_owned()))
+}
+
+/// A string just built, as a value (without copying it again).
+fn owned(text: String) -> Val {
+    Val::json(Value::String(text))
+}
+
+/// `value` as JavaScript would show it, added to `out`: a string where it is.
+fn push_js_string(out: &mut String, value: &Val) -> Result<()> {
+    match value {
+        Val::Json(Value::String(text)) => out.push_str(text),
+        value => out.push_str(&js_string(value)?),
+    }
+    Ok(())
 }
 
 fn bool(value: bool) -> Val {
@@ -2091,7 +2257,7 @@ fn index(object: &Val, key: &Val) -> Result<Val> {
             if at.fract() != 0.0 || at < 0.0 || at as usize >= units.len() {
                 return Ok(Val::Undefined);
             }
-            Ok(string(&String::from_utf16_lossy(
+            Ok(owned(String::from_utf16_lossy(
                 &units[at as usize..=at as usize],
             )))
         }
@@ -2164,7 +2330,7 @@ fn binary_op(operator: BinaryOperator, left: &Val, right: &Val) -> Result<Val> {
                 }
                 let (left, right) = (js_string(left)?, js_string(right)?);
                 within(left.len() + right.len())?;
-                Ok(string(&(left + &right)))
+                Ok(owned(left + &right))
             }
             (
                 Val::Json(Value::Number(_) | Value::Bool(_) | Value::Null),
@@ -2331,6 +2497,147 @@ mod tests {
                 answers(source, None),
                 "{source}"
             );
+        }
+    }
+
+    #[test]
+    fn string_methods_count_as_javascript_does_ascii_or_not() {
+        // As the browser answers: positions are UTF-16 units. An ASCII string's are its bytes
+        // (read where they are); `é` is one unit in two bytes, `😀` two units in four.
+        use serde_json::json;
+        let wide = "héllo😀!";
+        for (source, expected) in [
+            ("'hello!'.slice(1, 3)", json!("el")),
+            ("'hello!'.slice(2)", json!("llo!")),
+            ("'hello!'.slice(-3, -1)", json!("lo")),
+            ("'hello!'.slice(4, 2)", json!("")),
+            ("'hello!'.substring(3, 1)", json!("el")),
+            ("'hello!'.substring(-2, 99)", json!("hello!")),
+            ("'hello!'.charAt(1)", json!("e")),
+            ("'hello!'.charAt(-1)", json!("")),
+            ("'hello!'.at(-1)", json!("!")),
+            ("'hello!'.at(9)", Value::Null),
+            ("'hello!'.indexOf('o')", json!(4)),
+            ("'hello!'.padStart(8, '-')", json!("--hello!")),
+            (
+                "'ab'.slice(0, 1).toUpperCase() + 'ab'.slice(1)",
+                json!("Ab"),
+            ),
+            ("w.slice(1, 3)", json!("él")),
+            ("w.slice(5, 7)", json!("😀")),
+            ("w.slice(-1)", json!("!")),
+            ("w.slice(2)", json!("llo😀!")),
+            ("w.substring(3, 1)", json!("él")),
+            ("w.substring(5)", json!("😀!")),
+            ("w.charAt(1)", json!("é")),
+            ("w.charAt(7)", json!("!")),
+            ("w.charAt(8)", json!("")),
+            ("w.at(-1)", json!("!")),
+            ("w.at(1)", json!("é")),
+            ("w.indexOf('!')", json!(7)),
+            ("w.padStart(10, '-')", json!("--héllo😀!")),
+            ("w.padEnd(9)", json!("héllo😀! ")),
+            (
+                "w.slice(0, 1).toUpperCase() + w.slice(1)",
+                json!("Héllo😀!"),
+            ),
+            // `+` and template literals: a string added to, as JavaScript shows each value.
+            ("'a' + 1", json!("a1")),
+            ("1 + 'a'", json!("1a")),
+            ("'a' + 'b' + 'c'", json!("abc")),
+            ("'a' + null", json!("anull")),
+            ("'a' + undefined", json!("aundefined")),
+            ("'a' + true", json!("atrue")),
+            ("'a' + [1, 2]", json!("a1,2")),
+            ("'a' + 0.5", json!("a0.5")),
+            ("w + w", json!("héllo😀!héllo😀!")),
+            ("`x${1}y${'z'}${null}`", json!("x1yznull")),
+        ] {
+            let lookup = |name: &str| (name == "w").then(|| Val::json(json!(wide)));
+            let answer = evaluate(source, &lookup).map(|value| value.into_json().unwrap());
+            assert_eq!(answer, Ok(expected), "{source}");
+        }
+        // Adding an object is left for the browser, on either side.
+        for source in ["'a' + {}", "({}) + 'a'", "'a' + { b: 1 }"] {
+            assert!(evaluate(source, &|_| None).is_err(), "{source}");
+        }
+    }
+
+    #[test]
+    fn a_lent_value_answers_as_itself_through_the_branch_that_picks_it() {
+        // `const sorted = sortKey ? [...rows].sort(…) : rows` while there's no sort key is the
+        // rows themselves, not a copy: the same value `evaluate` gives, and the lent one.
+        let order = serde_json::json!({
+            "id": "A-1",
+            "lines": [{ "sku": "kale" }, { "sku": "leek" }],
+            "customer": { "name": "Ada" },
+            "note": null,
+            "empty": "",
+            "key": "lines",
+        });
+        let lookup = |name: &str| match name {
+            "order" => Some(Val::json(order.clone())),
+            _ => None,
+        };
+        let lend = |name: &str| match name {
+            "order" => Some(&order),
+            _ => None,
+        };
+        let lines = &order["lines"];
+        let customer = &order["customer"];
+        for (source, lent) in [
+            ("order", Some(&order)),
+            ("order.lines", Some(lines)),
+            ("(order.lines)", Some(lines)),
+            ("order[order.key]", Some(lines)),
+            ("order.lines[1]", Some(&order["lines"][1])),
+            ("order.id ? order.lines : []", Some(lines)),
+            ("order.empty ? [...order.lines] : order.lines", Some(lines)),
+            ("order.note ? order.lines : order.customer", Some(customer)),
+            (
+                "order.empty ? 1 : (order.note ? 2 : order.lines)",
+                Some(lines),
+            ),
+            ("order.lines ?? []", Some(lines)),
+            ("order.lines[0.5] ?? order.customer", Some(customer)),
+            ("order.lines[-1] ?? order.customer", Some(customer)),
+            ("order.note ?? order.lines", Some(lines)),
+            ("order.missing ?? order.lines", Some(lines)),
+            ("order.empty ?? order.lines", Some(&order["empty"])),
+            ("order.lines || []", Some(lines)),
+            ("order.empty || order.customer", Some(customer)),
+            ("'' || order.customer", Some(customer)),
+            ("order.id && order.lines", Some(lines)),
+            ("order.note && order.lines", Some(&order["note"])),
+            ("order.empty && order.lines", Some(&order["empty"])),
+            ("(order.id && order.note) ?? order.customer", Some(customer)),
+            // A value of its own: worked out, or a copy the expression makes.
+            ("order.empty ? order.lines : []", None),
+            ("order.missing ?? []", None),
+            ("order.lines.length", None),
+            ("order.lines.slice()", None),
+            ("[...order.lines]", None),
+            ("order.note?.text", None),
+            ("'x' || order.lines", None),
+            ("((order) => order)({ id: 'other' })", None),
+        ] {
+            let answer = evaluate_answer(source, &lookup, &lend).expect(source);
+            let expected = evaluate(source, &lookup).unwrap().into_json().unwrap();
+            match (answer, lent) {
+                (Answer::Lent(value), Some(lent)) => {
+                    assert!(std::ptr::eq(value, lent), "{source}: another value lent");
+                    assert_eq!(value, &expected, "{source}");
+                }
+                (Answer::Val(value), None) => {
+                    assert_eq!(value.into_json().unwrap(), expected, "{source}")
+                }
+                (answer, _) => panic!("{source}: {answer:?}"),
+            }
+        }
+        // What can't be answered can't be either way.
+        for source in ["order.note.text", "order.lines()", "nothing ?? order"] {
+            assert!(evaluate_answer(source, &lookup, &lend).is_err(), "{source}");
+            assert!(evaluate(source, &lookup).is_err(), "{source}");
         }
     }
 
