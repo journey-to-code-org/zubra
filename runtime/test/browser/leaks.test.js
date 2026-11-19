@@ -152,6 +152,7 @@ test("shadow components made and removed don't leave a reference each behind", {
     const { result: prototype } = await client.send('Runtime.evaluate', { expression: 'WeakRef.prototype' });
     const { objects } = await client.send('Runtime.queryObjects', { prototypeObjectId: prototype.objectId });
     const { result } = await client.send('Runtime.callFunctionOn', { objectId: objects.objectId, functionDeclaration: 'function () { return this.length; }', returnByValue: true });
+    await client.send('Runtime.releaseObject', { objectId: objects.objectId });
     await client.detach();
     return result.value;
   };
@@ -166,9 +167,17 @@ test("shadow components made and removed don't leave a reference each behind", {
     });
     await count(); // let what was removed be collected along the way
   }
-  // 6000 made. Dev builds keep up to about a thousand more for devtools (devhook.js `early`).
-  const refs = await count();
-  assert.ok(refs < 2000, `${refs} WeakRefs after 6000 shadow components came and went`);
+  // 6000 made, and every one collected (counting again until they are: see collected()).
   assert.deepEqual(await collected(page, ['slot-card-shadow']), { 'slot-card-shadow': 0 });
+  // Then their refs go as the registry hears of them (in a later task), and the refs themselves at
+  // the next collection. Dev builds keep up to about a thousand more for devtools (devhook.js
+  // `early`); the production build none.
+  const until = Date.now() + 5000;
+  let refs;
+  do {
+    await page.waitForTimeout(100);
+    refs = await count();
+  } while (refs >= 1500 && Date.now() < until);
+  assert.ok(refs < 1500, `${refs} WeakRefs after 6000 shadow components came and went`);
   await page.close();
 });
