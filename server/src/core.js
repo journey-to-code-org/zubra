@@ -36,6 +36,9 @@ function checkTimeout(value) {
  * host serves under `<base>/` beyond the components' modules (`{ status, type, body }` or null).
  * `needs(name, code)`: the host's check on a compiled module (a package it needs being installed).
  */
+/** How many different warnings a server remembers having said (see warnOnce). */
+const WARNED_MOST = 1000;
+
 export function createCore({ reload, request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, changed = null, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, runtimeSplit = null, runtimeBuilt = null, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}`, production = false, onError = null, streamTimeout = STREAM_TIMEOUT, minify = false }) {
   if (gaps !== 'warn' && gaps !== 'ignore') throw new Error(`@zubra/server: gaps is "warn" or "ignore", not ${JSON.stringify(gaps)}`);
   if (clientModules !== 'all' && clientModules !== 'needed') throw new Error(`@zubra/server: clientModules is "all" or "needed", not ${JSON.stringify(clientModules)}`);
@@ -130,6 +133,16 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
    * differ the server says so. Two of the app's, or two packages', with one tag is an error.
    */
   const warned = new Set();
+  /**
+   * Say `message` once. Forgotten after WARNED_MOST others, so a server that runs for months
+   * doesn't keep every message it said: some name a place in the data (a prop's index).
+   */
+  const warnOnce = (message) => {
+    if (warned.has(message)) return;
+    if (warned.size >= WARNED_MOST) warned.clear();
+    warned.add(message);
+    warn(message);
+  };
   const owners = () =>
     once('tags', () => {
       const tags = new Map();
@@ -146,10 +159,7 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
         shadows.set(name, kept);
         // Once per server, even with `cache: false` (which works this out again for each render).
         const message = `@zubra/server: <${tag}> is the app's ${kept}, in place of ${name}, which differs from it: the package's components get the app's`;
-        if (!warned.has(message) && ownSource(name) !== ownSource(kept)) {
-          warned.add(message);
-          warn(message);
-        }
+        if (!warned.has(message) && ownSource(name) !== ownSource(kept)) warnOnce(message);
       }
       return { tags, shadows };
     });
@@ -212,9 +222,7 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
     // that part is missing. Said once per place, as `zubra check --server` says it.
     for (const gap of response.gaps ?? []) {
       const message = `@zubra/server: <${name}> leaves part of its HTML for the browser (empty without JavaScript). Compute it before rendering and pass it as a prop, or pass gaps: 'ignore' if that's intended.\n${gap}`;
-      if (warned.has(message)) continue;
-      warned.add(message);
-      warn(message);
+      warnOnce(message);
     }
     return response.output;
   };
@@ -242,10 +250,7 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
       if (typeof value === 'string') {
         if (wellFormed(value)) return value;
         const message = `@zubra/server: ${where(path)} has half of a surrogate pair (text cut inside an emoji or another character outside the BMP); it is shown as U+FFFD. Fix the stored text, or call toWellFormed() on it.`;
-        if (!warned.has(message)) {
-          warned.add(message);
-          warn(message);
-        }
+        warnOnce(message);
         return toWellFormed(value);
       }
       if (typeof value === 'number') {
@@ -757,9 +762,7 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
         known ??= new Set(componentSet(used));
         if (known.has(name) || html.includes(componentUrl(name))) continue;
         const message = `@zubra/server: the page has <${tag}>, but nothing this page object rendered loads it, so its CSS and module aren't in the page and the element won't start in the browser. The two usual causes: it was rendered by another page object or by zubra.render() (render and finish with one object per request: const page = zubra.page(); page.render('${tag}', props); page.finish(html)), or a component's template uses <${tag}> without importing it (add its import to that component's script: import './${name.split('/').pop()}.zb'; without it the server leaves the tag empty as well).`;
-        if (warned.has(message)) continue;
-        warned.add(message);
-        warn(message);
+        warnOnce(message);
       }
     }
 
