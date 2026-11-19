@@ -52,12 +52,15 @@ export function createActionsCore({ routes, client = null, forms = null, origins
       throw error;
     }
   }
+  // A browser says where a post was sent from in Sec-Fetch-Site and Origin both: another site
+  // is let in only by an Origin in `origins`.
   const allowed = (request) => {
     const site = request.headers.get('sec-fetch-site');
-    if (site) return site === 'same-origin' || site === 'none';
     const origin = request.headers.get('origin');
+    if (site === 'same-origin' || site === 'none' || (origin && origins.includes(origin))) return true;
+    if (site) return false;
     if (!origin) return true; // not a browser (curl, a test): CSRF needs a browser
-    return origin === new URL(request.url).origin || origins.includes(origin);
+    return origin === new URL(request.url).origin;
   };
 
   /**

@@ -421,12 +421,24 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
   }
   /** Whether the server's scope lets this request write to (or join) a document. */
   const mayWrite = async (request, collection, key) => inScope((await serverScope({ request })) ?? null, collection, key);
+  /** The page's origin, when it's one of `origins`: another site the app lets in. */
+  const listed = (request) => {
+    const origin = request.headers.get('origin');
+    return origin && origins.includes(origin) ? origin : null;
+  };
+  // A browser's write: from this origin, or from one of `origins`. A browser says where it was
+  // sent from in Sec-Fetch-Site and Origin both, and another site is let in only by its Origin.
   const sameOrigin = (request) => {
     const site = request.headers.get('sec-fetch-site');
-    if (site) return site === 'same-origin' || site === 'none';
+    if (site === 'same-origin' || site === 'none' || listed(request)) return true;
+    if (site) return false;
     const origin = request.headers.get('origin');
-    return !origin || origin === new URL(request.url).origin || origins.includes(origin);
+    return !origin || origin === new URL(request.url).origin;
   };
+  // What lets a page on one of `origins` read the answer (its pulls, its live stream), and send
+  // JSON at all: CORS, as the zubra-sync binary gives its --origins. Any other site's page gets
+  // none, so its browser keeps every answer from it.
+  const cors = (origin) => ({ 'access-control-allow-origin': origin, 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS', vary: 'origin' });
 
   /**
    * A request's JSON body, read no further than `maxBytes` (1 MiB by default, as the binary): a
@@ -463,6 +475,18 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
 
   async function fetch(request) {
     const url = new URL(request.url);
+    if (!url.pathname.startsWith(`${base}/`)) return null;
+    const origin = listed(request);
+    // A browser asks before it sends JSON from another site (a preflight): only `origins` are told yes.
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: origin ? cors(origin) : {} });
+    const response = await answer(request, url);
+    if (!origin) return response;
+    const headers = new Headers(response.headers);
+    for (const [name, value] of Object.entries(cors(origin))) headers.set(name, value);
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  }
+
+  async function answer(request, url) {
     if (url.pathname === `${base}/push` && request.method === 'POST') {
       if (!sameOrigin(request)) return json(403, { error: 'Cross-site writes are refused' });
       const read = await readJson(request);
@@ -611,8 +635,7 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
       if (warn && String(since) === '0' && !(await log.after(cursor)).changes.length) notice({ request, scopes }, changes, shown);
       return json(200, { changes: shown, cursor, ...(reset ? { reset: true } : {}) });
     }
-    if (url.pathname.startsWith(`${base}/`)) return json(404, { error: 'Not found' });
-    return null;
+    return json(404, { error: 'Not found' });
   }
 
   /** Node's http: answers sync requests (streaming the live ones) and returns true, else false. */

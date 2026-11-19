@@ -39,12 +39,13 @@ export async function startBinary(extra = []) {
 }
 
 export const backends = [
-  { name: 'JavaScript', start: async () => ({ ...createSyncServer({ authorize: allowAnyone }), close: () => {} }) },
+  // `origins`: other sites whose pages may use the server (the binary's --origin).
+  { name: 'JavaScript', start: async ({ origins = [] } = {}) => ({ ...createSyncServer({ authorize: allowAnyone, origins }), close: () => {} }) },
   ...(binaryPath
     ? [{
         name: 'binary',
-        start: async () => {
-          const { base, close } = await startBinary(['--keep-alive', '200', '--open']);
+        start: async ({ origins = [] } = {}) => {
+          const { base, close } = await startBinary(['--keep-alive', '200', '--open', ...origins.flatMap((origin) => ['--origin', origin])]);
           // The same fetch(request) shape, over the network.
           const fetchIt = async (request) => {
             const url = new URL(request.url);
