@@ -27,6 +27,50 @@ test(`${backend.name}: changes come back out in order, after a cursor`, async ()
   sync.close();
 });
 
+test(`${backend.name}: a page on one of \`origins\` writes and reads from its own site, and no other site does`, async () => {
+  const app = 'https://app.example';
+  const sync = await backend.start({ origins: [app] });
+  // What a browser sends from another site: Sec-Fetch-Site and Origin both.
+  const from = (origin) => ({ origin, 'sec-fetch-site': 'cross-site' });
+  const allowedTo = (response) => response.headers.get('access-control-allow-origin');
+
+  const pushed = await push(sync, [change('title', 'from the app')], from(app));
+  assert.equal(pushed.status, 200);
+  assert.equal(allowedTo(pushed), app);
+  assert.match(pushed.headers.get('vary') ?? '', /origin/i);
+  const joined = await sync.fetch(new Request('http://localhost/_zb/sync/presence', { method: 'POST', body: JSON.stringify({ room: 'tasks/t1', peer: 'p1', state: null }), headers: { 'content-type': 'application/json', ...from(app) } }));
+  assert.notEqual(joined.status, 403);
+  assert.equal(allowedTo(joined), app);
+  // It may read what it's sent: a pull, and the live stream.
+  const read = await sync.fetch(new Request('http://localhost/_zb/sync/pull?since=0', { headers: from(app) }));
+  assert.equal(allowedTo(read), app);
+  assert.deepEqual((await read.json()).changes.map((c) => c.value), ['from the app']);
+  const stop = new AbortController();
+  const live = await sync.fetch(new Request('http://localhost/_zb/sync/live?since=0', { headers: from(app), signal: stop.signal }));
+  assert.equal(live.status, 200);
+  assert.equal(allowedTo(live), app);
+  stop.abort();
+  await live.body?.cancel().catch(() => {});
+  // Before it sends JSON its browser asks, and is told what it may send.
+  const asked = await sync.fetch(new Request('http://localhost/_zb/sync/push', { method: 'OPTIONS', headers: { ...from(app), 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' } }));
+  assert.equal(asked.status, 204);
+  assert.equal(allowedTo(asked), app);
+  assert.match(asked.headers.get('access-control-allow-methods') ?? '', /POST/);
+  assert.match(asked.headers.get('access-control-allow-headers') ?? '', /content-type/i);
+
+  // Another site: no write, and nothing its browser would let it read.
+  const evil = 'https://evil.example';
+  const refused = await push(sync, [change('title', 'from elsewhere')], from(evil));
+  assert.equal(refused.status, 403);
+  assert.equal(allowedTo(refused), null);
+  assert.equal(allowedTo(await sync.fetch(new Request('http://localhost/_zb/sync/pull?since=0', { headers: from(evil) }))), null);
+  assert.equal(allowedTo(await sync.fetch(new Request('http://localhost/_zb/sync/push', { method: 'OPTIONS', headers: from(evil) }))), null);
+  // The server's own pages need none.
+  assert.equal(allowedTo(await sync.fetch(new Request('http://localhost/_zb/sync/pull?since=0', { headers: { 'sec-fetch-site': 'same-origin' } }))), null);
+  assert.deepEqual((await pull(sync)).changes.map((c) => c.value), ['from the app']);
+  sync.close();
+});
+
 test(`${backend.name}: malformed changes, cross-site writes and other paths are refused`, async () => {
   const sync = await backend.start();
   assert.equal((await push(sync, [{ collection: 'tasks' }])).status, 400);
