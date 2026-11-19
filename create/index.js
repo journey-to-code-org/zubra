@@ -63,15 +63,6 @@ export function create(dir, framework, { name = basename(resolve(dir)), typescri
     const agents = join(target, 'AGENTS.md');
     writeFileSync(agents, readFileSync(agents, 'utf8').replace('`npm run dev` runs the app', '`npm run check` type-checks every component (after a change, it should report nothing); `npm run dev` runs the app'));
   }
-  if (framework === 'server') {
-    // The counter's comment is written for the bundlers' dev servers, which update a component in
-    // place. This app's page loads again, so the count starts over.
-    const counter = join(target, 'src/components/hello-counter.zb');
-    const said = 'edit it here and it updates\n  in place, keeping its count.';
-    const text = readFileSync(counter, 'utf8');
-    if (!text.includes(said)) throw new Error('create-zubra: the counter no longer says how it updates; see the server app\'s wording in index.js');
-    writeFileSync(counter, text.replace(said, 'edit it here and save: the\n  page reloads with your change (and the count starts over).'));
-  }
   // npm drops .gitignore files from packages, so the template's is named _gitignore.
   renameSync(join(target, '_gitignore'), join(target, '.gitignore'));
   const files = walk(target);
@@ -136,7 +127,7 @@ async function main(argv) {
     create(dir, framework, { typescript });
     const cd = relative(process.cwd(), resolve(dir)) || '.';
     const check = typescript ? '  npm run check   type-checks the components (zubra check --types)\n' : '';
-    console.log(`\nA Zubra app (${FRAMEWORKS[framework]}${typescript ? ', TypeScript' : ''}) is in ${cd}. Next:\n\n${cd === '.' ? '' : `  cd ${cd}\n`}  npm install\n${framework === 'server' ? '  npm run dev     http://localhost:3000; edit src/components/hello-counter.zb and save: the page reloads\n  npm test        starts the server and uses the page in Chromium, with JavaScript and without\n' : '  npm run dev     edit src/components/hello-counter.zb: it updates in place\n  npm test        builds the app and clicks through it in Chromium\n'}${check}\nThe page it opens is made of the examples in src/components/ (a list, a form control, async data, slots):\nread them there, and AGENTS.md for how it all fits together.\n`);
+    console.log(`\nA Zubra app (${FRAMEWORKS[framework]}${typescript ? ', TypeScript' : ''}) is in ${cd}. Next:\n\n${cd === '.' ? '' : `  cd ${cd}\n`}  npm install\n${framework === 'server' ? '  npm run dev     http://localhost:3000; edit src/components/hello-counter.zb and save: it updates in place\n  npm test        starts the server and uses the page in Chromium, with JavaScript and without\n' : '  npm run dev     edit src/components/hello-counter.zb: it updates in place\n  npm test        builds the app and clicks through it in Chromium\n'}${check}\nThe page it opens is made of the examples in src/components/ (a list, a form control, async data, slots):\nread them there, and AGENTS.md for how it all fits together.\n`);
   } finally {
     prompt?.close();
   }
