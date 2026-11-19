@@ -266,7 +266,8 @@ function marker(node) {
   const data = node.data;
   return data.startsWith('?zb ') ? data.slice(4, data.endsWith('?') ? -1 : undefined) : data;
 }
-const isOpen = (node) => { const m = marker(node); return m === '[' || m === '[!' || m === '[?'; };
+const opens = (m) => m === '[' || m === '[!' || m === '[?';
+const isOpen = (node) => opens(marker(node));
 
 const isClose = (node) => marker(node) === ']';
 /** Change a region's opening marker: a PI keeps its target, a comment takes the plain form. */
@@ -275,8 +276,12 @@ const setMarker = (node, text) => { if (marker(node) !== text) node.data = text;
 function matchingClose(open) {
   let depth = 0;
   for (let node = open.nextSibling; node; node = node.nextSibling) {
-    if (isOpen(node)) depth++;
-    else if (isClose(node)) {
+    if (node.nodeType === 1) continue;
+    // (Each node's marker read once: reading one parses a comment's text, and hydration reads
+    // every node between a region's markers, and again for each region it is inside.)
+    const m = marker(node);
+    if (opens(m)) depth++;
+    else if (m === ']') {
       if (depth === 0) return node;
       depth--;
     }
@@ -288,9 +293,10 @@ const MARKERS = ['[', '[!', '[?', ']', ''];
 /** The nodes that hold a position: elements and markers (not text, nor a stream's `<?start>`). */
 function* positions(first, stop) {
   for (let node = first; node && node !== stop; node = node.nextSibling) {
-    if (node.nodeType !== 1 && !MARKERS.includes(marker(node))) continue;
+    const m = node.nodeType === 1 ? null : marker(node);
+    if (m !== null ? !MARKERS.includes(m) : node.nodeType !== 1) continue;
     yield node;
-    if (isOpen(node)) {
+    if (opens(m)) {
       node = matchingClose(node);
       if (!node) return;
     }
