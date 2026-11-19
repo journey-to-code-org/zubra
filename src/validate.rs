@@ -336,7 +336,7 @@ fn pending(name: &str) -> bool {
 /// empty regions marked `<?zb [??>`, which the element fills when it starts.
 pub fn validate_partial<'t>(
     component: &'t ast::ComponentAst,
-    values: &Value,
+    values: Value,
     slot_values: &'t HashMap<String, Vec<ast::Node>>,
     slots_rendered: bool,
 ) -> Result<ir::Component<'t>, Diagnostic> {
@@ -351,13 +351,17 @@ pub fn validate_partial<'t>(
 /// depth, as it was rendered already (a router's page, put in its layout's slot).
 pub fn validate<'t>(
     component: &'t ast::ComponentAst,
-    values: &Value,
+    values: Value,
     slot_values: &'t HashMap<String, Vec<ast::Node>>,
     slots_rendered: bool,
 ) -> Result<ir::Component<'t>, Diagnostic> {
-    let overrides = values
-        .as_object()
-        .ok_or_else(|| Diagnostic::new(Span::new(1, 1), "component props must be a JSON object"))?;
+    // The props are moved into the render, not copied: a list of rows is the bulk of a request.
+    let Value::Object(overrides) = values else {
+        return Err(Diagnostic::new(
+            Span::new(1, 1),
+            "component props must be a JSON object",
+        ));
+    };
     // Each render numbers its hosts' id bases from 1.
     ID_COUNTS.with(|counts| counts.borrow_mut().clear());
     let supply = if slots_rendered {
@@ -431,7 +435,7 @@ impl Supply<'_> {
 
 fn lower_component<'t>(
     component: &'t ast::ComponentAst,
-    overrides: &serde_json::Map<String, Value>,
+    overrides: serde_json::Map<String, Value>,
     supply: &Supply<'t>,
     host_id: Option<&str>,
 ) -> Result<ir::Component<'t>, Diagnostic> {
@@ -1177,10 +1181,12 @@ fn find_local<'l>(locals: &'l [(String, Local)], name: &str) -> Option<&'l Local
         .map(|(_, local)| local)
 }
 
+/// The props' values: each given one moved out of `overrides` (what's left there afterwards is
+/// a prop the component doesn't declare), the others their defaults.
 fn evaluate_props(
     component: &ast::ComponentAst,
     locals: &[(String, Local)],
-    overrides: &serde_json::Map<String, Value>,
+    mut overrides: serde_json::Map<String, Value>,
 ) -> Result<Vec<Prop>, Diagnostic> {
     let mut props = Vec::new();
     let mut seen = HashSet::new();
@@ -1204,32 +1210,31 @@ fn evaluate_props(
             });
             continue;
         }
+        let given = overrides.remove(&declaration.name);
+        let was_given = given.is_some();
         // An enum prop given as text (an attribute, or `--props`): a member's value, or its
         // name (`size="Large"`), is the member's value, as the browser reads it.
-        let enum_given = match overrides.get(&declaration.name) {
+        let enum_given = match &given {
             Some(Value::String(raw)) => prop_enum(component, &declaration.name)
                 .and_then(|info| enum_value(&enum_members(component, &info.name), raw)),
             _ => None,
         };
-        let value = match (
-            enum_given.as_ref().or(overrides.get(&declaration.name)),
-            &default,
-        ) {
+        let value = match (enum_given.or(given), &default) {
             (Some(value), Some(Ok(default))) => {
-                if !same_type(default, value) {
+                if !same_type(default, &value) {
                     return Err(Diagnostic::new(
                         declaration.span,
                         format!(
                             "prop `{}` must be {} (like its default), found {}",
                             declaration.name,
                             expression::type_name(default),
-                            expression::type_name(value)
+                            expression::type_name(&value)
                         ),
                     ));
                 }
-                value.clone()
+                value
             }
-            (Some(value), _) => value.clone(),
+            (Some(value), _) => value,
             (None, Some(Ok(default))) => default.clone(),
             (None, Some(Err(_))) if partial() => Value::Null,
             (None, Some(Err(runtime))) => {
@@ -1252,7 +1257,7 @@ fn evaluate_props(
                 ));
             }
         };
-        let unknown = !overrides.contains_key(&declaration.name) && matches!(default, Some(Err(_)));
+        let unknown = !was_given && matches!(default, Some(Err(_)));
         props.push(Prop {
             name: declaration.name.clone(),
             attribute: kebab(&declaration.name),
@@ -1387,7 +1392,7 @@ struct LowerState<'a, 't> {
     /// Loop variables, innermost last. A list's item is lent where the list itself outlives the
     /// render (a prop, a script value, or an item of one): a row is then read where it is, not
     /// copied for each pass over it.
-    scopes: Vec<Vec<(String, Cow<'a, Value>)>>,
+    scopes: Vec<Vec<(Cow<'t, str>, Cow<'a, Value>)>>,
     active_slots: HashSet<String>,
     /// Lowering HTML a server already rendered ([`Supply::Rendered`]): no tag is a child component.
     rendered: bool,
@@ -1935,13 +1940,13 @@ impl<'a, 't: 'a> Context<'a, 't> {
     /// `let:` values for the innermost scope, evaluated in order (each may use the ones before).
     fn lower_lets(
         &self,
-        lets: &[ast::Let],
+        lets: &'t [ast::Let],
         state: &mut LowerState<'a, 't>,
     ) -> Result<(), Diagnostic> {
         for binding in lets {
             let value = self.evaluate(&binding.value, binding.span, state)?;
             if let Some(scope) = state.scopes.last_mut() {
-                scope.push((binding.name.clone(), Cow::Owned(value)));
+                scope.push((Cow::Borrowed(binding.name.as_str()), Cow::Owned(value)));
             }
         }
         Ok(())
@@ -2064,11 +2069,18 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 // A region for the list, and one per row.
                 output.reserve(list.len() * 3 + 2);
                 output.push(Node::Open);
-                let mut keys = HashSet::with_capacity(if key.is_some() { list.len() } else { 0 });
+                let mut keys: HashSet<RowKey<'_>> =
+                    HashSet::with_capacity(if key.is_some() { list.len() } else { 0 });
+                // One scope for every row in turn, emptied between them, not one made per row.
+                let mut spare = Vec::new();
                 for (position, entry) in list.into_iter().enumerate() {
-                    let mut scope = destructure_entry(item, entry);
+                    let mut scope = std::mem::take(&mut spare);
+                    destructure_entry(item, entry, &mut scope);
                     if let Some(index) = index {
-                        scope.push((index.clone(), Cow::Owned(Value::from(position))));
+                        scope.push((
+                            Cow::Borrowed(index.as_str()),
+                            Cow::Owned(Value::from(position)),
+                        ));
                     }
                     state.scopes.push(scope);
                     if let Err(error) = self.lower_lets(lets, state) {
@@ -2076,32 +2088,37 @@ impl<'a, 't: 'a> Context<'a, 't> {
                         return Err(error);
                     }
                     if let Some((key, key_span)) = key {
-                        let checked = self.evaluate_known(key, *key_span, state).and_then(
-                            |value| match value {
-                                // Computed in the browser, which checks it there.
-                                None => Ok(()),
-                                Some(value @ (Value::String(_) | Value::Number(_))) => {
-                                    if keys.insert(value.to_string()) {
-                                        Ok(())
-                                    } else {
-                                        Err(Diagnostic::new(
-                                            *key_span,
-                                            format!(
-                                                "duplicate zb-each key {value} (row {})",
-                                                position + 1
-                                            ),
-                                        ))
-                                    }
-                                }
-                                Some(other) => Err(Diagnostic::new(
+                        // Read where it is when it can be (`row.id` of a prop's rows).
+                        let value = match key.lent(&|name| self.lasting(name, state)) {
+                            Some(value) => Ok(Some(Cow::Borrowed(value))),
+                            None => self
+                                .evaluate_known(key, *key_span, state)
+                                .map(|value| value.map(Cow::Owned)),
+                        };
+                        let checked = value.and_then(|value| match value {
+                            // Computed in the browser, which checks it there.
+                            None => Ok(()),
+                            Some(value) => match RowKey::of(value) {
+                                Ok(row_key) if keys.contains(&row_key) => Err(Diagnostic::new(
                                     *key_span,
                                     format!(
-                                        "zb-each key must be a string or number, found {}",
-                                        expression::type_name(&other)
+                                        "duplicate zb-each key {} (row {})",
+                                        row_key.shown(),
+                                        position + 1
+                                    ),
+                                )),
+                                Ok(row_key) => {
+                                    keys.insert(row_key);
+                                    Ok(())
+                                }
+                                Err(found) => Err(Diagnostic::new(
+                                    *key_span,
+                                    format!(
+                                        "zb-each key must be a string or number, found {found}"
                                     ),
                                 )),
                             },
-                        );
+                        });
                         if let Err(error) = checked {
                             state.scopes.pop();
                             return Err(error);
@@ -2109,7 +2126,10 @@ impl<'a, 't: 'a> Context<'a, 't> {
                     }
                     output.push(Node::Open);
                     let lowered = self.lower_block_into(children, state, true, output);
-                    state.scopes.pop();
+                    if let Some(mut scope) = state.scopes.pop() {
+                        scope.clear();
+                        spare = scope;
+                    }
                     lowered?;
                     output.push(Node::Close);
                 }
@@ -2285,7 +2305,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                                 .name
                                 .iter()
                                 .flat_map(|name| destructure(name, &resolved))
-                                .map(|(name, value)| (name, Cow::Owned(value)))
+                                .map(|(name, value)| (Cow::Owned(name), Cow::Owned(value)))
                                 .collect(),
                         );
                         let lowered = self
@@ -2485,12 +2505,24 @@ impl<'a, 't: 'a> Context<'a, 't> {
                     .collect::<Option<String>>(),
                 _ => None,
             });
+        // What this reads of the child's props once it's rendered (its two-way props, for the
+        // form's fallback below); the rest are moved into the render.
+        let models: serde_json::Map<String, Value> = interface
+            .props
+            .iter()
+            .filter(|prop| prop.model)
+            .filter_map(|prop| {
+                overrides
+                    .get(&prop.name)
+                    .map(|value| (prop.name.clone(), value.clone()))
+            })
+            .collect();
         let recording = GAPS.with(|gaps| gaps.borrow().is_some());
         let rendered = if recording {
             let (rendered, found) = record_gaps(|| {
                 lower_component(
                     &child.ast,
-                    &overrides,
+                    overrides,
                     &Supply::Lowered(groups),
                     host_id.as_deref(),
                 )
@@ -2500,7 +2532,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
         } else {
             lower_component(
                 &child.ast,
-                &overrides,
+                overrides,
                 &Supply::Lowered(groups),
                 host_id.as_deref(),
             )
@@ -2537,7 +2569,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
             .iter()
             .filter(|prop| prop.model)
             .any(|prop| {
-                !overrides.contains_key(&prop.name)
+                !models.contains_key(&prop.name)
                     && element.attributes.iter().any(|attribute| {
                         let given = attribute.name.split(':').next().unwrap_or_default();
                         attribute.name != crate::parser::SPREAD && camel(given) == prop.name
@@ -2553,7 +2585,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                     .any(|word| word == "formValue")
         });
         if child.ast.form_associated && !value_unknown && !own_form_value {
-            if let Some(input) = fallback_input(&attributes, &interface, &overrides) {
+            if let Some(input) = fallback_input(&attributes, &interface, &models) {
                 children.push(input);
             }
         }
@@ -3876,14 +3908,64 @@ fn bound_names(text: &str) -> Vec<String> {
 /// `undefined`).
 /// As [`destructure`], for a value that is ours to keep: a plain name takes it as it is,
 /// without a copy (each row of a list, once per row).
-fn destructure_entry<'v>(text: &str, value: Cow<'v, Value>) -> Vec<(String, Cow<'v, Value>)> {
+/// A row's names (`as="row"`, or a pattern's) and their values, onto the end of `scope`.
+fn destructure_entry<'t, 'v>(
+    text: &'t str,
+    value: Cow<'v, Value>,
+    scope: &mut Vec<(Cow<'t, str>, Cow<'v, Value>)>,
+) {
     if crate::ast::is_pattern(text) {
-        destructure(text, &value)
-            .into_iter()
-            .map(|(name, value)| (name, Cow::Owned(value)))
-            .collect()
+        scope.extend(
+            destructure(text, &value)
+                .into_iter()
+                .map(|(name, value)| (Cow::Owned(name), Cow::Owned(value))),
+        );
     } else {
-        vec![(text.trim().to_owned(), value)]
+        scope.push((Cow::Borrowed(text.trim()), value));
+    }
+}
+
+/// A `zb-each` key, to tell two rows with one key apart without writing it out as text. Each
+/// kind of number stays its own, as their JSON did (`1` and `1.0`, `0.0` and `-0.0`, are
+/// different keys).
+#[derive(PartialEq, Eq, Hash)]
+enum RowKey<'v> {
+    Unsigned(u64),
+    Signed(i64),
+    Float(u64),
+    Text(Cow<'v, str>),
+}
+
+impl<'v> RowKey<'v> {
+    /// The key; the value's type name when it can't be one.
+    fn of(value: Cow<'v, Value>) -> Result<Self, &'static str> {
+        Ok(match value {
+            Cow::Borrowed(Value::String(text)) => RowKey::Text(Cow::Borrowed(text)),
+            Cow::Owned(Value::String(text)) => RowKey::Text(Cow::Owned(text)),
+            Cow::Borrowed(Value::Number(number)) => RowKey::number(number),
+            Cow::Owned(Value::Number(number)) => RowKey::number(&number),
+            other => return Err(expression::type_name(&other)),
+        })
+    }
+
+    fn number(number: &serde_json::Number) -> Self {
+        if let Some(n) = number.as_u64() {
+            RowKey::Unsigned(n)
+        } else if let Some(n) = number.as_i64() {
+            RowKey::Signed(n)
+        } else {
+            RowKey::Float(number.as_f64().unwrap_or_default().to_bits())
+        }
+    }
+
+    /// As the key's JSON reads (for a duplicate's error).
+    fn shown(&self) -> String {
+        match self {
+            RowKey::Unsigned(n) => n.to_string(),
+            RowKey::Signed(n) => n.to_string(),
+            RowKey::Float(bits) => Value::from(f64::from_bits(*bits)).to_string(),
+            RowKey::Text(text) => Value::from(text.as_ref()).to_string(),
+        }
     }
 }
 
