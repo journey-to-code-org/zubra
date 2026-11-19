@@ -3,9 +3,10 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { chromium } from 'playwright';
 import { createZubra } from '../src/index.js';
@@ -205,7 +206,7 @@ test('buildApp: one module with the runtime, every component, the plain modules 
   assert.deepEqual([...app.code.matchAll(/(?:\bfrom|\bimport)\s*["']([^"']+)["']/g)].map((match) => match[1]), []);
   assert.ok(app.names.includes('$component') && app.names.includes('provide'), 'and it still exports what a served module or a page script may ask the runtime for');
   assert.equal((await buildApp({ components })).scripts, false);
-  // @zubra/sync is left for the server to send, so a script and a component share one copy.
+  // Where @zubra/sync isn't installed for the app, its name is left as it is.
   const syncing = join(scriptsDir, 'syncing.js');
   writeFileSync(syncing, "import { follow } from '@zubra/sync/follow';\nfollow();\n");
   assert.deepEqual([...(await buildApp({ components, scripts: [syncing] })).code.matchAll(/(?:\bfrom|\bimport)\s*["']([^"']+)["']/g)].map((match) => match[1]), ['@zubra/sync/follow']);
@@ -274,6 +275,103 @@ test("in a browser: the whole page runs from the app's one module, its own scrip
     await page.waitForFunction(() => window.ownScript === 'ran 1');
     assert.deepEqual(errors, []);
     assert.deepEqual(asked, [`/_zubra/runtime/${app.file}`], 'one script, and no other');
+  } finally {
+    await page.close();
+  }
+});
+
+// An app with @zubra/sync installed: a component kept in a collection, a script of the app's
+// that follows the log, and a folder of components that don't use the package.
+const synced = mkdtempSync(join(tmpdir(), 'zubra-build-sync-'));
+mkdirSync(join(synced, 'node_modules', '@zubra'), { recursive: true });
+symlinkSync(fileURLToPath(new URL('../../sync', import.meta.url)), join(synced, 'node_modules', '@zubra', 'sync'), 'dir');
+mkdirSync(join(synced, 'components'));
+mkdirSync(join(synced, 'plain'));
+writeFileSync(join(synced, 'components', 'kept-note.zb'), "<script>\n  'use collection notes by doc'\n  let text = 'first'\n</script>\n<kept-note doc=\"\">\n  <button onclick={() => (text = 'second')}>{text}</button>\n</kept-note>\n");
+writeFileSync(join(synced, 'plain', 'plain-card.zb'), '<plain-card>\n  <p>plain</p>\n</plain-card>\n');
+const inside = join(synced, 'inside.js');
+writeFileSync(inside, "import { currentStore } from '@zubra/sync';\nimport { follow } from '@zubra/sync/follow';\nwindow.inside = currentStore();\nwindow.follow = follow;\n");
+after(() => rmSync(synced, { recursive: true, force: true }));
+const SYNC_NAMES = ['collection', 'configure', 'currentStore', 'ephemeral', 'indexedDBStore', 'memoryStore', 'newPeerId', 'onPresence', 'onWrite', 'peerId', 'peers', 'presence', 'receive', 'receivePresence', 'startingPull'];
+
+test("buildApp puts @zubra/sync in the module when a component or a script uses it, and says what it exports", async () => {
+  const app = await buildApp({ components: join(synced, 'components'), scripts: [inside] });
+  assert.deepEqual(app.sync, SYNC_NAMES);
+  // Nothing of the package left to fetch: the component's import, the script's, and follow.js's own of the store.
+  assert.deepEqual([...app.code.matchAll(/(?:\bfrom|\bimport)\s*["']([^"']+)["']/g)].map((match) => match[1]), []);
+  assert.match(app.code, /\$zubraSync\b/);
+  // By a component alone, and by a script alone.
+  assert.deepEqual((await buildApp({ components: join(synced, 'components') })).sync, SYNC_NAMES);
+  assert.deepEqual((await buildApp({ components: join(synced, 'plain'), scripts: [inside] })).sync, SYNC_NAMES);
+  // connect()'s peer-to-peer module is loaded only when asked for: it stays the server's file.
+  const connecting = join(synced, 'connecting.js');
+  writeFileSync(connecting, "import { connect } from '@zubra/sync/connect';\nwindow.connect = connect;\n");
+  const connected = await buildApp({ components: join(synced, 'plain'), scripts: [connecting] });
+  assert.deepEqual([...connected.code.matchAll(/(?:\bfrom|\bimport)\s*\(?["']([^"']+)["']/g)].map((match) => match[1]).filter((to) => to !== './remark.js'), ['../sync/webrtc.js']);
+  assert.match(connected.code, /import\("\.\.\/sync\/webrtc\.js"\)/);
+  // Installed and not used: not in the module, and nothing said about it.
+  const without = await buildApp({ components: join(synced, 'plain') });
+  assert.equal('sync' in without, false);
+  assert.doesNotMatch(without.code, /\$zubraSync|zubra-sync/);
+  // buildRuntime() holds the runtime alone, as before.
+  assert.equal('sync' in (await buildRuntime({ components: join(synced, 'components') })), false);
+});
+
+test("with @zubra/sync in the app's module, the package's own address answers from that module", async () => {
+  const app = await buildApp({ components: join(synced, 'components'), scripts: [inside] });
+  const zubra = createZubra({ components: join(synced, 'components'), production: true, runtime: app });
+  const page = zubra.page();
+  const html = page.finish(layout(page.render('kept-note', { doc: 'n1' })));
+  assert.deepEqual(preloaded(html), [`/_zubra/runtime/${app.file}`]);
+  assert.deepEqual(scriptTags(html), [`import '/_zubra/runtime/${app.file}';`]);
+  assert.equal(await text(zubra, '/_zubra/sync/index.js'), `import { $zubraSync } from '../runtime/${app.file}';\nexport const { ${SYNC_NAMES.join(', ')} } = $zubraSync;\n`);
+  // The package's other modules are sent as they are, and take the store from that address.
+  assert.match(await text(zubra, '/_zubra/sync/connect.js'), /from"\.\/index\.js"/);
+  // A module without the package in it: the package's own file, as always.
+  const apart = createZubra({ components: join(synced, 'plain'), production: true, runtime: await buildApp({ components: join(synced, 'plain') }) });
+  assert.doesNotMatch(await text(apart, '/_zubra/sync/index.js'), /\$zubraSync/);
+  assert.match(await text(apart, '/_zubra/sync/index.js'), /indexedDB/);
+});
+
+test("in a browser: a collection component runs from the app's one module, and a script outside it shares its store", async () => {
+  const app = await buildApp({ components: join(synced, 'components'), scripts: [inside] });
+  const zubra = createZubra({ components: join(synced, 'components'), production: true, runtime: app });
+  const made = zubra.page();
+  const body = made.render('kept-note', { doc: 'n1' });
+  // Two pages of one site (one origin, so one IndexedDB): the app's module alone, and with a script beside it.
+  const alone = made.finish(layout(body));
+  const beside = made.finish(layout(body, "<script type=\"module\">import { currentStore } from '@zubra/sync'; import { follow } from '@zubra/sync/follow'; import '@zubra/sync/connect'; window.outside = currentStore(); window.followOutside = follow;</script>"));
+  const server = createServer((request, response) => {
+    if (zubra.handle(request, response)) return;
+    response.writeHead(200, { 'content-type': 'text/html' }).end(request.url === '/beside' ? beside : alone);
+  });
+  await new Promise((done) => server.listen(0, '127.0.0.1', done));
+  servers.push(server);
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const outside = `${url}/beside`;
+  const page = await browser.newPage();
+  const errors = [];
+  const asked = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => message.type() === 'error' && errors.push(message.text()));
+  page.on('request', (request) => request.resourceType() === 'script' && asked.push(new URL(request.url()).pathname));
+  try {
+    await page.goto(url);
+    await page.waitForFunction(() => customElements.get('kept-note') && window.inside);
+    await page.click('kept-note button');
+    assert.equal(await page.textContent('kept-note button'), 'second');
+    // Stored: the store the script in the module sees is the one the component wrote to.
+    await page.waitForFunction(async () => (await window.inside.get('notes', 'n1'))?.text === 'second');
+    assert.deepEqual(asked, [`/_zubra/runtime/${app.file}`], 'one script, and no other');
+    // A script outside the module, by the package's name and by its other modules: the same store.
+    asked.length = 0;
+    await page.goto(outside);
+    await page.waitForFunction(() => window.inside && window.outside);
+    assert.equal(await page.evaluate(() => window.inside === window.outside), true);
+    assert.equal(await page.evaluate(() => window.follow === window.followOutside), false, "follow.js was asked for on its own, and found the module's store");
+    assert.deepEqual(asked.sort(), [`/_zubra/runtime/${app.file}`, '/_zubra/sync/connect.js', '/_zubra/sync/follow.js', '/_zubra/sync/index.js'].sort());
+    await page.waitForFunction(() => document.querySelector('kept-note button').textContent === 'second');
+    assert.deepEqual(errors, []);
   } finally {
     await page.close();
   }

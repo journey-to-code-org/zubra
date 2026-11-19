@@ -12,7 +12,8 @@
 //
 // `buildApp()` goes one step on: the same module also holds the app's components, and the page
 // scripts you name. A page then loads one file, where it loaded the runtime, each component and
-// each script of its own.
+// each script of its own. @zubra/sync is in it too, where a component or a script of the app's
+// uses it; its own address then answers from that module, so there is one copy of its store.
 //
 //   const app = await buildApp({ components: './components', scripts: ['./public/live.js'] });
 //   const zubra = createZubra({ components: './components', runtime: app });
@@ -28,6 +29,8 @@ import { fileURLToPath } from 'node:url';
 import { createZubra } from './index.js';
 
 const require = createRequire(import.meta.url);
+/** The name the app's module exports @zubra/sync's store module under (core.js reads it). */
+const SYNC_EXPORT = '$zubraSync';
 
 /** What `code` imports by name from the runtime: [file or entry, name] for each. */
 function runtimeImports(code) {
@@ -56,7 +59,9 @@ export async function buildRuntime(options = {}) {
  * own, run for their effects: a page's live-update script, `@zubra/actions`' form script). A
  * page of `createZubra({ runtime })` then has that module as its only script. Every page of the
  * app loads the same one, so it is cached once; it defines every component, used on the page
- * or not. Returns `{ file, code, names, components, scripts }`.
+ * or not. `@zubra/sync` is in it when one of them imports it. Returns
+ * `{ file, code, names, components, scripts }`, and `sync` (what `@zubra/sync` exports) when it
+ * is in the module.
  */
 export async function buildApp(options = {}) {
   return build(options, true);
@@ -109,33 +114,44 @@ async function build({ keep = [], esbuild, scripts = [], ...options }, whole) {
   const components = whole ? [...zubra.names].sort() : [];
   const own = whole ? scripts.map((path) => resolve(path)) : [];
   for (const path of own) if (!existsSync(path)) throw new Error(`@zubra/server/build: no script at ${path}`);
-  const entry = [
+  const entry = (more = []) => [
     ...[...wanted].map(([file, set]) => `export { ${[...set].sort().join(', ')} } from './${file}';`),
     ...components.map((name) => `import ${JSON.stringify(`zubra-app:components/${name}.js`)};`),
     ...own.map((path) => `import ${JSON.stringify(path)};`),
+    ...more,
   ].join('\n');
-  // The runtime by any of its names is the production build's file; a component's module, and a
-  // plain module beside it, is what the server would send (read from it, not from disk: the
-  // compiled module, with what it needs written in). Everything else a module imports by name
-  // (`@zubra/sync`, a package) stays an import, for the page's import map.
+  // @zubra/sync's store and 'use collection', as the server would send it (null where it isn't
+  // installed), and whether anything in the module asked for the package.
+  const syncIndex = whole ? await text('sync/index.js') : null;
+  let syncAsked = false;
+  // The runtime by any of its names is the production build's file; a component's module, a
+  // plain module beside it and @zubra/sync's are what the server would send (read from it, not
+  // from disk: the compiled module, with what it needs written in). Everything else a module
+  // imports by name (a package) stays an import, for the page's import map.
   const runtimeFile = (file) => join(production, file === 'zubra.js' ? 'base.js' : file);
   const plugin = {
     name: 'zubra-app',
     setup(bundle) {
       bundle.onResolve({ filter: /^@zubra\/runtime(?:\/[\w-]+)?$/ }, (args) => ({ path: runtimeFile(`${args.path.slice('@zubra/runtime'.length + 1) || 'core'}.js`) }));
-      // @zubra/sync stays the server's to send, from a script of the app's as from a component:
-      // one copy of its store, whichever asks.
-      bundle.onResolve({ filter: /^@zubra\/sync(?:\/[\w-]+)?$/ }, (args) => ({ path: args.path, external: true }));
+      // @zubra/sync, from a script of the app's as from a component: in the module, once.
+      bundle.onResolve({ filter: /^@zubra\/sync(?:\/[\w-]+)?$/ }, (args) => {
+        if (syncIndex === null) return { path: args.path, external: true };
+        syncAsked = true;
+        return { path: `sync/${args.path.slice('@zubra/sync'.length + 1) || 'index'}.js`, namespace: 'zubra-app' };
+      });
       bundle.onResolve({ filter: /^zubra-app:/ }, (args) => ({ path: args.path.slice('zubra-app:'.length), namespace: 'zubra-app' }));
       bundle.onResolve({ filter: /^\.\.?\//, namespace: 'zubra-app' }, (args) => {
         const path = new URL(args.path, `http://app/${args.importer}`).pathname.slice(1);
         if (path.startsWith('runtime/')) return { path: runtimeFile(path.slice('runtime/'.length)) };
-        return path.startsWith('components/') ? { path, namespace: 'zubra-app' } : { path: args.path, external: true };
+        // What @zubra/sync loads only when asked (connect()'s peer-to-peer module) stays a file
+        // of the server's, by its address from this module's.
+        if (path.startsWith('sync/') && args.kind === 'dynamic-import') return { path: `../${path}`, external: true };
+        return path.startsWith('components/') || path.startsWith('sync/') ? { path, namespace: 'zubra-app' } : { path: args.path, external: true };
       });
       bundle.onResolve({ filter: /^[^./]/, namespace: 'zubra-app' }, (args) => ({ path: args.path, external: true }));
       bundle.onLoad({ filter: /.*/, namespace: 'zubra-app' }, async (args) => {
-        const name = args.path.slice('components/'.length, -'.js'.length);
-        const code = zubra.names.includes(name) ? zubra.module(name) : await text(args.path);
+        const name = args.path.startsWith('components/') ? args.path.slice('components/'.length, -'.js'.length) : null;
+        const code = name !== null && zubra.names.includes(name) ? zubra.module(name) : await text(args.path);
         if (code === null) return { errors: [{ text: `no module at ${args.path}` }] };
         return { contents: String(code), loader: 'js', resolveDir: production };
       });
@@ -149,17 +165,29 @@ async function build({ keep = [], esbuild, scripts = [], ...options }, whole) {
     },
   };
   if (signals && !existsSync(join(production, 'signal-tc39.js'))) throw new Error('@zubra/server/build: signals: true needs @zubra/runtime 6.0 or later, which has signals mode (signal-tc39.js)');
+  // remark.js stays the runtime's own file, beside this one: it imports nothing, and is only
+  // loaded when server markup needs repair.
+  const bundled = (contents) => bundler.build({ stdin: { contents, resolveDir: production, sourcefile: 'app-runtime.js' }, bundle: true, minify: true, format: 'esm', target: 'es2022', write: false, external: ['./remark.js'], logLevel: 'silent', plugins: [...(whole ? [plugin] : []), ...(signals ? [engine] : [])] });
   let result;
+  let sync = null;
   try {
-    // remark.js stays the runtime's own file, beside this one: it imports nothing, and is only
-    // loaded when server markup needs repair.
-    result = await bundler.build({ stdin: { contents: entry, resolveDir: production, sourcefile: 'app-runtime.js' }, bundle: true, minify: true, format: 'esm', target: 'es2022', write: false, external: ['./remark.js'], logLevel: 'silent', plugins: [...(whole ? [plugin] : []), ...(signals ? [engine] : [])] });
+    result = await bundled(entry());
+    if (syncAsked) {
+      // With @zubra/sync in it the module also exports the package's store module, whole, under
+      // one name: what the server answers with at the package's own address (a script outside
+      // the module that imports @zubra/sync, or its connect.js served on its own), so whoever
+      // asks gets this copy. Built again, since only the first build says whether it is there.
+      const described = await bundler.build({ stdin: { contents: syncIndex, loader: 'js' }, bundle: false, write: false, format: 'esm', metafile: true, logLevel: 'silent' });
+      sync = Object.values(described.metafile.outputs)[0].exports;
+      result = await bundled(entry([`export * as ${SYNC_EXPORT} from 'zubra-app:sync/index.js';`]));
+    }
   } catch (error) {
     throw new Error(whole && !/No matching export/.test(error.errors?.[0]?.text ?? '') ? `@zubra/server/build: ${error.errors?.[0]?.text ?? error.message}` : `@zubra/server/build: the runtime doesn't have a name a module imports: ${error.errors?.[0]?.text ?? error.message}`);
   }
   const code = result.outputFiles[0].text;
   const file = `app-${createHash('sha256').update(code).digest('hex').slice(0, 10)}.js`;
   const built = whole ? { file, code, names, components, scripts: own.length > 0 } : { file, code, names };
+  if (sync) built.sync = sync;
   // (So that a server with a different `signals` refuses it.)
   if (signals) built.signals = true;
   return built;
