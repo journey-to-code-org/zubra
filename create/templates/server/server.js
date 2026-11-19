@@ -43,11 +43,12 @@ export const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(html);
   } catch (error) {
     console.error(error);
-    if (!res.headersSent) res.writeHead(500, { 'content-type': `text/${production ? 'plain' : 'html'}; charset=utf-8` });
-    // In development the page says what the terminal says: a component's error comes with its
-    // file, line and often a fix. It is a page like any other, so it reloads when the fix is saved.
-    const said = String(error?.message ?? error).replace(/[&<]/g, (char) => (char === '&' ? '&amp;' : '&lt;'));
-    res.end(production ? 'Something went wrong' : `<!doctype html><title>Error</title><pre>${said}</pre>${zubra.page().scripts()}`);
+    // In development the page says what the terminal says (a component's error comes with its
+    // file, line and often a fix) and goes away when the fix is saved; in production it says
+    // only that something went wrong.
+    const failed = zubra.errorPage(error);
+    if (!res.headersSent) res.writeHead(failed.status, { 'content-type': failed.type });
+    res.end(failed.body);
   }
 });
 
