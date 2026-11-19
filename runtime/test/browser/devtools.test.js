@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { useBrowser, open, here, repo, production, compiler, emitElement } from './harness.js';
+import { useBrowser, open, here, repo, production, compiler, emitElement, engine } from './harness.js';
 
 const skip = (production && 'the production build has no DevTools hook')
   || (emitElement && '--emit element output has no runtime to hook');
@@ -49,7 +49,7 @@ test('a node maps to its component, file and line, with its props and state by n
   assert.equal(named(result.state, 'items'), '[{text: "a", done: false}]');
   assert.deepEqual(onNode(result), [{
     operation: 'textContent = …', target: '<p.double>', at: { line: 11, column: 21 },
-    dependsOn: ['doubled'], ranLast: false, here: true,
+    dependsOn: ['doubled'], ranLast: false, because: [], here: true,
   }]);
   assert.deepEqual(messages, []);
   await page.close();
@@ -171,6 +171,12 @@ test('the extension\'s pane, on a live page: the selection, Open in editor, and 
   await page.click('dt-panel button.inc');
   await page.waitForFunction(() => document.querySelector('#pane')?.textContent.includes('wrote count'), null, { timeout: 5000 });
   assert.match(await pane(), /On this node textContent = …\s*ran <p\.double>/);
+  // Why it re-ran, the component's signals, the live counts and the page's updates.
+  assert.match(await pane(), /re-ran because doubled ← count changed/);
+  assert.match(await pane(), /Signals \(4\) ?label ?prop/);
+  assert.match(await pane(), /doubled ?computed ?(changed 1× )?2 reads count read by textContent = … on <p\.double>/);
+  assert.match(await pane(), /Live ?\d+ effects in this component · 2 components on the page · \d+ effects alive of those made since the pane connected/);
+  assert.match(await pane(), /Updates \(1\) ?1 ?[\d.]+ ms wrote <dt-panel> count 0 → 1/);
   assert.deepEqual(messages, []);
   await page.close();
 });
@@ -195,5 +201,103 @@ test('a page can open a location itself: open() asks it first', { skip }, async 
 test('the production build installs no hook', { skip: !production && 'runs with ZUBRA_RUNTIME=production' }, async () => {
   const { page } = await open('<dt-plain></dt-plain>', { modules: ['dt-plain'] });
   assert.equal(await page.evaluate(() => typeof globalThis.__ZUBRA_DEVTOOLS__), 'undefined');
+  await page.close();
+});
+
+test('a binding that re-ran says why: what it reads that the update wrote, through computeds', { skip }, async () => {
+  const { page, inspect } = await connected();
+  await page.click('button.inc');
+  const after = await inspect('dt-panel button.inc');
+  const text = onNode(after).find((binding) => binding.operation === 'textContent = …');
+  assert.deepEqual(text.because, ['count'], 'the button reads count itself');
+  const p = onNode(await inspect('dt-panel p'))[0];
+  assert.deepEqual(p.because, ['doubled ← count'], 'the <p> reads doubled, which reads count');
+  const row = after.bindings.find((binding) => binding.operation.startsWith('classList'));
+  assert.deepEqual([row.ranLast, row.because], [false, []], "a binding that didn't re-run has no cause");
+  await page.click('button.add');
+  const added = (await inspect('dt-panel ul')).bindings.find((binding) => binding.operation.startsWith('zb-each'));
+  assert.ok(added.because.length && added.because.every((name) => name.startsWith('items')), added.because.join());
+  await page.close();
+});
+
+test("the component's signals: values, changes, what reads them and what they read", { skip }, async () => {
+  const { page, inspect, } = await connected();
+  await page.click('button.inc');
+  await page.click('button.inc');
+  const { signals } = await inspect('dt-panel p');
+  const of = (name) => signals.find((signal) => signal.name === name);
+  assert.deepEqual(signals.map(({ name, kind }) => `${kind} ${name}`), ['prop label', 'state count', 'state items', 'computed doubled']);
+  assert.equal(of('count').value, '2');
+  if (process.env.ZUBRA_ENGINE === 'signals') assert.equal(of('count').changes, null, 'the proposal keeps no count');
+  else {
+    assert.equal(of('count').changes, 2);
+    assert.equal(of('doubled').changes, 2, 'two new values after its first (0 → 2 → 4)');
+    assert.equal(of('items').changes, 0);
+  }
+  assert.deepEqual(of('doubled').reads, ['count']);
+  assert.ok(of('doubled').readBy.includes('textContent = … on <p.double>'), of('doubled').readBy.join(' | '));
+  assert.ok(of('count').readBy.includes('textContent = … on <button.inc>'), of('count').readBy.join(' | '));
+  assert.ok(of('count').readBy.includes('doubled'), 'a computed reading it, by name');
+  assert.equal(of('count').readers, of('count').readBy.length);
+  await page.close();
+});
+
+test('the timeline: each update, what it wrote (from and to), what it re-ran, how long it took', { skip }, async () => {
+  const { page, inspect } = await connected();
+  await page.click('button.inc');
+  await page.click('button.add');
+  const { timeline } = await inspect('dt-panel p');
+  const [inc, add] = timeline.slice(-2);
+  assert.equal(add.number, inc.number + 1);
+  // The click wrote count, and the panel passed it on to its badge in the same update.
+  assert.deepEqual(inc.written, [{ name: '<dt-panel> count', from: '0', to: '1' }, { name: '<dt-badge> value', from: '0', to: '1' }]);
+  assert.ok(inc.reran.includes('<dt-panel> textContent = … on <p.double>'), inc.reran.join(' | '));
+  assert.equal(inc.ran, inc.reran.length);
+  assert.ok(typeof inc.took === 'number' && inc.took >= 0);
+  // A write inside the array: named by its path, with the value there now (not the engine's
+  // counter behind it).
+  assert.ok(add.written.length && add.written.every((write) => write.name?.startsWith('<dt-panel> items') && write.from === null), JSON.stringify(add.written));
+  const length = add.written.find((write) => write.name === '<dt-panel> items.length');
+  if (length) assert.equal(length.to, '2');
+  assert.ok(add.written.some((write) => write.to.includes('text: "b"')), JSON.stringify(add.written));
+  await page.close();
+});
+
+test('live counts: effects in the component and on the page, and how they moved', { skip }, async () => {
+  const { page, inspect } = await connected();
+  const before = (await inspect('dt-panel p')).live;
+  // The page's count is of what was made since the pane connected: the panel came before it.
+  assert.ok(before.component > 5 && before.page < before.component, JSON.stringify(before));
+  assert.equal(before.components, 2, 'the panel and its badge');
+  await page.click('button.add'); // a row more: its bindings are effects
+  const after = (await inspect('dt-panel p')).live;
+  assert.ok(after.component > before.component && after.page > before.page, JSON.stringify({ before, after }));
+  assert.deepEqual(after.history.at(-1), { update: (await inspect('dt-panel p')).update, effects: after.page });
+  // Another panel adds its effects; once it's removed and collected, they leave the count. (A
+  // removed element's effects are paused, not disposed: it may come back.)
+  const page1 = () => page.evaluate(() => globalThis.__ZUBRA_DEVTOOLS__.inspect(document.querySelector('dt-panel p')).live.page);
+  const alone = await page1();
+  await page.evaluate(async () => {
+    const extra = document.createElement('dt-panel');
+    extra.id = 'extra';
+    document.body.append(extra);
+    await extra.updateComplete;
+  });
+  const withExtra = await page1();
+  assert.ok(withExtra > alone, `${alone} → ${withExtra}`);
+  const components = () => page.evaluate(() => globalThis.__ZUBRA_DEVTOOLS__.inspect(document.querySelector('dt-panel p')).live.components);
+  assert.equal(await components(), 4, 'two panels, each with its badge');
+  await page.evaluate(() => document.getElementById('extra').remove());
+  assert.equal(await components(), 2, 'a removed one is no longer on the page, collected or not');
+  // Forcing a collection needs Chromium's DevTools protocol.
+  if (engine !== 'chromium') return page.close();
+  const client = await page.context().newCDPSession(page);
+  let now = withExtra;
+  for (let tries = 0; tries < 50 && now !== alone; tries++) {
+    await client.send('HeapProfiler.collectGarbage');
+    await page.waitForTimeout(50);
+    now = await page1();
+  }
+  assert.equal(now, alone, `${alone} → ${withExtra} → ${now}`);
   await page.close();
 });
