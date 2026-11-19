@@ -1,0 +1,8 @@
+<!-- `left` is how many are left; -1 means there's no limit, like coffee. -->
+<h3 ?data-out="{{left == 0}}">{{name}}</h3>
+<p class="meta">{{price}} · {{unit}}<if condition="left > 0"> · <span class="left">{{left}} left</span></if><if condition="left == 0"> · <span class="left">Sold out</span></if></p>
+<form method="post" action="{{add}}">
+  <input type="hidden" name="item" value="{{item}}">
+  <input type="number" name="qty" value="1" min="1" max="24" aria-label="How many {{name}}" ?disabled="{{left == 0}}">
+  <button type="submit" ?disabled="{{left == 0}}">Add</button>
+</form>

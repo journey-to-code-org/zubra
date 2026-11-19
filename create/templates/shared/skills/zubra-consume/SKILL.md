@@ -94,4 +94,4 @@ Nuxt, React Router and SolidStart: an element given framework children must be `
 
 ## Reference
 
-https://github.com/journey-to-code-org/zubra#using-components-in-an-app, `plugin/README.md` in the Zubra repository, and a complete tested app per framework in its `examples/frameworks/` and `examples/meta/`.
+https://github.com/journey-to-code-org/zubra/blob/main/docs/reference.md#using-components-in-an-app, `plugin/README.md` in the Zubra repository, and a complete tested app per framework in its `examples/frameworks/` and `examples/meta/`.

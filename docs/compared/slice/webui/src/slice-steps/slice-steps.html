@@ -1,0 +1,5 @@
+<!-- Where an order is. Templates can't compare positions, so each status is written out. -->
+<if condition="status == 'placed'"><ol class="steps" aria-label="Where your order is"><li class="done">Placed</li><li>Being made</li><li>Ready at the window</li><li>Picked up</li></ol></if>
+<if condition="status == 'making'"><ol class="steps" aria-label="Where your order is"><li class="done">Placed</li><li class="done">Being made</li><li>Ready at the window</li><li>Picked up</li></ol></if>
+<if condition="status == 'ready'"><ol class="steps" aria-label="Where your order is"><li class="done">Placed</li><li class="done">Being made</li><li class="done">Ready at the window</li><li>Picked up</li></ol></if>
+<if condition="status == 'picked-up'"><ol class="steps" aria-label="Where your order is"><li class="done">Placed</li><li class="done">Being made</li><li class="done">Ready at the window</li><li class="done">Picked up</li></ol></if>
