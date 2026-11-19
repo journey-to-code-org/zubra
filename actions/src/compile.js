@@ -16,13 +16,22 @@ async function load() {
   return compiler;
 }
 
-/** `[{ path, output }]` for every component under `root` that has server functions, in path order. */
-export async function serverHalves(root) {
+/**
+ * `[{ path, output }]` for every component under `root` that has server functions, in path order.
+ * A component that doesn't compile is an error, unless `broken(path, message)` is given to hear of
+ * it: then it is left out and the rest go on (a development server, where a file is often
+ * half-written).
+ */
+export async function serverHalves(root, { broken } = {}) {
   const { request, sources: read } = await load();
   const halves = [];
   for (const path of sources(resolve(root))) {
     const response = request({ emit: 'server', path, files: read(path) });
-    if (!response.ok) throw new Error(response.error);
+    if (!response.ok) {
+      if (!broken) throw new Error(response.error);
+      broken(path, response.error);
+      continue;
+    }
     // Only components with actions: a route's `load` is in its server half too, but it isn't one.
     if (!/^export const actions = \{\};$/m.test(response.output)) halves.push({ path, output: response.output });
   }

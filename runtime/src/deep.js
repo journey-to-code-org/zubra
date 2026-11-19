@@ -61,9 +61,38 @@ function trigger(target, key) {
   // @dev-end
 }
 
+// An array's own mutating methods (`push`, `pop`, `shift`, `unshift`, `splice`) run on the array
+// itself and say what changed once: the indexes from the first one they touch, `length` if it
+// moved, and the array's items. Through the proxy they went one trap per index they moved, so
+// removing one row of a thousand was a thousand `set`s, each with its bookkeeping, and the
+// method's own reads of `length` and every index were tracked by whatever effect called it.
+// (`sort`, `reverse` and the rest still go through the traps.)
+// Each one: the first index it can change on an array of `length` items.
+const MUTATORS = {
+  push: (args, length) => length,
+  pop: (args, length) => length - 1,
+  shift: () => 0,
+  unshift: () => 0,
+  splice: ([start], length) => ((start = Math.trunc(start) || 0) < 0 ? Math.max(0, length + start) : start),
+};
+const mutator = (target, name) => (...args) => {
+  const length = target.length;
+  const from = MUTATORS[name](args, length);
+  const result = Array.prototype[name].apply(target, args.map(raw));
+  // (A tracked key that is an index from `from` on; `'length'` and other names compare as NaN.)
+  for (const key of signals.get(target)?.keys() ?? []) if (typeof key === 'string' && key >= from) trigger(target, key);
+  if (target.length !== length) {
+    trigger(target, 'length');
+    trigger(target, ITERATE);
+  }
+  trigger(target, ITEMS);
+  return wrap(result);
+};
+
 const handler = {
   get(target, key, receiver) {
     if (key === RAW) return target;
+    if (Object.hasOwn(MUTATORS, key) && Array.isArray(target)) return mutator(target, key);
     if (typeof key !== 'symbol') track(target, key);
     return wrap(Reflect.get(target, key, receiver));
   },

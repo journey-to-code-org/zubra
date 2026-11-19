@@ -88,10 +88,35 @@ zubra({
   ssr: true,                   // server builds register a renderer (needs @zubra/compiler at run time)
   hydrate: true,               // false: the app's pages are never rendered on a server, so components
                                // leave out taking over server markup (about 1 KB smaller with the runtime)
+  autoImport: ['./src/components', '@acme/ui/components'],
+                               // folders of components, an app's or a package's: a Svelte, Vue or JSX file
+                               // that uses one of their tags gets the import written for it (see below)
   root: process.cwd(),         // where your own components are (default: Vite's root, or the current folder):
                                // a package's component with one of their tags gets yours (docs/guide/04-composition.md)
 })
 ```
+
+## Tags without imports: `autoImport`
+
+A custom element has to be defined before a page can use its tag, which usually means a side-effect import in every file that uses one, or one file that lists them all. With `autoImport`, the plugin writes that import:
+
+```js
+zubra({ autoImport: ['./src/components', '@acme/ui/components'] })
+```
+
+```svelte
+<!-- Editor.svelte: no import -->
+<tool-bar></tool-bar>
+<color-well value={colour}></color-well>
+```
+
+- **What is named**: folders of `.zb` files, read to any depth. A path starting with `.` is from the app's root (`root`, or Vite's); anything else is a folder of an installed package, as `@zubra/server`'s `packages` names one (through the package's `exports` when it has `./components/*`). One folder can be given as a string.
+- **Which files**: `.svelte`, `.vue`, `.jsx` and `.tsx` files of the app (not of packages in `node_modules`). A file that uses `<tool-bar>` gets `import './components/tool-bar.zb?element'`: the element, whatever an import would otherwise give that kind of file. In a Vue file that needs `isCustomElement` set for the tags, as any custom element does.
+- **Which component**: the one whose host tag it is, read from the component and not from its file's name. If two components have the same tag, the first found (folders in the order given, files by name) is used and the build warns once.
+- **Only what a page uses**: an import is added per file for the tags that file opens, so a component nobody uses stays out of the build. Tags are found as text, so one inside a string or a comment is imported too.
+- **Where it goes**: on a line that is already there (the start of a Svelte or Vue `<script>`, or of a JSX file after a `'use client'`), so line numbers in errors and source maps don't move. A file that already imports the component is left alone.
+
+Not covered: Astro pages (an Astro component is imported by name, not used by tag), Angular (its build doesn't run this plugin; see `zubra build --lib`), `.html` files and tags created from script (`document.createElement('tool-bar')`). Off by default.
 
 ## Types
 
