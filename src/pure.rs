@@ -1930,12 +1930,45 @@ pub fn format_number(value: f64) -> String {
 /// `Number.prototype.toFixed(digits)`: the exact decimal value rounded half away from zero
 /// (the spec picks the larger n on a tie, on the magnitude).
 fn to_fixed(value: f64, digits: usize) -> String {
+    // As JavaScript: `NaN`, `Infinity`, and from 1e21 the number as `String(n)` writes it.
+    if value.is_nan() {
+        return "NaN".to_owned();
+    }
+    if value.is_infinite() {
+        return if value > 0.0 { "Infinity" } else { "-Infinity" }.to_owned();
+    }
     if value.abs() >= 1e21 {
         return format_number(value);
     }
+    // The value rounded correctly to EXTRA more digits than asked decides the rounding as the
+    // exact expansion does (a carry into the kept digits rounds them the same way), except when
+    // those digits read exactly 5000…0: a value just under a half may have rounded up to that,
+    // and the exact expansion decides. The expansion is up to 1100 digits long and costly to
+    // write; a price formatted for every row of a table shouldn't need it.
+    const EXTRA: usize = 20;
+    let rounded = format!("{:.*}", digits + EXTRA, value.abs());
+    let (kept, rest) = rounded.split_at(rounded.len() - EXTRA);
+    let half = rest.as_bytes()[0] == b'5' && rest.bytes().skip(1).all(|digit| digit == b'0');
+    if half {
+        return to_fixed_exact(value, digits);
+    }
+    let expansion = format!(
+        "{kept}{}",
+        if rest.as_bytes()[0] >= b'5' { '5' } else { '0' }
+    );
+    round_expansion(value, digits, &expansion)
+}
+
+/// `to_fixed` from the value's exact decimal expansion.
+fn to_fixed_exact(value: f64, digits: usize) -> String {
     // Every double's exact decimal expansion fits in 1100 fractional digits.
-    let exact = format!("{:.1100}", value.abs());
-    let (whole, fraction) = exact.split_once('.').unwrap_or((&exact, ""));
+    round_expansion(value, digits, &format!("{:.1100}", value.abs()))
+}
+
+/// Round a decimal expansion of `value`'s magnitude to `digits` fractional digits, half up (the
+/// first digit after them decides), with `value`'s sign.
+fn round_expansion(value: f64, digits: usize, exact: &str) -> String {
+    let (whole, fraction) = exact.split_once('.').unwrap_or((exact, ""));
     let mut digits_vec: Vec<u8> = whole
         .bytes()
         .chain(fraction.bytes().take(digits))
@@ -2387,6 +2420,60 @@ mod tests {
         );
         assert_eq!(run("'ab'.repeat(3)"), Some(Value::String("ababab".into())));
         assert_eq!(run("(() => { let s = 'x'; for (let i = 0; i < 10; i++) s = s + s; return s.length; })()"), Some(Value::from(1024)));
+    }
+
+    #[test]
+    fn to_fixed_decides_as_the_exact_expansion_does() {
+        // Values of every magnitude, and the ones that sit on or next to a tie at some digit
+        // (multiples of a power of two, and those a step either side), each at every precision
+        // the method takes up to 30, against the 1100-digit expansion.
+        let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut values = vec![
+            0.0, -0.0, 0.5, 1.5, 2.5, -2.5, 1.005, 1.045, 0.125, 0.375, 1e20, 999.995, 0.000001,
+        ];
+        for _ in 0..20_000 {
+            let bits = next();
+            let random = f64::from_bits(bits);
+            if random.is_finite() && random.abs() < 1e21 {
+                values.push(random);
+            }
+            let scale = 10f64.powi((next() % 24) as i32 - 12);
+            let plain = (next() % 1_000_000) as f64 / 1000.0 * scale;
+            values.push(plain);
+            let tie = (next() % 4096) as f64 / 2f64.powi((next() % 12) as i32 + 1);
+            for step in [-1i64, 0, 1] {
+                values.push(f64::from_bits((tie.to_bits() as i64 + step) as u64));
+            }
+        }
+        let mut checked = 0;
+        for value in values.into_iter().filter(|value| value.is_finite()) {
+            for digits in [0, 1, 2, 3, 4, 6, 10, 20, 30] {
+                assert_eq!(
+                    to_fixed(value, digits),
+                    to_fixed_exact(value, digits),
+                    "{value:e}.toFixed({digits})"
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 800_000, "{checked}");
+        // The cases JavaScript is known for.
+        assert_eq!(to_fixed(1.005, 2), "1.00");
+        assert_eq!(to_fixed(1.045, 2), "1.04");
+        assert_eq!(to_fixed(0.125, 2), "0.13");
+        assert_eq!(to_fixed(2.5, 0), "3");
+        assert_eq!(to_fixed(-2.5, 0), "-3");
+        assert_eq!(to_fixed(-0.0001, 2), "-0.00");
+        // Not finite, as JavaScript writes them (NaN at any precision used to panic).
+        assert_eq!(to_fixed(f64::NAN, 2), "NaN");
+        assert_eq!(to_fixed(f64::INFINITY, 2), "Infinity");
+        assert_eq!(to_fixed(f64::NEG_INFINITY, 0), "-Infinity");
     }
 
     #[test]
