@@ -33,6 +33,8 @@ export interface BuiltApp extends BuiltRuntime {
   components: string[];
   /** Whether it has page scripts of the app's own (then every page loads it, components or not). */
   scripts: boolean;
+  /** With `@zubra/sync` in the module (a component or a script uses it): what the package's store module exports. Its own address then answers from this module, so there is one copy of the store. */
+  sync?: string[];
 }
 
 export interface BuildAppOptions extends BuildRuntimeOptions {
