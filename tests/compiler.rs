@@ -961,6 +961,30 @@ fn keyed_lists_check_keys_at_build_time() {
     assert!(compile(source, "{}").unwrap().contains("<li>a</li>"));
     let duplicate = error(source, r#"{"todos":[{"id":1,"t":"a"},{"id":1,"t":"b"}]}"#);
     assert_eq!(duplicate.message, "duplicate zb-each key 1 (row 2)");
+    // Strings are named as JSON; a number and a string that read alike are different keys, as
+    // are an integer and a float (their JSON differs), but the same float twice isn't.
+    let text = error(
+        source,
+        r#"{"todos":[{"id":"a","t":"a"},{"id":"b","t":"b"},{"id":"a","t":"c"}]}"#,
+    );
+    assert_eq!(text.message, r#"duplicate zb-each key "a" (row 3)"#);
+    assert!(compile(
+        source,
+        r#"{"todos":[{"id":1,"t":"a"},{"id":"1","t":"b"},{"id":1.0,"t":"c"},{"id":-1,"t":"d"}]}"#
+    )
+    .is_ok());
+    let float = error(
+        source,
+        r#"{"todos":[{"id":1.5,"t":"a"},{"id":1.5,"t":"b"}]}"#,
+    );
+    assert_eq!(float.message, "duplicate zb-each key 1.5 (row 2)");
+    let negative = error(source, r#"{"todos":[{"id":-3,"t":"a"},{"id":-3,"t":"b"}]}"#);
+    assert_eq!(negative.message, "duplicate zb-each key -3 (row 2)");
+    // A key computed from the row (not read where it is) is checked the same way.
+    let computed = r#"<zb-x todos={[]}><ul><zb-each items={todos} as="todo" key={todo.id + "-" + todo.t}><li>{todo.t}</li></zb-each></ul></zb-x>"#;
+    assert!(compile(computed, r#"{"todos":[{"id":1,"t":"a"},{"id":1,"t":"b"}]}"#).is_ok());
+    let both = error(computed, r#"{"todos":[{"id":1,"t":"a"},{"id":1,"t":"a"}]}"#);
+    assert_eq!(both.message, r#"duplicate zb-each key "1-a" (row 2)"#);
     assert_error(
         source,
         r#"{"todos":[{"id":null,"t":"a"}]}"#,
