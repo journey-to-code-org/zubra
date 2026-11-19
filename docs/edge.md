@@ -16,6 +16,8 @@ const middleware = zubra({ wasm, components: { 'price-tag': priceTag } });
 
 `@zubra/runtime` is not served by the Worker: put it in your static assets under `<prefix>/runtime/` (`dist/split` with `bundle: true`, `dist/production` without), or point the import map at a CDN with `imports`. A page then loads the runtime's base and only the files its components name. Two things load the whole script API instead (the base and five small files): a `<script type="module">` of your own that imports `@zubra/runtime`, and `@zubra/sync`'s modules where they come from your static assets, since the Worker can't rewrite files it doesn't serve.
 
+Signals mode (experimental, the TC39 Signals API as the runtime's engine): serve `dist/production` with its `signal-tc39.js` in place of `signal.js`, and pass `createZubra({ signals: true })`, which refuses `bundle: true` (its files hold Zubra's own engine).
+
 ## Proven
 
 [`examples/edge/hono-bikes-worker`](../examples/edge/hono-bikes-worker) is the bike shop of `examples/hypermedia/hono-bikes`, and its CI test runs it in workerd and compares status, redirects and HTML to the Node.js app's, byte for byte. Its bundle was 3465 KiB (962 KiB gzipped) when measured with Wrangler 4.45.0. Workers check only the uncompressed size, against 64 MiB on every plan.

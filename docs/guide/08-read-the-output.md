@@ -150,7 +150,7 @@ The prop appears in `props` with its attribute name and default, and in the hand
 
 ```js
 for (const [name, spec] of Object.entries(props)) {
-  this.#signals[name] = new Signal.State(clone(spec.default));
+  this.#signals[name] = new State(clone(spec.default));
   // A framework may have set the property before the element was defined; that landed
   // as an own property shadowing the accessor. Take it over.
   if (Object.hasOwn(this, name)) {
@@ -316,7 +316,7 @@ zubra compile click-counter.zb --emit js | diff before.js -
 ## Where to go next
 
 - **The runtime's class.** In [`runtime/src/element.js`](../../runtime/src/element.js), read `parseAttribute`, then `defineElement`: the class (`constructor`, `attributeChangedCallback`, `connectedCallback`, `disconnectedCallback`, `#emit`), then `#boot`. The class is about 300 lines. The rest of the file is the machinery that binds parts: text, attributes, events, conditionals, lists and slots.
-- **The proposals the runtime is shaped like.** [Signals](../standards/signals.md), [DOM Parts](../standards/dom-parts.md) and [declarative custom elements](../standards/declarative-custom-elements.md). The aim is for the platform to absorb what Zubra proves, so the runtime shrinks as native features ship.
+- **The proposals the runtime is shaped like.** [Signals](../standards/signals.md) (its model; the API itself is the experimental signals mode), [DOM Parts](../standards/dom-parts.md) and [declarative custom elements](../standards/declarative-custom-elements.md). The aim is for the platform to absorb what Zubra proves, so the runtime shrinks as native features ship.
 - **The platform's own documentation.** [Using custom elements](https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_custom_elements) on MDN, and the [custom elements section](https://html.spec.whatwg.org/multipage/custom-elements.html) of the HTML Standard.
 
 **Next:** [Forms that post to the server](09-server-actions.md).

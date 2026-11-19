@@ -227,8 +227,11 @@ test("the runtime's own declarations type scripts, hooks and adapters", async ()
     const current: string = inject(theme).get();
     formValue(count);
     validity(() => (count.get() < 0 ? 'no' : ''));
-    const watcher = new Signal.subtle.Watcher(() => {});
-    watcher.watch(count);
+    // Zubra's engine has the proposal's untrack, not its Watcher (signals mode has that).
+    const untracked: number = Signal.subtle.untrack(() => count.get());
+    void untracked;
+    const typed: Signal.State<number> = new Signal.State(1);
+    void typed;
     const Element: ZubraElementClass = $define('zb-x', { abi: ABI, props: { value: { attribute: 'value', default: 0 } }, styled: true, styles: ':host { display: block }', setup: () => [] });
     const styled: boolean = Element.zubra.styled;
     void styled;

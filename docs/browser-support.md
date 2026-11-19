@@ -5,7 +5,7 @@ Zubra targets browsers with **Baseline 2026** features: everything Baseline Wide
 The runtime keeps a fallback for each feature that isn't Widely available:
 - `moveBefore()` isn't in Safari (Limited availability);
 - `ElementInternals.states` (for `:state(hydrated)`) became Baseline in 2024, so it isn't Widely available yet: where it's missing, the host just doesn't get the state;
-- no browser ships TC39 Signals.
+- no browser ships TC39 Signals (only signals mode, `signals: true`, uses them).
 
 | Feature | Used for | Without it |
 |---|---|---|
@@ -17,7 +17,7 @@ The runtime keeps a fallback for each feature that isn't Widely available:
 | CSS cascade layers | Putting component styles under utilities and page CSS | Not supported |
 | `Element.moveBefore()` (Chromium, Firefox; not Safari) | Keyed list moves that keep focus and iframe state | Used where present; otherwise rows move with `insertBefore` |
 | Processing instructions and `<template for>` (Chrome, Edge 150+) | Hydration markers; streamed regions placed without JavaScript | Parsed as comments, which the runtime reads the same way; an inline script places streamed regions |
-| TC39 Signals (not shipped anywhere yet) | Reactivity | The runtime's own implementation (`runtime/src/signal-impl.js`) |
+| TC39 Signals (not shipped anywhere yet) | Reactivity in signals mode (experimental, `signals: true`); the default engine is Zubra's own and doesn't use them | Zubra's implementation of the API (`runtime/src/signal-impl.js`) |
 
 The policy: a major version targets the Baseline year of its release, and drops fallbacks for features that are Widely available by then.
 

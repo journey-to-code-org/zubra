@@ -71,8 +71,11 @@ const posix = (path) => path.split(sep).join('/');
  * Everything that doesn't need a disk is in `core.js`, shared with `edge.js` (Workers).
  * `compress: true`: `handle` and `fetch` answer in Brotli or gzip when the request takes one, each
  * file compressed once and kept; off by default, for a host with nothing in front that compresses.
+ * `signals: true` (experimental): the runtime's reactivity on the TC39 Signals API in place of
+ * Zubra's own engine (`@zubra/runtime`'s `signal-tc39.js` is served as its `signal.js`). The runtime
+ * is then served file by file in production too, since its one-file builds hold Zubra's engine.
  */
-export function createZubra({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = process.env.NODE_ENV === 'production', devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, runtime = null, onError, streamTimeout, compress = false } = {}) {
+export function createZubra({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = process.env.NODE_ENV === 'production', devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, runtime = null, onError, streamTimeout, compress = false, signals = false } = {}) {
   const root = resolve(components);
   // The folder as the disk has it, links resolved: what a served module's real path must be inside.
   const realRoot = existsSync(root) ? realpathSync(root) : root;
@@ -90,9 +93,12 @@ export function createZubra({ components = 'components', packages = [], prefix =
   const splitDir = join(sourceDir, '..', 'dist', 'split');
   const split = runtimeLists.split && existsSync(splitDir) ? runtimeLists.split : null;
   const bundledDir = split ? splitDir : join(sourceDir, '..', 'dist', 'bundled');
-  const oneFile = production && !devtools && existsSync(bundledDir);
+  // (Signals mode: file by file, since the one-file builds hold Zubra's engine.)
+  const oneFile = production && !devtools && !signals && existsSync(bundledDir);
   const bundling = Boolean(bundle) && oneFile;
   const runtimeDir = oneFile ? bundledDir : production && !devtools && existsSync(productionDir) ? productionDir : sourceDir;
+  if (signals && !existsSync(join(runtimeDir, 'signal-tc39.js'))) throw new Error('@zubra/server: signals: true needs @zubra/runtime 6.0 or later, which has signals mode (signal-tc39.js)');
+  if (runtime && Boolean(runtime.signals) !== Boolean(signals)) throw new Error(`@zubra/server: the built runtime was built ${runtime.signals ? 'with' : 'without'} signals: true, and this server ${signals ? 'has' : "doesn't have"} it. Build it with the same signals option`);
   const base = prefix.replace(/\/$/, '');
   // (Not through `warn` alone when there is none: this is about the install, said once at start.)
   const skew = versionSkew(versionAt(new URL('./package.json', import.meta.resolve('@zubra/compiler'))), versionAt(join(sourceDir, '..', 'package.json')));
@@ -207,7 +213,9 @@ export function createZubra({ components = 'components', packages = [], prefix =
       return { status: 200, type: TYPES['.js'], body: readFileSync(file) };
     }
     if (rest.startsWith('runtime/')) {
-      const file = resolve(runtimeDir, rest.slice('runtime/'.length));
+      const name = rest.slice('runtime/'.length);
+      // Signals mode: the TC39 engine is the runtime's engine.
+      const file = resolve(runtimeDir, signals && name === 'signal.js' ? 'signal-tc39.js' : name);
       if (!file.startsWith(runtimeDir + sep) || !existsSync(file) || statSync(file).isDirectory()) return { status: 404, type: 'text/plain', body: 'Not found' };
       return { status: 200, type: TYPES[extname(file)] ?? 'application/octet-stream', body: readFileSync(file) };
     }
@@ -334,6 +342,7 @@ export function createZubra({ components = 'components', packages = [], prefix =
       writeFileSync(file, body);
     }
     cpSync(runtimeDir, join(out, 'runtime'), { recursive: true });
+    if (signals) cpSync(join(runtimeDir, 'signal-tc39.js'), join(out, 'runtime', 'signal.js'));
     if (syncDir) cpSync(syncDir, join(out, 'sync'), { recursive: true, filter: (from) => !from.endsWith('.d.ts') });
     if (inline !== false) return;
     // `inline: false`: the pages link each component's stylesheet, and have no import map, so
