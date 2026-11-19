@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { useBrowser, open, here, repo, production, compiler, emitElement } from './harness.js';
+import { useBrowser, open, here, repo, production, compiler, emitElement, engine } from './harness.js';
 
 const skip = (production && 'the production build has no DevTools hook')
   || (emitElement && '--emit element output has no runtime to hook');
@@ -289,6 +289,8 @@ test('live counts: effects in the component and on the page, and how they moved'
   assert.equal(await components(), 4, 'two panels, each with its badge');
   await page.evaluate(() => document.getElementById('extra').remove());
   assert.equal(await components(), 2, 'a removed one is no longer on the page, collected or not');
+  // Forcing a collection needs Chromium's DevTools protocol.
+  if (engine !== 'chromium') return page.close();
   const client = await page.context().newCDPSession(page);
   let now = withExtra;
   for (let tries = 0; tries < 50 && now !== alone; tries++) {
