@@ -238,6 +238,61 @@ impl Expression {
         }
     }
 
+    /// Whether this evaluates to the string `text`, as `eval` would decide it, but read in
+    /// place: a path where it is, and through `||`, `??`, `&&` and `?:` the side they pick, so
+    /// a `zb-switch` case (`(column.type || "text") === "money"`, in every cell) copies nothing.
+    fn is_text(&self, text: &str, names: &Names<'_, '_>) -> Result<bool, String> {
+        match self {
+            Self::String(value) => Ok(value == text),
+            Self::Logical {
+                operator,
+                left,
+                right,
+            } => {
+                let held;
+                let left = match names.lent.and_then(|lend| left.lent(lend)) {
+                    Some(value) => value,
+                    None => {
+                        held = left.eval(names)?;
+                        &held
+                    }
+                };
+                let take_right = match operator {
+                    LogicalOperator::And => is_truthy(left),
+                    LogicalOperator::Or => !is_truthy(left),
+                    LogicalOperator::Nullish => left.is_null(),
+                };
+                if take_right {
+                    right.is_text(text, names)
+                } else {
+                    Ok(matches!(left, Value::String(left) if left == text))
+                }
+            }
+            Self::Conditional {
+                test,
+                consequent,
+                alternate,
+            } => {
+                if is_truthy(&test.eval(names)?) {
+                    consequent.is_text(text, names)
+                } else {
+                    alternate.is_text(text, names)
+                }
+            }
+            other => {
+                let held;
+                let value = match names.lent.and_then(|lend| other.lent(lend)) {
+                    Some(value) => value,
+                    None => {
+                        held = other.eval(names)?;
+                        &held
+                    }
+                };
+                Ok(matches!(value, Value::String(value) if value == text))
+            }
+        }
+    }
+
     fn eval(&self, names: &Names<'_, '_>) -> Result<Value, String> {
         match self {
             Self::Identifier(name) => {
@@ -281,15 +336,7 @@ impl Expression {
                 else {
                     unreachable!("one side is a string literal")
                 };
-                let held;
-                let value = match names.lent.and_then(|lend| other.lent(lend)) {
-                    Some(value) => value,
-                    None => {
-                        held = other.eval(names)?;
-                        &held
-                    }
-                };
-                let equal = matches!(value, Value::String(value) if value == text);
+                let equal = other.is_text(text, names)?;
                 Ok(Value::Bool(equal == (*operator == BinaryOperator::Equal)))
             }
             Self::Binary {
@@ -1133,7 +1180,7 @@ mod tests {
 
     #[test]
     fn comparing_with_a_string_literal() {
-        let scope = serde_json::json!({ "row": { "status": "shipped", "id": 7, "none": null }, "word": "shipped" });
+        let scope = serde_json::json!({ "row": { "status": "shipped", "id": 7, "none": null, "empty": "" }, "word": "shipped" });
         let is = |source: &str| eval(source, scope.clone());
         for (source, expected) in [
             ("row.status == \"shipped\"", true),
@@ -1147,12 +1194,36 @@ mod tests {
             ("row.missing == \"x\"", false),
             ("\"a\" == \"a\"", true),
             ("\"a\" != \"b\"", true),
+            // A `zb-switch` case: the side `||`, `??`, `&&` or `?:` picks, compared.
+            ("(row.kind || \"text\") == \"text\"", true),
+            ("(row.kind || \"text\") == \"money\"", false),
+            ("(row.status || \"text\") == \"shipped\"", true),
+            ("(row.status || \"text\") == \"text\"", false),
+            ("(row.empty || \"text\") == \"text\"", true),
+            ("(row.none ?? \"text\") == \"text\"", true),
+            ("(row.status ?? \"text\") == \"text\"", false),
+            ("(row.empty ?? \"text\") == \"\"", true),
+            ("(row.status && \"yes\") == \"yes\"", true),
+            ("(row.none && \"yes\") == \"yes\"", false),
+            ("(row.id ? row.status : \"no\") == \"shipped\"", true),
+            ("(row.none ? row.status : \"no\") == \"no\"", true),
+            ("\"no\" != (row.none ? row.status : \"no\")", false),
+            ("(row.kind || row.none || word) == \"shipped\"", true),
+            ("(word || row.missing.deeper) == \"shipped\"", true),
         ] {
             assert_eq!(is(source), Ok(Value::Bool(expected)), "{source}");
         }
         assert!(
             is("nothing.status == \"x\"").is_err(),
             "an unknown name is still an error"
+        );
+        assert!(
+            is("(row.none || nothing) == \"x\"").is_err(),
+            "the side picked is evaluated"
+        );
+        assert!(
+            is("(nothing ? \"x\" : \"y\") == \"y\"").is_err(),
+            "the test is evaluated"
         );
     }
 
