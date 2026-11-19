@@ -12,7 +12,15 @@
   <p class="meta">{money(cents)} · {unit}<span zb-if={words}> · <span class="left">{words}</span></span></p>
   <form method="post" action={add} data-zb-updates="site said">
     <input type="hidden" name="item" value={item}>
-    <input type="number" name="qty" value="1" min="1" max="24" aria-label={`How many ${name}`} disabled={out}>
+    <input
+      type="number"
+      name="qty"
+      value="1"
+      min="1"
+      max="24"
+      aria-label={`How many ${name}`}
+      disabled={out}
+    >
     <button type="submit" disabled={out}>Add</button>
   </form>
 </slice-item>
