@@ -18,6 +18,7 @@ import { startBinary } from './backends.js';
 const viaBinary = process.env.ZUBRA_SYNC_BACKEND === 'binary';
 let binary = null;
 let presencePosts = 0;
+let otherPresencePosts = 0; // presence sent to the second server, /_zb/other
 // A peer id the test server says someone else holds (409), and the live streams it can cut.
 let squatted = null;
 const streams = new Set();
@@ -46,11 +47,14 @@ let base;
 const sync = createSyncServer({ authorize: allowAnyone });
 // A server that was never told who may write (security audit K2): pages read, writes are refused.
 const closed = createSyncServer({ mount: '/_zb/closed' });
+// A second server on the same page, for a scope of its own (tasks), to see what each is sent.
+const other = createSyncServer({ mount: '/_zb/other', authorize: allowAnyone });
 before(async () => {
   if (viaBinary) binary = await startBinary(['--keep-alive', '200', '--open']);
   server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     if (req.url.startsWith('/_zb/sync/presence')) presencePosts += 1;
+    if (req.url.startsWith('/_zb/other/presence')) otherPresencePosts += 1;
     if (url.pathname === '/_zb/sync/live') {
       if (squatted && url.searchParams.get('peer') === squatted) return res.writeHead(409, { 'content-type': 'application/json' }).end('{"error":"That peer id is another viewer\'s; pick another"}');
       const stream = { peer: url.searchParams.get('peer'), res };
@@ -80,6 +84,7 @@ before(async () => {
       return req.pipe(upstream);
     }
     if (await closed.handle(req, res)) return;
+    if (await other.handle(req, res)) return;
     if (await sync.handle(req, res)) return;
     const js = (text) => { res.setHeader('content-type', 'text/javascript'); res.end(text); };
     const file = (dir, rest) => {
@@ -98,6 +103,8 @@ before(async () => {
     // Live only: polling every minute, so anything sooner came over the event stream.
     if (url.pathname === '/live') return res.end(page(`<task-item doc="${doc}"></task-item>`, { interval: 60_000 }));
     const connectTo = url.searchParams.has('rtc') ? { interval: 60_000, webrtc: true } : url.searchParams.has('connect') ? { interval: 60_000 } : false;
+    // A board connected to two servers: this one for boards, /_zb/other for tasks.
+    if (url.pathname === '/two-servers') return res.end(page(`<board-view doc="${doc}"></board-view><script type="module">import { connect } from '/sync/connect.js'; window.link = connect({ interval: 60_000, scope: { boards: true } }); window.otherLink = connect({ url: '/_zb/other', interval: 60_000, scope: { tasks: true } });</script>`, false, 'board-view'));
     if (url.pathname === '/board') return res.end(page(`<board-view doc="${doc}"></board-view>`, connectTo, 'board-view'));
     // Connected, with a store whose next get() waits window.slowNext ms (this device's own edit
     // takes that long to record its clock beside the document), and whose next set() is issued at
@@ -685,6 +692,56 @@ test('a tab whose peer id someone else holds now takes a new one, and is live ag
     await a.close();
     await b.close();
   }
+});
+
+test('presence goes only to the server whose scope has the room', async () => {
+  const a = await browser.newContext();
+  const b = await browser.newContext();
+  const one = await a.newPage();
+  await one.goto(`${base}/two-servers?doc=b11`);
+  await one.waitForFunction(() => customElements.get('board-view') && window.link && window.otherLink);
+  const two = await board(b, 'b11', true);
+  otherPresencePosts = 0;
+  await one.waitForTimeout(300);
+  await point(one, 31, 41);
+  // Through the server for boards, as ever…
+  await two.waitForSelector('.other:has-text("31,41")', { timeout: 5000 });
+  await point(one, 32, 42);
+  await two.waitForSelector('.other:has-text("32,42")', { timeout: 5000 });
+  // …goodbye included…
+  await one.close();
+  await two.waitForSelector('.count:has-text("0")', { timeout: 5000 });
+  // …and none of it to the server for tasks, which has no such room.
+  assert.equal(otherPresencePosts, 0);
+  await a.close();
+  await b.close();
+});
+
+test('a connection started after another stopped takes up its live stream, keeping the peer id', { timeout: 20_000 }, async () => {
+  const a = await browser.newContext();
+  const b = await browser.newContext();
+  const one = await board(a, 'b12', true);
+  const two = await board(b, 'b12', true);
+  const idOf = (page) => page.evaluate(() => import('/sync/index.js').then((sync) => sync.peerId()));
+  const first = await idOf(one);
+  while (![...streams].some((stream) => stream.peer === first)) await one.waitForTimeout(100);
+  // The page moves on to another connection to the same server (an app's next screen, say). The
+  // server keeps the stopped stream's peer id for it a while; the new one presents its key.
+  await one.evaluate(async () => {
+    const { connect } = await import('/sync/connect.js');
+    window.link.stop();
+    window.link = connect({ interval: 60_000 });
+  });
+  await one.waitForTimeout(300);
+  while (![...streams].some((stream) => stream.peer === first)) await one.waitForTimeout(100);
+  await one.waitForTimeout(1500); // long enough for a refusal (409) and a new id
+  assert.equal(await idOf(one), first, 'the same peer id');
+  // And it's live as that peer: the other device sees it move.
+  await point(one, 12, 34);
+  await two.waitForSelector('.other:has-text("12,34")', { timeout: 5000 });
+  assert.equal(await two.textContent('.count'), '1');
+  await a.close();
+  await b.close();
 });
 
 test('webrtc.js is loaded only by a page that asks for webrtc', async () => {
