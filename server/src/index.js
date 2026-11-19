@@ -29,6 +29,9 @@ import { createCore, joinPath, parseAttributes, propsFrom, SOURCE_EXTENSION as S
 
 export { findCompiler, parseAttributes, propsFrom };
 
+// `reload`: the stream's first words, how soon the browser asks again once it is lost (ms).
+const RELOAD_STARTS = 'retry: 300\n\n';
+
 // `compress`: from about a packet's worth of text up (everything served is JavaScript, CSS or
 // JSON; an error's few words and a module of one line go as they are).
 const SMALLEST = 1024;
@@ -77,7 +80,7 @@ const posix = (path) => path.split(sep).join('/');
  * Zubra's own engine (`@zubra/runtime`'s `signal-tc39.js` is served as its `signal.js`). The runtime
  * is then served file by file in production too, since its one-file builds hold Zubra's engine.
  */
-export function createZubra({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = process.env.NODE_ENV === 'production', devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, runtime = null, onError, streamTimeout, compress = false, signals = false, minify = production && !devtools } = {}) {
+export function createZubra({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = process.env.NODE_ENV === 'production', devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, runtime = null, onError, streamTimeout, compress = false, reload = false, signals = false, minify = production && !devtools } = {}) {
   const root = resolve(components);
   // The folder as the disk has it, links resolved: what a served module's real path must be inside.
   const realRoot = existsSync(root) ? realpathSync(root) : root;
@@ -102,6 +105,7 @@ export function createZubra({ components = 'components', packages = [], prefix =
   if (signals && !existsSync(join(runtimeDir, 'signal-tc39.js'))) throw new Error('@zubra/server: signals: true needs @zubra/runtime 6.0 or later, which has signals mode (signal-tc39.js)');
   if (runtime && Boolean(runtime.signals) !== Boolean(signals)) throw new Error(`@zubra/server: the built runtime was built ${runtime.signals ? 'with' : 'without'} signals: true, and this server ${signals ? 'has' : "doesn't have"} it. Build it with the same signals option`);
   const base = prefix.replace(/\/$/, '');
+  const RELOAD = `${base}/reload`;
   // (Not through `warn` alone when there is none: this is about the install, said once at start.)
   const skew = versionSkew(versionAt(new URL('./package.json', import.meta.resolve('@zubra/compiler'))), versionAt(join(sourceDir, '..', 'package.json')));
   if (skew) (warn ?? console.warn)(skew);
@@ -226,6 +230,7 @@ export function createZubra({ components = 'components', packages = [], prefix =
 
   const core = createCore({
     warn,
+    reload,
     // A streamed prop's error: its text reaches the browser in development only (core's `rejected`).
     production,
     onError,
@@ -275,6 +280,13 @@ export function createZubra({ components = 'components', packages = [], prefix =
   function handle(req, res) {
     // `//host/_zubra/…` would read as a path of the URL's host: not ours, as the router's isn't.
     if (typeof req.url !== 'string' || !req.url.startsWith('/') || req.url.startsWith('//')) return false;
+    // `reload`: the stream a page keeps open. Nothing is sent on it but how soon to ask again:
+    // that it ends when this process does, and opens when the next one is up, is the message.
+    if (reload && new URL(req.url, 'http://x').pathname === RELOAD) {
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
+      res.write(RELOAD_STARTS);
+      return true;
+    }
     const served = core.serve(new URL(req.url, 'http://x').pathname);
     if (!served) return false;
     const path = new URL(req.url, 'http://x').pathname;
@@ -311,9 +323,14 @@ export function createZubra({ components = 'components', packages = [], prefix =
     return { body: entry[encoding], headers: { ...headers, 'content-encoding': encoding, 'content-length': String(entry[encoding].length) } };
   }
 
+  /** `fetch` with `reload`: the stream, as a Response whose body stays open. */
+  const reloadStream = () => new Response(new ReadableStream({ start: (controller) => controller.enqueue(new TextEncoder().encode(RELOAD_STARTS)) }), { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' } });
+  const fetchPlain = reload ? async (request) => (new URL(request.url).pathname === RELOAD ? reloadStream() : core.fetch(request)) : core.fetch;
+
   /** `fetch` with `compress`: core's answer, encoded the same way. */
   async function fetchEncoded(request) {
     const path = new URL(request.url).pathname;
+    if (reload && path === RELOAD) return reloadStream();
     const served = core.serve(path);
     if (!served) return null;
     const { body, headers } = encoded(served, path, request.headers.get('accept-encoding'));
@@ -410,7 +427,7 @@ export function createZubra({ components = 'components', packages = [], prefix =
     render: core.render,
     page,
     handle,
-    fetch: compress ? fetchEncoded : core.fetch,
+    fetch: compress ? fetchEncoded : fetchPlain,
     importMap: core.importMap,
     head: core.head,
     scripts: core.scripts,

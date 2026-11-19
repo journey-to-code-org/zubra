@@ -25,6 +25,6 @@
   <h1>{heading}</h1>
   <p zb-if={framework}>Zubra components, used from {framework}.</p>
   <p zb-else>Zubra components in plain HTML.</p>
-  <p zb-if={reloads}>Edit <code>src/components/hello-counter.zb</code>, save, and reload the page.</p>
+  <p zb-if={reloads}>Edit <code>src/components/hello-counter.zb</code> and save: the page reloads with your change.</p>
   <p zb-else>Edit <code>src/components/hello-counter.zb</code> and save: it updates in place and keeps its count.</p>
 </zubra-welcome>
