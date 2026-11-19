@@ -148,6 +148,8 @@ connect({ scope: { seats: 'showing-12/', holds: 'showing-12/', brands: true } })
 
 - **Per collection, `true` or a key prefix**, or a list of prefixes. A collection the scope doesn't name isn't sent. Keys made from several props (`by showing, seat`) are joined with `/`, so a prefix like `'showing-12/'` takes every seat in that showing.
 - **What's out of scope isn't sent:** not by pull, not by the live stream (its backlog or new changes), and not as presence. The page's store never has it.
+- **A page can connect to more than one server,** each with its own scope (one for the app's rooms, one for its chat, say). Each connection sends a server the presence of its own scope's rooms only, so neither is sent the other's.
+- **A connection started after another stopped takes up its live stream.** The server keeps a stopped stream's peer id a while, for it to come back; `stop()` leaves its key for the next connection to the same server, which takes the id over instead of being refused (409) and giving the whole page a new one.
 - **Each scope keeps its own cursor** (in `localStorage`). A page that moves to another showing reads that showing from the start, not from wherever the last one got to.
 - **The server can impose one:** `createSyncServer({ scope: ({ request }) => ({ orders: `${business(request)}/` }) })`. A page's own scope can only narrow it, and pushes and presence outside it are refused with 403. That's tenancy: each business's documents under its own key prefix, on one log. `authorize` still runs on what's in scope.
 - **The `zubra-sync` binary honours a page's scope.** It has no notion of users, so a server-imposed scope is the JavaScript server's; put the binary behind an app that sets one.
