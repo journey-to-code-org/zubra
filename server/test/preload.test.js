@@ -194,7 +194,7 @@ test('in a browser, under a nonce-only policy: the preloads are allowed and the 
 });
 
 test("a page loads the binders its components use, and only those, by address; beside the runtime it's given", async () => {
-  const zubra = createZubra({ components, production: true });
+  const zubra = createZubra({ minify: false, components, production: true });
   const page = zubra.page();
   page.render('review-list', { reviews: [] });
   const links = preloaded(page.finish(layout('')));
@@ -213,7 +213,7 @@ test("a page loads the binders its components use, and only those, by address; b
   assert.match(module, /import \{ \$each \} from "\.\.\/runtime\/zubra\.js";/);
   assert.doesNotMatch(module, /@zubra\/runtime"/);
   // With `@zubra/runtime` somewhere else (a CDN), the binders come from beside it: one runtime.
-  const elsewhere = createZubra({ components, production: true, imports: { '@zubra/runtime': 'https://cdn.example/zubra/core.js' } });
+  const elsewhere = createZubra({ minify: false, components, production: true, imports: { '@zubra/runtime': 'https://cdn.example/zubra/core.js' } });
   const there = await listen((request, response) => elsewhere.handle(request, response));
   const given = await (await fetch(`${there}/_zubra/components/review-list.js`)).text();
   assert.match(given, /import \{ \$await \} from "https:\/\/cdn\.example\/zubra\/await\.js";/);
