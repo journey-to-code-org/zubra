@@ -1,0 +1,31 @@
+<!--
+  One thing on the menu. The item is a Sync document only the server writes, so when the kitchen
+  changes what's left, every open menu shows it without a reload. Adding is a plain form post.
+-->
+<script>
+  'use collection items by item'
+  import { from } from '@zubra/runtime'
+
+  let left = from(leftNow)
+
+  const money = (cents) => `$${(cents / 100).toFixed(2)}`
+  const out = left !== null && left <= 0
+  const words = left === null ? '' : left > 0 ? `${left} left` : 'Sold out'
+</script>
+<slice-item item="" name="" unit="" cents={0} left-now={null} add="">
+  <h3 class:out={out}>{name}</h3>
+  <p class="meta">{money(cents)} · {unit}<span zb-if={words}> · <span class="left">{words}</span></span></p>
+  <form method="post" action={add} data-zb-updates="site said">
+    <input type="hidden" name="item" value={item}>
+    <input
+      type="number"
+      name="qty"
+      value="1"
+      min="1"
+      max="24"
+      aria-label={`How many ${name}`}
+      disabled={out}
+    >
+    <button type="submit" disabled={out}>Add</button>
+  </form>
+</slice-item>

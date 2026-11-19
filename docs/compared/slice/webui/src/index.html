@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{title}} · {{shop}}</title>
+  <link rel="stylesheet" href="/slice.css">
+  <if condition="live"><script type="module" src="/client.js"></script></if>
+</head>
+<body>
+  <header class="site-head"><a href="/">{{shop}}</a><nav aria-label="Site"><a href="/">Menu</a><a href="/order">Your order<if condition="count"> ({{count}})</if></a></nav></header>
+  <main>
+    <if condition="problem"><p class="notice problem" role="alert">{{problem}}</p></if>
+    <if condition="done"><p class="notice" role="status">{{done}}</p></if>
+    <if condition="page == 'menu'">
+      <h1>Order ahead</h1>
+      <for each="section in sections">
+        <section>
+          <h2>{{section.section}}</h2>
+          <ul class="items">
+            <for each="item in section.items">
+              <li class="item" ?data-out="{{item.out}}">
+                <slice-item item="{{item.key}}" name="{{item.name}}" unit="{{item.unit}}" price="{{item.price}}" :left="{{item.left}}" add="/add"></slice-item>
+              </li>
+            </for>
+          </ul>
+        </section>
+      </for>
+    </if>
+    <if condition="page == 'order'">
+      <h1>Your order</h1>
+      <section class="panel">
+        <h2>In your bag</h2>
+        <if condition="lines.length">
+          <ul class="lines">
+            <for each="line in lines">
+              <li class="line">
+                <div><h3>{{line.name}}</h3><p class="meta">{{line.each}} each · {{line.total}}</p></div>
+                <div class="qty">
+                  <form method="post" action="/change"><input type="hidden" name="item" value="{{line.item}}"><button name="qty" value="{{line.less}}">−</button></form>
+                  <span>{{line.qty}}</span>
+                  <form method="post" action="/change"><input type="hidden" name="item" value="{{line.item}}"><button name="qty" value="{{line.more}}">+</button></form>
+                  <form method="post" action="/change"><input type="hidden" name="item" value="{{line.item}}"><button name="qty" value="0">Remove</button></form>
+                </div>
+              </li>
+            </for>
+          </ul>
+          <p class="total">Total {{total}}</p>
+        </if>
+        <if condition="!lines.length"><p>Your bag is empty.</p></if>
+      </section>
+      <section class="panel">
+        <h2>Pickup time</h2>
+        <form method="post" action="/time">
+          <label for="slot">When you’ll come by</label>
+          <select id="slot" name="slot">
+            <option value="">Choose…</option>
+            <for each="time in times"><option value="{{time.slot}}" ?disabled="{{time.full}}" ?selected="{{time.chosen}}">{{time.text}}</option></for>
+          </select>
+          <button>Set the time</button>
+        </form>
+        <if condition="pickup"><p>Pickup: {{pickup}}</p></if>
+      </section>
+      <if condition="ready"><a class="button" href="/checkout">Check out</a></if>
+    </if>
+    <if condition="page == 'checkout'">
+      <h1>Check out</h1>
+      <p class="summary">{{summary}}</p>
+      <form method="post" action="/place" class="panel">
+        <input type="hidden" name="checkout" value="{{checkout}}">
+        <label for="name">Name</label><input id="name" name="name" autocomplete="name">
+        <label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email">
+        <label for="card">Card number</label><input id="card" name="card" inputmode="numeric" autocomplete="cc-number">
+        <button>Place order · {{total}}</button>
+      </form>
+      <p class="meta">Test mode: 4242 4242 4242 4242 pays, 4000 0000 0000 0002 is declined.</p>
+    </if>
+    <if condition="page == 'placed'">
+      <h1>Order for {{order.when}}</h1>
+      <p>For {{order.name}} · {{order.total}}</p>
+      <slice-steps order="{{order.key}}" :status="{{order.status}}"></slice-steps>
+      <ul class="lines">
+        <for each="line in order.lines"><li>{{line.qty}} × {{line.name}}</li></for>
+      </ul>
+    </if>
+    <if condition="page == 'missing'"><h1>We can’t find that order.</h1></if>
+  </main>
+</body>
+</html>

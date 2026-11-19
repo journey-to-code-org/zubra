@@ -1,0 +1,14 @@
+{
+  "name": "counter-slice-nuxt",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "start": "PORT=${PORT:-3104} node .output/server/index.mjs"
+  },
+  "dependencies": {
+    "counter-slice-backend": "file:../shared",
+    "nuxt": "4.6.4",
+    "vue": "3.5.45"
+  }
+}

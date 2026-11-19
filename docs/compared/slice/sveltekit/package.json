@@ -1,0 +1,21 @@
+{
+  "name": "counter-slice-sveltekit",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "start": "PORT=${PORT:-3103} ORIGIN=${ORIGIN:-http://localhost:${PORT:-3103}} node build"
+  },
+  "dependencies": {
+    "counter-slice-backend": "file:../shared"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "6.0.2",
+    "@sveltejs/kit": "3.2.0",
+    "svelte": "5.57.3",
+    "vite": "8.3.8"
+  },
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  }
+}
