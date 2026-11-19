@@ -315,7 +315,7 @@ pub fn compile_value_with_slots(
     front(source, None, None, |source| {
         html(
             &*load(source, "component.zb", None)?,
-            props,
+            props.clone(),
             slots,
             SlotSource::Template,
         )
@@ -471,7 +471,7 @@ pub fn compile_html_with_options(
     compile_html_values(
         source,
         path,
-        &parse_json(props_json, "props")?,
+        parse_json(props_json, "props")?,
         &parse_json(slots_json, "slots")?,
         options,
         loader,
@@ -483,7 +483,7 @@ pub fn compile_html_with_options(
 pub(crate) fn compile_html_values(
     source: &str,
     path: &str,
-    props: &serde_json::Value,
+    props: serde_json::Value,
     slots: &serde_json::Value,
     options: HtmlOptions,
     loader: Loader<'_>,
@@ -503,7 +503,7 @@ pub(crate) fn compile_html_values(
 
 fn html_partial(
     component: &ast::ComponentAst,
-    props: &serde_json::Value,
+    props: serde_json::Value,
     slots: &serde_json::Value,
     slot_source: SlotSource,
 ) -> Result<String, Diagnostic> {
@@ -519,7 +519,7 @@ thread_local! {
 
 fn html(
     component: &ast::ComponentAst,
-    props: &serde_json::Value,
+    props: serde_json::Value,
     slots: &serde_json::Value,
     slot_source: SlotSource,
 ) -> Result<String, Diagnostic> {
