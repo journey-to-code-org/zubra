@@ -566,7 +566,9 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
   function serve(pathname) {
     if (!pathname.startsWith(`${base}/`)) return null;
     // `reload`: the script a page gets (its event stream is the server's own to answer).
-    if (reload && pathname === `${base}/reload.js`) return { status: 200, type: TYPES['.js'], body: `(${RELOAD_IN_BROWSER})(${scriptJson(`${base}/reload`)})` };
+    if (reload && pathname === `${base}/reload.js`) return { status: 200, type: TYPES['.js'], body: `(${RELOAD_IN_BROWSER})(${scriptJson(base)})` };
+    // `reload`: what each named component's module is now, for the page to tell which changed.
+    if (reload && pathname.startsWith(`${base}/reload/versions/`)) return { status: 200, type: 'application/json', body: JSON.stringify(versions(pathname.slice(`${base}/reload/versions/`.length))) };
     let rest;
     // A malformed escape (`%E0%A4%A`) is the client's mistake: a 400, never a throw that
     // takes down a server written as `if (zubra.handle(req, res)) return;`.
@@ -623,7 +625,10 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
         const url = JSON.stringify(`${base}/components/${app}.js`);
         return { status: 200, type: TYPES['.js'], body: `export * from ${url};\nexport { default } from ${url};\n` };
       }
-      return { status: 200, type: TYPES['.js'], body: js(name) };
+      // `reload`: a component's module says, before it defines its element, that the page swaps
+      // new versions of components in (the runtime's development build keeps track of the live
+      // elements only then). On the first line, so line numbers in errors stay the compiler's.
+      return { status: 200, type: TYPES['.js'], body: reload ? `globalThis.__ZUBRA_HOT__ = true; ${js(name)}` : js(name) };
     }
     if (built && rest.startsWith('runtime/') && rest.endsWith('.js')) {
       const file = rest.slice('runtime/'.length);
@@ -656,7 +661,27 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
   // `reload` (development): a page asks for a script that keeps an event stream to the server
   // open and reloads the page when the server is back after going away, which is what a restart
   // on a saved file looks like from the browser. A file of its own, so no policy has to allow it inline.
-  const reloading = (options) => (reload ? `<script src="${escapeAttribute(`${base}/reload.js`)}" async${nonceAttribute(options)}></script>` : '');
+  //
+  // When the server is back, the script asks what each of the page's components is now (their
+  // names are on the script, `data-components`: the ones the page loads and those they import).
+  // Where only components changed, it imports the new versions, which the runtime swaps into the
+  // live elements, keeping their state, as a bundler's hot updates do; anything else (the
+  // server's own code, a component whose props or events changed, one that doesn't compile)
+  // reloads the page.
+  const reloading = (options, used) => {
+    if (!reload) return '';
+    const names = !built && !bundle ? componentSet(shipped(used)) : [];
+    return `<script src="${escapeAttribute(`${base}/reload.js`)}"${names.length ? ` data-components="${escapeAttribute(names.join(' '))}"` : ''} async${nonceAttribute(options)}></script>`;
+  };
+  /** `reload`: `{ name: version }` for the `+`-joined names (`/` written `~`); a component that doesn't compile is `"error"` (its import fails, and the page reloads to the error). */
+  const versions = (list) => {
+    const out = {};
+    for (const name of list.split('+').map((one) => one.replaceAll('~', '/'))) {
+      if (!files.has(name)) continue;
+      try { out[name] = fnv(js(name)); } catch { out[name] = 'error'; }
+    }
+    return out;
+  };
 
   /**
    * The answer to a request that failed (`{ status: 500, type, body }`), for an app's own
@@ -755,11 +780,11 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
       /** The components' CSS and the import map, for the page's `<head>`. */
       head: () => head(used, options),
       /** The module script that makes the components interactive, for the end of `<body>`. */
-      scripts: () => scripts(used, false, options) + reloading(options),
+      scripts: () => scripts(used, false, options) + reloading(options, used),
       /** A whole page with the head and scripts put in (before `</head>` and `</body>`). */
       finish(html) {
         strangers(html);
-        return insertBefore(insertBefore(html, '</head>', head(used, options)), '</body>', scripts(used, false, options) + reloading(options));
+        return insertBefore(insertBefore(html, '</head>', head(used, options)), '</body>', scripts(used, false, options) + reloading(options, used));
       },
     };
 
@@ -1242,13 +1267,40 @@ function swapScript(id, regions, values, options) {
 // Runs in the browser, inlined, right after a streamed host: a promise per pending prop, as a
 // property the element captures when it upgrades, resolved by the swap script later.
 // `reload`: the stream opens, is lost when the server stops, and the browser asks again by
-// itself; when it opens a second time the server is back, with whatever was saved.
-const RELOAD_IN_BROWSER = String.raw`function (url) {
+// itself; when it opens a second time the server is back, with whatever was saved. Then the
+// components that changed are imported again (`?v=` their new version), and the runtime swaps
+// each into its live elements; anything else that changed, or a swap the runtime refuses (the
+// component's props, events, shadow or form setting changed), reloads the page.
+const RELOAD_IN_BROWSER = String.raw`function (base) {
+  var script = document.currentScript;
+  var names = script && script.getAttribute('data-components') ? script.getAttribute('data-components').split(' ') : [];
   var lost = false;
-  var stream = new EventSource(url);
+  var known = null;
+  var ask = function () {
+    if (!names.length) return Promise.resolve(null);
+    var list = names.map(function (name) { return name.split('/').join('~'); }).join('+');
+    return fetch(base + '/reload/versions/' + list, { cache: 'no-store' }).then(function (answer) { return answer.ok ? answer.json() : null; }, function () { return null; });
+  };
+  ask().then(function (now) { known = now; });
+  var swap = function (now) {
+    var changed = known && now ? names.filter(function (name) { return now[name] !== known[name]; }) : [];
+    if (!changed.length) return location.reload();
+    Promise.all(changed.map(function (name) { return import(base + '/components/' + name + '.js?v=' + now[name]); })).then(function (modules) {
+      if (modules.some(function (module) { return !module.default || module.default.hotReloaded !== true; })) location.reload();
+      else known = now;
+    }, function () { location.reload(); });
+  };
+  var stream = new EventSource(base + '/reload');
   stream.onerror = function () { lost = true; };
-  stream.onopen = function () { if (lost) location.reload(); };
+  stream.onopen = function () { if (lost) { lost = false; ask().then(swap); } };
 }`;
+
+/** A short version of `text` (FNV-1a), to tell one module from the next. */
+function fnv(text) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
+  return (hash >>> 0).toString(36);
+}
 
 const HOLD_IN_BROWSER = String.raw`function (id, names) {
   var host = document.querySelector('[data-zb-stream="' + id + '"]');

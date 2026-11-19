@@ -4,7 +4,7 @@ A server-rendered app using [Zubra](https://github.com/journey-to-code-org/zubra
 
 ```sh
 npm install
-npm run dev     # http://localhost:3000; then edit src/components/hello-counter.zb and save: the page reloads
+npm run dev     # http://localhost:3000; then edit src/components/hello-counter.zb and save: it updates in place
 npm start       # the same server for production (NODE_ENV=production)
 npm test        # starts the server and uses the page in Chromium, with JavaScript and without (run `npx playwright install chromium` once)
 ```

@@ -143,21 +143,19 @@ test('the server app: a Node server, a form with a server function, no bundler, 
     assert.doesNotMatch(text, /hot reload|vite|\{\{/i);
   }
   assert.match(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), /skills\/zubra-server\/SKILL\.md/);
-  // In development the page reloads on save, and nothing in the app says a component updates in
-  // place: that is the bundlers' dev servers, whose counter's comment this one starts from.
+  // In development a saved component updates the open page in place (`reload`), as the bundler
+  // starters do, so the counter's comment and the welcome line, shared with them, hold here too.
   assert.match(server, /reload: !production/);
   // An error's page is @zubra/server's (in development it goes away once the fix is saved).
   assert.match(server, /const failed = zubra\.errorPage\(error\);/);
   const counter = readFileSync(join(dir, 'src/components/hello-counter.zb'), 'utf8');
-  assert.match(counter, /edit it here and save: the\n {2}page reloads with your change \(and the count starts over\)\./);
-  // (The welcome component has both sentences and shows the one for `reloads`, which the page passes.)
-  assert.match(server, /reloads: true/);
-  for (const file of files.filter((name) => !name.endsWith('zubra-welcome.zb'))) assert.doesNotMatch(readFileSync(join(dir, file), 'utf8'), /updates\s+in place|keeping its count/, file);
+  assert.match(counter, /edit it here and it updates\n {2}in place, keeping its count\./);
+  for (const file of files) assert.doesNotMatch(readFileSync(join(dir, file), 'utf8'), /page reloads with|count starts over/, file);
   // With --typescript: the check script, and the docs say so.
   const typed = join(work(), 'typed-shop');
   create(typed, 'server', { typescript: true });
   assert.equal(JSON.parse(readFileSync(join(typed, 'package.json'), 'utf8')).scripts.check, 'zubra check --types src');
-  assert.match(readFileSync(join(typed, 'src/components/hello-counter.zb'), 'utf8'), /page reloads with your change/);
+  assert.match(readFileSync(join(typed, 'src/components/hello-counter.zb'), 'utf8'), /in place, keeping its count/);
   assert.match(readFileSync(join(typed, 'README.md'), 'utf8'), /^npm run check {3}# type-checks the components[^\n]*\nnpm test {8}# starts the server/m);
   assert.match(readFileSync(join(typed, 'AGENTS.md'), 'utf8'), /`npm run check` type-checks every component/);
 });

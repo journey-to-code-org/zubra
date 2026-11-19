@@ -185,11 +185,15 @@ export interface ZubraOptions {
    */
   compress?: boolean;
   /**
-   * `true` (for development): a page reloads when the server is back after going away, which is
-   * what a restart on a saved file (`node --watch`) looks like from the browser. `page.finish()`
-   * and `page.scripts()` add a small script (`<prefix>/reload.js`) that keeps an event stream to
-   * `<prefix>/reload` open; `handle` and `fetch` answer both. The page is loaded again, so what a
-   * component held in the browser starts over. Default: false. Not at the edge.
+   * `true` (for development): when the server is back after going away, which is what a restart
+   * on a saved file (`node --watch`) looks like from the browser, the page's components that
+   * changed are swapped into it, keeping their state, as a bundler's hot updates do; any other
+   * change (the server's own code, a component's props, events, shadow or form setting) reloads
+   * the page. `page.finish()` and `page.scripts()` add a small script (`<prefix>/reload.js`,
+   * naming the page's components) that keeps an event stream to `<prefix>/reload` open and asks
+   * `<prefix>/reload/versions/…` what each component is now; component modules start by saying
+   * the page swaps (`globalThis.__ZUBRA_HOT__`). `handle` and `fetch` answer all of these.
+   * Default: false. Not at the edge.
    */
   reload?: boolean;
   /**

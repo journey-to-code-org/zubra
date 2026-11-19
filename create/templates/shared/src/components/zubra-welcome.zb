@@ -12,7 +12,7 @@
   p { margin: 0; color: var(--muted, #5d6375); }
   code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; padding: 0.15em 0.4em; border-radius: 0.3em; background: var(--code, #e9ebf3); color: var(--text, #1d2130); }
 </style>
-<zubra-welcome heading="Zubra app" framework="" reloads={false}>
+<zubra-welcome heading="Zubra app" framework="">
   <a
     class="zw-mark"
     href="https://github.com/journey-to-code-org/zubra"
@@ -25,6 +25,5 @@
   <h1>{heading}</h1>
   <p zb-if={framework}>Zubra components, used from {framework}.</p>
   <p zb-else>Zubra components in plain HTML.</p>
-  <p zb-if={reloads}>Edit <code>src/components/hello-counter.zb</code> and save: the page reloads with your change.</p>
-  <p zb-else>Edit <code>src/components/hello-counter.zb</code> and save: it updates in place and keeps its count.</p>
+  <p>Edit <code>src/components/hello-counter.zb</code> and save: it updates in place and keeps its count.</p>
 </zubra-welcome>
