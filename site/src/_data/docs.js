@@ -1,4 +1,4 @@
-// The documentation: the Markdown in docs/, plus the README (the reference) and the CHANGELOG, rendered
+// The documentation: the Markdown in docs/, plus the CHANGELOG, rendered
 // to HTML here and laid out by docs.njk, one page per entry of nav.js. GitHub Pages serves it at <base>docs/.
 //
 // A relative link in a page is rewritten to the page it names. A link to a file that isn't part of the
@@ -32,7 +32,7 @@ const plain = (html) => html.replace(/<[^>]*>/g, '').replace(/&(amp|lt|gt|quot|#
 const anchor = (text) => plain(text).trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
 const absolute = (href) => /^([a-z][a-z0-9+.-]*:|\/\/)/i.test(href);
 
-/** Where a page lives under <base>docs/: docs/guide/x.md → guide/x/, README.md → reference/ (by `slug`). */
+/** Where a page lives under <base>docs/: docs/guide/x.md → guide/x/, CHANGELOG.md → changelog/ (by `slug`). */
 const slugOf = (page) => page.slug ?? page.file.replace(/^docs\//, '').replace(/\.md$/, '');
 
 const pages = nav.flatMap((group) => group.pages.map((page) => ({ ...page, group: group.group, slug: slugOf(page) })));
@@ -82,7 +82,7 @@ function render(page) {
           child.attrSet('src', imageUrl(page.file, child.attrGet('src')));
           child.attrSet('loading', 'lazy');
         } else if (child.type === 'html_block' || child.type === 'html_inline') {
-          // Markup written in the Markdown (the README's logo, its <details>): the same treatment.
+          // Markup written in the Markdown (a logo, a <details>): the same treatment.
           child.content = child.content
             .replace(/(<img\b[^>]*?\ssrc=")([^"]+)(")/g, (_, open, src, close) => open + escape(imageUrl(page.file, src)) + close)
             .replace(/(<a\b[^>]*?\shref=")([^"]+)(")/g, (_, open, href, close) => open + escape(target(page.file, href)) + close);
