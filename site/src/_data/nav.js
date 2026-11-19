@@ -44,6 +44,7 @@ export default [
   { group: 'Reference', pages: [
     { file: 'docs/reference.md', label: 'Reference' },
     { file: 'docs/stability.md', label: 'Stability and tiers' },
+    { file: 'docs/migrating-to-6.0.md', label: 'Migrating to 6.0' },
     { file: 'docs/browser-support.md', label: 'Browser support' },
     { file: 'docs/javascript-support.md', label: 'What JavaScript runs where' },
     { file: 'docs/security.md', label: 'Security model' },
