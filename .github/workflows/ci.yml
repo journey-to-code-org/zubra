@@ -66,6 +66,11 @@ jobs:
         working-directory: runtime
         env:
           ZUBRA_EMIT: element
+      # The same suite on minified modules, as @zubra/server sends them in production.
+      - run: npm run test:browser
+        working-directory: runtime
+        env:
+          ZUBRA_MINIFY: "1"
       - run: npm run test:tools
         working-directory: runtime
       # The component registry: keyboard and screen-reader behaviour of each component, and its index.
@@ -74,6 +79,10 @@ jobs:
       - run: node --test "registry/test/*.test.js"
         env:
           ZUBRA_EMIT: element
+      # And minified.
+      - run: node --test "registry/test/*.test.js"
+        env:
+          ZUBRA_MINIFY: "1"
       - run: node registry/build-index.mjs --check
 
   signals-mode:

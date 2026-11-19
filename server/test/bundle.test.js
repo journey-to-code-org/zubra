@@ -172,7 +172,7 @@ const withComponents = (sources, run) => {
 const using = (tag, script, body = '<button onclick={() => (n = n + 1)}>{n}</button>') => `<script>\n${script}\n  let n = 0\n</script>\n<${tag}>\n  ${body}\n</${tag}>\n`;
 
 test("bundle: a page's components are one module, named for the set and the hash of what it holds", () => {
-  const zubra = createZubra({ components, production: true, bundle: true });
+  const zubra = createZubra({ minify: false, components, production: true, bundle: true });
   const html = pageOf(zubra);
   const url = html.match(/\/_zubra\/b\/[^'"]+\.js/)[0];
   assert.match(url, /^\/_zubra\/b\/count-stepper\+order-form\.[0-9a-z]{11}\.js$/, 'the component it imports too, sorted');
@@ -187,13 +187,13 @@ test("bundle: a page's components are one module, named for the set and the hash
   assert.ok(served.body.includes('"count-stepper"') && served.body.includes('"order-form"'));
   assert.doesNotMatch(served.body, /^export /m);
   // The same from another instance, which never rendered the page: the URL is enough.
-  assert.equal(get(createZubra({ components, production: true, bundle: true }), url).body, served.body);
+  assert.equal(get(createZubra({ minify: false, components, production: true, bundle: true }), url).body, served.body);
   // Not under another hash, in another order, for a set that isn't whole, or without `bundle`.
   for (const other of [url.replace(/\.[0-9a-z]{11}\.js$/, '.00000000000.js'), url.replace('count-stepper+order-form', 'order-form+count-stepper'), url.replace('count-stepper+order-form', 'order-form'), url.replace('count-stepper+order-form', 'count-stepper+nothing')]) {
     assert.equal(get(zubra, other).status, 404, other);
     assert.equal(get(zubra, other).cache, 'no-cache', 'a 404 is never cached: a deploy must not wait an hour for it');
   }
-  assert.equal(get(createZubra({ components, production: true }), url).status, 404);
+  assert.equal(get(createZubra({ minify: false, components, production: true }), url).status, 404);
   // A component module is still served by its own name, and cached as before.
   assert.equal(get(zubra, '/_zubra/components/order-form.js').cache, 'public, max-age=3600');
 });
@@ -209,7 +209,7 @@ test('bundle: one component is its own module; a page with none has no script', 
 
 test('bundle: a module a component imports stays its own, imported from where the joined module is', () => {
   withComponents({ 'theme.js': 'export const theme = "dark";\n', 'a-one.zb': using('a-one', "  import { theme } from './theme.js'\n  import './a-two.zb'", '<button onclick={() => (n = n + 1)}>{theme} {n}</button><a-two></a-two>'), 'a-two.zb': using('a-two', "  import { theme } from './theme.js'", '<button onclick={() => (n = n + 1)}>{theme}{n}</button>') }, (dir) => {
-    const zubra = createZubra({ components: dir, production: true, bundle: true });
+    const zubra = createZubra({ minify: false, components: dir, production: true, bundle: true });
     const page = zubra.page();
     page.render('a-one', {});
     const html = page.finish(layout(''));
@@ -311,7 +311,7 @@ test('bundle: in a browser a page of two components asks for two modules, and bo
 });
 
 test('bundle with inline: false: the page names the joined module by src, and it imports the runtime by URL', () => {
-  const zubra = createZubra({ components, production: true, bundle: true, inline: false });
+  const zubra = createZubra({ minify: false, components, production: true, bundle: true, inline: false });
   const html = pageOf(zubra);
   const url = html.match(/<script type="module" src="(\/_zubra\/b\/count-stepper\+order-form\.[0-9a-z]{11}\.js)"><\/script>/)[1];
   assert.doesNotMatch(html, /<script type="module">/);
@@ -327,7 +327,7 @@ const lightPair = { 'd-one.zb': styled('d-one', "  import './d-two.zb'", 'rgb(25
 
 test("bundle: the head says whose CSS it has, and a joined light-DOM component has its stylesheet's address, not the text", () => {
   withComponents(lightPair, (dir) => {
-    const zubra = createZubra({ components: dir, production: true, bundle: true });
+    const zubra = createZubra({ minify: false, components: dir, production: true, bundle: true });
     const page = zubra.page();
     page.render('d-one', {});
     const html = page.finish(layout(''));
@@ -344,7 +344,7 @@ test("bundle: the head says whose CSS it has, and a joined light-DOM component h
     // The component's own module, by its own URL, is as it always was.
     assert.ok(get(zubra, '/_zubra/components/d-one.js').body.includes('rgb(255, 0, 0)'));
     // Without `bundle` nothing changes: no names in the head, no stylesheet URL.
-    const plain = createZubra({ components: dir, production: true });
+    const plain = createZubra({ minify: false, components: dir, production: true });
     const plainPage = plain.page();
     plainPage.render('d-one', {});
     assert.match(plainPage.finish(layout('')), /<style data-zb-components>/);
@@ -354,7 +354,7 @@ test("bundle: the head says whose CSS it has, and a joined light-DOM component h
 
 test('bundle: where a component of the set has a shadow root, every module keeps its CSS text', () => {
   withComponents({ 'e-one.zb': styled('e-one', "  import './e-two.zb'", 'rgb(255, 0, 0)', ' shadow'), 'e-two.zb': styled('e-two', '', 'rgb(0, 0, 255)') }, (dir) => {
-    const zubra = createZubra({ components: dir, production: true, bundle: true });
+    const zubra = createZubra({ minify: false, components: dir, production: true, bundle: true });
     const page = zubra.page();
     page.render('e-one', {});
     const body = get(zubra, page.finish(layout('')).match(/\/_zubra\/b\/[^'"]+\.js/)[0]).body;

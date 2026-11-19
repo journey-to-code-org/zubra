@@ -36,7 +36,7 @@ function checkTimeout(value) {
  * host serves under `<base>/` beyond the components' modules (`{ status, type, body }` or null).
  * `needs(name, code)`: the host's check on a compiled module (a package it needs being installed).
  */
-export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, changed = null, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, runtimeSplit = null, runtimeBuilt = null, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}`, production = false, onError = null, streamTimeout = STREAM_TIMEOUT }) {
+export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, changed = null, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, runtimeSplit = null, runtimeBuilt = null, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}`, production = false, onError = null, streamTimeout = STREAM_TIMEOUT, minify = false }) {
   if (gaps !== 'warn' && gaps !== 'ignore') throw new Error(`@zubra/server: gaps is "warn" or "ignore", not ${JSON.stringify(gaps)}`);
   if (clientModules !== 'all' && clientModules !== 'needed') throw new Error(`@zubra/server: clientModules is "all" or "needed", not ${JSON.stringify(clientModules)}`);
   if (typeof inline !== 'boolean') throw new Error(`@zubra/server: inline is true or false, not ${JSON.stringify(inline)}`);
@@ -308,9 +308,22 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     }
     return found;
   });
+  /**
+   * `minify` (production): a module this server sends, minified by the compiler, its CSS too
+   * (`command: "minify"`). Last, after everything here that reads the module as the compiler
+   * wrote it. A compiler from before the command answers that it doesn't know it, and the module
+   * goes as it is.
+   */
+  const shrink = (code) => {
+    if (!minify) return code;
+    const response = request({ command: 'minify', code: String(code) });
+    return response.ok ? response.output : code;
+  };
   // `stylesHref`: for a module of a page that carries the component's CSS, the stylesheet's
   // address in place of its text (a light-DOM component's; see the joined module below).
-  const js = (name, stylesHref) => once(`js:${name}${stylesHref ? `:${stylesHref}` : ''}`, () => {
+  // (As the compiler writes it: what `join` takes, since modules minified alone have names that
+  // collide once joined. `js` is what a page is sent.)
+  const compiled = (name, stylesHref) => once(`js:${name}${stylesHref ? `:${stylesHref}` : ''}`, () => {
     const path = pathOf(name);
     // `binderEntries`: a block's or slot's binder comes from its own runtime entry, so a page loads
     // only the binders its components use (`@zubra/runtime` is mapped to the core, below). Those
@@ -320,6 +333,7 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     if (!response.ok) throw new Error(response.error);
     return resolved(routed(resolveImports(older(name, String(needs(name, response.output))), bindersFor(name)), besideFor(name), `${where}${name}.zb`));
   });
+  const js = (name, stylesHref) => (minify ? once(`min:${name}${stylesHref ? `:${stylesHref}` : ''}`, () => shrink(compiled(name, stylesHref))) : compiled(name, stylesHref));
 
   /** What each bare specifier a browser module may import resolves to: the import map's entries. */
   // `runtimeFile`: the runtime's core, `zubra.js` where it and what it imports are one file
@@ -488,13 +502,14 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     // Not where a component of the set has a shadow root of its own, though: a light-DOM
     // component rendered inside it would lose its styles until the fetch came back.
     const linked = !set.some((name) => describe(name).shadow);
-    const response = request({ command: 'join', at: 'b/joined.js', modules: set.map((name) => ({ path: `components/${name}.js`, code: String(js(name, linked ? `${base}/components/${name}.css` : undefined)) })) });
+    const response = request({ command: 'join', at: 'b/joined.js', modules: set.map((name) => ({ path: `components/${name}.js`, code: String(compiled(name, linked ? `${base}/components/${name}.css` : undefined)) })) });
     if (!response.ok) {
       if (!response.apart) throw new Error(`@zubra/server: joining ${set.join(', ')}: ${response.error}`);
       warn(`@zubra/server: ${set.join(', ')} are served as separate modules, not as one: ${response.error}`);
       return null;
     }
-    return { url: `${base}/b/${id}.${hashOf(response.output)}.js`, body: response.output };
+    const body = shrink(response.output);
+    return { url: `${base}/b/${id}.${hashOf(body)}.js`, body };
   };
   /** The one module for the page's shipped components (`{ url, body }`), or null: serve each. */
   const joined = (names) => {

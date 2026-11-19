@@ -37,8 +37,16 @@ export const emitElement = process.env.ZUBRA_EMIT === 'element';
 export const elementRefused = new Map();
 /** Skips a test of what only @zubra/runtime does (server hydration, hot reload) on --emit element output. */
 export const runtimeOnly = emitElement && '--emit element output has no server hydration or hot reload: these stay on @zubra/runtime';
+// ZUBRA_MINIFY=1 minifies each `--emit js` module as @zubra/server does in production (the
+// compiler's `minify` command), so a suite runs on what a production page is sent.
+const minifying = process.env.ZUBRA_MINIFY === '1';
+function minified(code) {
+  const answer = JSON.parse(execFileSync(join(repo, 'target/debug/zubra'), ['serve'], { encoding: 'utf8', input: `${JSON.stringify({ command: 'minify', code })}\n` }));
+  if (!answer.ok) throw new Error(`minify: ${answer.error}`);
+  return answer.output;
+}
 function compile(path) {
-  if (!emitElement) return compiler(path, '--emit', 'js');
+  if (!emitElement) return minifying ? minified(compiler(path, '--emit', 'js')) : compiler(path, '--emit', 'js');
   try {
     return execFileSync(join(repo, 'target/debug/zubra'), ['compile', path, '--emit', 'element'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (error) {
