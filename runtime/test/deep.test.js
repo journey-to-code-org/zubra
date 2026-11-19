@@ -165,3 +165,70 @@ test('a read nothing is tracking keeps no signal: only tracked properties are he
   flush();
   assert.deepEqual(seen, [3, 'three'], 'the tracked read follows its property, and only that one');
 });
+
+// The array methods that run on the array itself (deep.js `mutator`): what each one re-runs,
+// what it returns, and what it stores.
+test('push, pop, shift, unshift and splice update the readers of what they change, and only those', () => {
+  const items = state(['a', 'b', 'c', 'd']);
+  const runs = { first: 0, third: 0, length: 0, all: 0 };
+  effect(() => { items.get()[0]; runs.first++; });
+  effect(() => { items.get()[2]; runs.third++; });
+  effect(() => { items.get().length; runs.length++; });
+  effect(() => { items.get().join(); runs.all++; });
+  flush();
+  const counts = () => ({ ...runs });
+  items.get().push('e');
+  flush();
+  assert.deepEqual(counts(), { first: 1, third: 1, length: 2, all: 2 }, 'push: the length and the whole list, not index 0 or 2');
+  assert.equal(items.get().pop(), 'e');
+  flush();
+  assert.deepEqual(counts(), { first: 1, third: 1, length: 3, all: 3 }, 'pop');
+  items.get().splice(3, 1);
+  flush();
+  assert.deepEqual(counts(), { first: 1, third: 1, length: 4, all: 4 }, 'splice from index 3 leaves 0 and 2 alone');
+  items.get().splice(1, 1, 'B');
+  flush();
+  assert.deepEqual(counts(), { first: 1, third: 2, length: 4, all: 5 }, 'splice of the same length: index 2 is past its start, the length stays');
+  items.get().unshift('z');
+  flush();
+  assert.deepEqual(counts(), { first: 2, third: 3, length: 5, all: 6 }, 'unshift moves every index');
+  assert.equal(items.get().shift(), 'z');
+  flush();
+  assert.deepEqual(counts(), { first: 3, third: 4, length: 6, all: 7 }, 'shift too');
+  assert.deepEqual(raw(items.get()), ['a', 'B', 'c']);
+  items.get().splice(-1, 1);
+  flush();
+  assert.deepEqual(counts(), { first: 3, third: 5, length: 7, all: 8 }, 'a negative start counts from the end');
+  assert.deepEqual(raw(items.get()), ['a', 'B']);
+});
+
+test('the methods store what they are given, not proxies, return what the array method returns, and track nothing', () => {
+  const other = state([{ n: 1 }]);
+  const items = state([{ n: 0 }]);
+  items.get().push(other.get()[0]);
+  assert.equal(raw(items.get())[1], raw(other.get())[0], 'the object itself, not its proxy');
+  assert.equal(items.get().push({ n: 2 }), 3);
+  const removed = items.get().splice(1, 2);
+  assert.equal(removed.length, 2);
+  assert.equal(removed[0].n, 1);
+  // An effect that pushes doesn't come to depend on the list's length or its indexes.
+  const log = state([]);
+  let runs = 0;
+  effect(() => { runs++; log.get().push(runs); });
+  flush();
+  log.get().push('elsewhere');
+  flush();
+  assert.equal(runs, 1);
+  assert.deepEqual(raw(log.get()), [1, 'elsewhere']);
+});
+
+test('a list in zb-each style (trackItems) re-runs once for a splice of many', () => {
+  const items = state(Array.from({ length: 1000 }, (_, i) => i));
+  let runs = 0;
+  effect(() => { trackItems(items.get()); runs++; });
+  flush();
+  items.get().splice(5, 1);
+  flush();
+  assert.equal(runs, 2);
+  assert.equal(raw(items.get()).length, 999);
+});
