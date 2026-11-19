@@ -49,11 +49,11 @@ pub fn handle(request: &str) -> String {
     let response = match serde_json::from_str::<Value>(request) {
         // `{ "requests": [ … ] }`: several at once, answered as `{ "ok", "responses": [ … ] }`
         // (each response as if it were sent alone), so a server renders a page in one call.
-        Ok(Value::Object(request)) if request.contains_key("requests") => {
-            match request.get("requests") {
+        Ok(Value::Object(mut request)) if request.contains_key("requests") => {
+            match request.remove("requests") {
                 Some(Value::Array(requests)) => {
                     let responses: Vec<Value> = requests
-                        .iter()
+                        .into_iter()
                         .map(|request| match request {
                             Value::Object(request) => respond(request),
                             _ => failure("each of `requests` must be a JSON object"),
@@ -64,7 +64,7 @@ pub fn handle(request: &str) -> String {
                 _ => failure("`requests` must be an array of requests"),
             }
         }
-        Ok(Value::Object(request)) => respond(&request),
+        Ok(Value::Object(request)) => respond(request),
         Ok(_) => failure("the request must be a JSON object"),
         Err(error) => failure(&format!("the request isn't JSON: {error}")),
     };
@@ -77,7 +77,10 @@ fn failure(message: &str) -> Value {
     json!({ "ok": false, "output": null, "error": message, "warnings": [], "diagnostics": [] })
 }
 
-fn respond(request: &Map<String, Value>) -> Value {
+fn respond(mut request: Map<String, Value>) -> Value {
+    // A render's props are moved into it, not copied: a list of rows is the bulk of a request.
+    let props = request.remove("props");
+    let request = &request;
     let text = |key: &str| request.get(key).and_then(Value::as_str);
     // `join`: several browser modules (`modules`: `[{ path, code }]`) as one, to be served at
     // `at` (see `joined.rs`). Where joining them would change what one of them sees, the answer
@@ -162,11 +165,17 @@ fn respond(request: &Map<String, Value>) -> Value {
         (Some(_), Some(_)) => return failure("a request has `loaded` or `files`, not both"),
         _ => return failure("`files` must map paths to sources"),
     };
-    crate::loaded::reading(&set, || answer(request, path, &set))
+    crate::loaded::reading(&set, || answer(request, props, path, &set))
 }
 
 /// A request for the component at `path`, answered from `set`'s files.
-fn answer(request: &Map<String, Value>, path: &str, set: &crate::loaded::Set) -> Value {
+/// `props`: the request's own, taken out of it to be moved into a render.
+fn answer(
+    request: &Map<String, Value>,
+    props: Option<Value>,
+    path: &str,
+    set: &crate::loaded::Set,
+) -> Value {
     let text = |key: &str| request.get(key).and_then(Value::as_str);
     let files = &set.files;
     let path = normalize(path);
@@ -435,7 +444,7 @@ fn answer(request: &Map<String, Value>, path: &str, set: &crate::loaded::Set) ->
         }
         ("compile", "html") => {
             let none = json!({});
-            let props = request.get("props").unwrap_or(&none);
+            let props = props.unwrap_or_else(|| json!({}));
             let slots = request.get("slots").unwrap_or(&none);
             let slot_source = match text("slotSource") {
                 None | Some("template") => crate::SlotSource::Template,
