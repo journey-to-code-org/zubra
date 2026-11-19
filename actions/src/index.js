@@ -42,7 +42,11 @@ const script = (file, production) => readFileSync(new URL(production ? `../dist/
  * request's own protocol.
  * `maxBytes`: the largest post read, files and fields together (10 MB by default; `Infinity`
  * for none). A bigger one gets `{ error: 'Too large' }` (413) and the function doesn't run.
- * `production`: serve the browser scripts minified (by default when `NODE_ENV` is `production`).
+ * `production`: serve the browser scripts minified (by default when `NODE_ENV` is `production`),
+ * and refuse to start when a component doesn't compile. In development that component is left
+ * out with a warning, so a half-written file doesn't take the server down: its page shows the
+ * error when it is rendered, and its functions are served again once it compiles and the server
+ * restarts.
  */
 export async function createActions({
   components = 'components',
@@ -60,7 +64,10 @@ export async function createActions({
 
   // URL → function, from every component's server half.
   const maps = [];
-  for (const { path, output } of await serverHalves(root)) {
+  const broken = production
+    ? undefined
+    : (path, message) => console.warn(`@zubra/actions: ${relative(root, path)} doesn't compile, so its server functions aren't served until it does and the server restarts.\n${message}`);
+  for (const { path, output } of await serverHalves(root, { broken })) {
     const module = join(cacheDir, `${flatName(relative(root, path))}.server.mjs`);
     // The server half lives in the cache folder, so its relative imports point back at the source.
     // Written beside it and renamed into place, so another process starting at the same moment
