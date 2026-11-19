@@ -31,7 +31,9 @@ export function createApp({ store, cache = true, now = () => Date.now() }) {
   app.disable('x-powered-by');
   app.use(express.static(join(here, '../public')));
   // Components rendered into the views, and their modules and @zubra/runtime served under /_zubra.
-  app.use(zubra({ components: join(here, '../components'), cache }));
+  // (Kept, for the error page at the end: `rendering.zubra` is the server it made.)
+  const rendering = zubra({ components: join(here, '../components'), cache });
+  app.use(rendering);
   app.use(auth.middleware(store));
   // The components' 'use server' functions (the reply box's), with the signed-in user and the
   // store. Before the body parser: an action reads its own body.
@@ -224,9 +226,10 @@ export function createApp({ store, cache = true, now = () => Date.now() }) {
   app.use(async (error, req, res, next) => {
     console.error(error);
     if (res.headersSent) return next(error);
-    // In development, say what: it's usually something to fix in a view or a component.
-    const detail = process.env.NODE_ENV === 'production' ? '' : `\n\n${error.stack ?? error}`;
-    res.status(500).type('text').send(`Something went wrong.${detail}`);
+    // In development the page says what and where (usually something to fix in a view or a
+    // component); in production only that something went wrong.
+    const failed = rendering.zubra.errorPage(error);
+    res.status(failed.status).set('content-type', failed.type).send(failed.body);
   });
   return app;
 }

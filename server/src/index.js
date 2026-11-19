@@ -426,6 +426,7 @@ export function createZubra({ components = 'components', packages = [], prefix =
     describe: core.describe,
     render: core.render,
     page,
+    errorPage: core.errorPage,
     handle,
     fetch: compress ? fetchEncoded : fetchPlain,
     importMap: core.importMap,

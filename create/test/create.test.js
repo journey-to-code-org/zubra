@@ -146,8 +146,8 @@ test('the server app: a Node server, a form with a server function, no bundler, 
   // In development the page reloads on save, and nothing in the app says a component updates in
   // place: that is the bundlers' dev servers, whose counter's comment this one starts from.
   assert.match(server, /reload: !production/);
-  // An error's page in development is a page too, with the script that reloads it once the fix is saved.
-  assert.match(server, /<pre>\$\{said\}<\/pre>\$\{zubra\.page\(\)\.scripts\(\)\}/);
+  // An error's page is @zubra/server's (in development it goes away once the fix is saved).
+  assert.match(server, /const failed = zubra\.errorPage\(error\);/);
   const counter = readFileSync(join(dir, 'src/components/hello-counter.zb'), 'utf8');
   assert.match(counter, /edit it here and save: the\n {2}page reloads with your change \(and the count starts over\)\./);
   // (The welcome component has both sentences and shows the one for `reloads`, which the page passes.)
