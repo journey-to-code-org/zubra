@@ -372,7 +372,11 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
   // `scripts` if it took the app's own page scripts too). Then that one module is all a page
   // loads: it is the page's only script and only preload, and a component's own address answers
   // with an import of it. A component it doesn't hold is refused like a name it doesn't have.
-  const built = runtimeBuilt && !imports['@zubra/runtime'] ? { file: runtimeBuilt.file, code: runtimeBuilt.code, names: new Set(runtimeBuilt.names), components: runtimeBuilt.components ? new Set(runtimeBuilt.components) : null, scripts: Boolean(runtimeBuilt.scripts) } : null;
+  // `sync`: @zubra/sync is in the module too, and these are its store module's exports. That
+  // module's own address then answers with them, taken from the app's module, so a script
+  // outside it that imports @zubra/sync (or the package's connect.js, served as it is) shares
+  // the one store.
+  const built = runtimeBuilt && !imports['@zubra/runtime'] ? { file: runtimeBuilt.file, code: runtimeBuilt.code, names: new Set(runtimeBuilt.names), components: runtimeBuilt.components ? new Set(runtimeBuilt.components) : null, scripts: Boolean(runtimeBuilt.scripts), sync: runtimeBuilt.sync ?? null } : null;
   const whole = built?.components ?? null;
   const inWhole = (name) => {
     if (!whole.has(name)) throw new Error(`${where}${name} isn't in the app's built module. Build it again (buildApp()) now that the components have changed`);
@@ -626,6 +630,7 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
       // (remark.js imports nothing: the built module loads it when server markup needs repair.)
       if (file !== 'remark.js') return { status: 200, type: TYPES['.js'], body: `throw new Error(${JSON.stringify(`@zubra/server: this app serves a built runtime (${built.file}), and something asked for the runtime's own ${file}, which would be a second copy of it. A script that imports the runtime should use the name @zubra/runtime; a component compiled elsewhere needs \`runtime\` left out`)});\n` };
     }
+    if (built?.sync && rest === 'sync/index.js') return { status: 200, type: TYPES['.js'], body: `import { $zubraSync } from '../runtime/${built.file}';\nexport const { ${built.sync.join(', ')} } = $zubraSync;\n` };
     // The runtime and @zubra/sync are the host's to serve (from disk on Node, from static assets elsewhere).
     const asset = assets(rest);
     // The runtime's and @zubra/sync's own modules import each other by name too.
