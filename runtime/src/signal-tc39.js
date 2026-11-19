@@ -23,10 +23,17 @@ export const sources = (value) => introspectSources(value);
 export const sinks = (value) => introspectSinks(value);
 
 /** Reactions on one Watcher, flushed by the caller (the proposal's own pattern for effects). */
+const OWNER = Symbol('owner');
+
 export function reactions(notify) {
   const watcher = new Watcher(notify);
   return {
-    create: (fn) => new Computed(fn),
+    create(fn, owner) {
+      const reaction = new Computed(() => fn.call(owner));
+      reaction[OWNER] = owner;
+      return reaction;
+    },
+    owner: (reaction) => reaction[OWNER],
     run: (reaction) => untrack(() => reaction.get()),
     watch: (reaction) => watcher.watch(reaction),
     unwatch: (...list) => watcher.unwatch(...list),

@@ -29,7 +29,6 @@ let owner = null;          // the Effect or Scope currently running
 let nextId = 0;
 let scheduled = null;      // promise for the pending microtask flush
 let flushing = false;
-const EFFECT = Symbol('effect');
 
 /**
  * `Symbol.dispose`, or, where the engine doesn't have it yet, the symbol TypeScript's downlevel
@@ -87,21 +86,47 @@ function report(error) {
   else console.error(error);
 }
 
+// An owner's children are a list through the children themselves (`first`/`last` on the owner,
+// `previous`/`next` on each child), in the order they were made: no collection to allocate, for
+// the rows and bindings that make up most owners, and O(1) to take one out.
+/** `owner`'s children now, in order (a copy: they may change while it's walked). */
+export function children(owner) {
+  const out = [];
+  for (let child = owner.first; child !== null; child = child.next) out.push(child);
+  return out;
+}
+
 class Owner {
   constructor(parent) {
     this.parent = parent;
-    this.children = null;     // created on first child: most effects have none
+    this.first = null;
+    this.last = null;
+    this.previous = null;
+    this.next = null;
     this.disposed = false;
     this.paused = false;
-    if (parent) (parent.children ??= new Set()).add(this);
+    if (parent) {
+      const last = parent.last;
+      if (last === null) parent.first = this;
+      else { last.next = this; this.previous = last; }
+      parent.last = this;
+    }
   }
 
   disposeChildren() {
-    const children = this.children;
-    if (children === null || children.size === 0) return;
-    this.children = null;
+    let child = this.first;
+    if (child === null) return;
+    this.first = this.last = null;
+    // Taken out of this owner before any is disposed, so whatever their cleanups do to their
+    // siblings (dispose one, make another here) doesn't reach this list.
+    for (let at = child; at !== null; at = at.next) at.parent = null;
     batch(() => {
-      for (const child of children) { child.parent = null; child.dispose(); }
+      while (child !== null) {
+        const next = child.next;
+        child.previous = child.next = null;
+        child.dispose();
+        child = next;
+      }
     });
   }
 
@@ -109,7 +134,16 @@ class Owner {
     if (this.disposed) return;
     this.disposed = true;
     this.disposeChildren();
-    this.parent?.children?.delete(this);
+    const parent = this.parent;
+    if (parent !== null) {
+      this.parent = null;
+      const { previous, next } = this;
+      if (previous === null) parent.first = next;
+      else previous.next = next;
+      if (next === null) parent.last = previous;
+      else next.previous = previous;
+      this.previous = this.next = null;
+    }
   }
 
   [DISPOSE]() {
@@ -119,8 +153,8 @@ class Owner {
   pause() {
     if (this.paused || this.disposed) return;
     this.paused = true;
-    if (this.children) batch(() => {
-      for (const child of [...this.children]) child.pause();
+    if (this.first !== null) batch(() => {
+      for (const child of children(this)) child.pause();
     });
   }
 
@@ -129,7 +163,21 @@ class Owner {
     this.paused = false;
     // Children may be replaced while their parent resumes, so iterate a snapshot and skip
     // anything that was disposed along the way.
-    if (this.children) for (const child of [...this.children]) if (!child.disposed) child.resume();
+    if (this.first !== null) for (const child of children(this)) if (!child.disposed) child.resume();
+  }
+}
+
+/** An effect's run, as its reaction calls it (`this` is the effect). */
+function compute() {
+  this.disposeChildren();
+  this.runCleanup();
+  const previous = owner;
+  owner = this;
+  try {
+    const result = this.fn();
+    this.cleanup = typeof result === 'function' ? result : undefined;
+  } finally {
+    owner = previous;
   }
 }
 
@@ -141,19 +189,9 @@ class Effect extends Owner {
     // @dev
     this.label = dev.label;
     // @dev-end
-    this.computed = watcher.create(() => {
-      this.disposeChildren();
-      this.runCleanup();
-      const previous = owner;
-      owner = this;
-      try {
-        const result = fn();
-        this.cleanup = typeof result === 'function' ? result : undefined;
-      } finally {
-        owner = previous;
-      }
-    });
-    this.computed[EFFECT] = this;
+    this.fn = fn;
+    // The reaction calls `compute` on this effect: one method for every effect, not a closure each.
+    this.computed = watcher.create(compute, this);
     watcher.watch(this.computed);
   }
 
@@ -188,7 +226,7 @@ class Effect extends Owner {
     this.paused = false;
     watchAgain(this.computed);
     try { this.run(); } catch (error) { report(error); }
-    if (this.children) for (const child of [...this.children]) if (!child.disposed) child.resume();
+    if (this.first !== null) for (const child of children(this)) if (!child.disposed) child.resume();
   }
 }
 
@@ -255,7 +293,7 @@ export function flush() {
         report(new Error('zubra: effects keep re-triggering each other; stopped after 100 rounds'));
         return;
       }
-      const effects = pending.map((computed) => computed[EFFECT]).sort((a, b) => a.id - b.id);
+      const effects = pending.map((computed) => watcher.owner(computed)).sort((a, b) => a.id - b.id);
       for (const e of effects) {
         if (e.disposed || e.paused) continue;
         try { e.run(); } catch (error) { report(error); }
