@@ -11,7 +11,11 @@ export interface ActionsOptions {
   origins?: string[];
   /** Called when a server function throws. The client gets a generic error either way. */
   onError?: (error: unknown, request: Request) => void;
-  /** Serve the browser scripts minified. Default: true when `NODE_ENV` is `production`. */
+  /**
+   * Serve the browser scripts minified, and refuse to start when a component doesn't compile
+   * (in development that component is left out with a warning, and the rest are served).
+   * Default: true when `NODE_ENV` is `production`.
+   */
   production?: boolean;
   /**
    * The largest post read, files and fields together, in bytes: 10 MB by default, `Infinity` for

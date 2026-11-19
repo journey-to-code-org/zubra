@@ -133,6 +133,27 @@ export function bindEach(part, open, hydrating, context) {
         return;
       }
 
+      // Before the general pass: rows that kept their key at the start and at the end only take
+      // their item and position, and when what is left is only rows gone, from one place, they
+      // are removed without it. The general pass keys every row, builds three maps and finds the
+      // longest run in order: O(n) work and allocation for one row removed from a thousand.
+      // (Measured, appends and swaps were no faster this way, so they still take the general pass.)
+      if (!part.animate && rows.length && list.length) {
+        const settle = (row, index) => {
+          row.item.set(list[index]);
+          row.position.set(index);
+        };
+        let start = 0;
+        let oldEnd = rows.length;
+        let newEnd = list.length;
+        while (start < oldEnd && start < newEnd && rows[start].key === keys[start]) settle(rows[start], start++);
+        while (oldEnd > start && newEnd > start && rows[oldEnd - 1].key === keys[newEnd - 1]) settle(rows[--oldEnd], --newEnd);
+        if (start === newEnd) {
+          const gone = rows.splice(start, oldEnd - start);
+          batch(() => { for (const row of gone) removeRow(row); });
+          return;
+        }
+      }
       // Keyed: reuse the row for each key, create the missing ones, drop the rest, then walk the
       // new order and move only rows that aren't already where they belong.
       const byKey = new Map(rows.map((row) => [row.key, row]));
