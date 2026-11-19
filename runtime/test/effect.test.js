@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Signal } from '../src/signal.js';
-import { effect, scope, root, flush, tick, DISPOSE } from '../src/effect.js';
+import { effect, scope, root, flush, tick, DISPOSE, children } from '../src/effect.js';
 import { sinks } from '../src/signal.js';
 const hasSinks = (signal) => sinks(signal).length > 0;
 
@@ -362,4 +362,58 @@ test('`using` disposes an effect, a scope and a resource when the block ends, la
   const { log, aborted } = await leaveBlock();
   assert.deepEqual(log, ['run 0', 'scope cleanup', 'effect cleanup'], 'the effect never re-ran');
   assert.equal(aborted, true, "the resource's request was aborted");
+});
+
+test('disposing effects in any order leaves the others subscribed', () => {
+  // A state's subscribers are kept in a list where removing one moves the last into its place;
+  // the moved one must still be found where it now is when it goes in turn.
+  const count = new Signal.State(0);
+  const other = new Signal.State(0);
+  const runs = [0, 0, 0, 0, 0];
+  // Each reads `other` first, so its place in `count`'s list isn't its first dependency.
+  const stops = runs.map((_, i) => effect(() => { other.get(); count.get(); runs[i]++; }));
+  stops[1](); // the last (4) moves into 1's place
+  stops[4](); // and goes from there
+  stops[0]();
+  count.set(1);
+  flush();
+  assert.deepEqual(runs, [1, 1, 2, 2, 1]);
+  assert.equal(sinks(count).length, 2);
+  stops[2](); stops[3]();
+  assert.equal(sinks(count).length, 0);
+  assert.equal(sinks(other).length, 0);
+});
+
+test("a disposed effect leaves its owner's list, which keeps its order", () => {
+  const owner = scope();
+  const make = () => owner.run(() => effect(() => {}));
+  const listed = () => children(owner).length;
+  const a = make(), b = make(), c = make();
+  assert.equal(listed(), 3);
+  b(); // from the middle
+  assert.equal(listed(), 2);
+  c(); // the last: what is made next goes after `a`
+  const d = make();
+  assert.equal(listed(), 2);
+  a(); // the first
+  assert.equal(listed(), 1);
+  d();
+  assert.equal(listed(), 0);
+  make();
+  assert.equal(listed(), 1);
+  owner.dispose();
+  assert.equal(listed(), 0);
+});
+
+test('a cleanup that disposes a later sibling while its owner is disposed leaves none behind', () => {
+  const cleaned = [];
+  const owner = scope();
+  let stopB;
+  owner.run(() => {
+    effect(() => () => { cleaned.push('a'); stopB(); });
+    stopB = effect(() => () => cleaned.push('b'));
+    effect(() => () => cleaned.push('c'));
+  });
+  owner.dispose();
+  assert.deepEqual(cleaned, ['a', 'b', 'c']);
 });
