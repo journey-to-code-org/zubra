@@ -615,6 +615,8 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
             from = backlog.cursor;
           }
           if (whole) notice(listener, whole.changes, whole.shown);
+          // Closed, or taken over by a reconnect, while the backlog was read: no keep-alive.
+          if (!listeners.has(listener)) return;
           timer = setInterval(() => write(': keep-alive\n\n'), heartbeat);
           timer.unref?.();
         },

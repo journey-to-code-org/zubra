@@ -95,3 +95,17 @@ test('props that JSON can\'t carry are refused naming the component and the prop
   assert.doesNotThrow(() => zubra.render('book-card', { book: { title: 'Dune', price: 1, onBuy() {} } }));
   assert.match(zubra.render('book-card', { book: { title: new Date(0), price: 1 } }), /1970-01-01T00:00:00\.000Z/);
 });
+
+test("warnings said once are forgotten after a thousand others, so the server doesn't keep them all", () => {
+  const warnings = [];
+  const zubra = createZubra({ components, production: false, warn: (message) => warnings.push(message) });
+  const cut = (n) => zubra.render('review-list', { reviews: Array.from({ length: n }, (_, id) => ({ id, name: 'Ada \uD83D', stars: 1 })) });
+  cut(1);
+  cut(1);
+  assert.equal(warnings.length, 1, 'said once');
+  // Each review's name is another place, so another message: a thousand more.
+  cut(1001);
+  assert.equal(warnings.length, 1001);
+  cut(1);
+  assert.equal(warnings.length, 1002, 'the first was forgotten, so it is said again');
+});

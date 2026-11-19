@@ -106,14 +106,15 @@ export function mesh({ self, signal, deliver, iceServers = [] }) {
     /** A peer's presence arrived through the server: meet it, if we're both here. */
     sawPeer(room, peer, state) {
       if (peer === me()) return;
-      if (!rooms.has(room)) rooms.set(room, new Set());
       if (state === null) {
-        rooms.get(room).delete(peer);
+        const known = rooms.get(room);
+        if (known?.delete(peer) && known.size === 0) rooms.delete(room);
         const entry = peers.get(peer);
         entry?.rooms.delete(room);
         if (entry && entry.rooms.size === 0) drop(peer);
         return;
       }
+      if (!rooms.has(room)) rooms.set(room, new Set());
       rooms.get(room).add(peer);
       link(peer, room, true);
     },
