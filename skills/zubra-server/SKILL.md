@@ -26,6 +26,8 @@ Give a prop as a promise: `page.render('reviews', { items: fetchReviews() })`. T
 
 A promise that rejects shows the component's `<zb-catch>`: with the error's message in development, and with "Internal error" in production, so a database's error never reaches a visitor. The error itself goes to `createZubra({ onError: (error, { component, prop }) => … })`, or to the log. A promise that doesn't settle within `streamTimeout` (30 s by default; `page({ streamTimeout })` for one page, `0` for none) is rejected the same way, so the response always ends.
 
+A request that fails (a component that doesn't compile, a render that throws): in the server's `catch`, send `zubra.errorPage(error)` (`{ status, type, body }`). In development it is a page with the error's message (a component's has its file, line and a fix) and where it was thrown, and with `reload` it goes away when the fix is saved; in production it is "Something went wrong" and never the message.
+
 Props are JSON. `NaN`, `Infinity` and a `BigInt` are refused with the component and the prop in the message; text cut inside an emoji (half a surrogate pair) is shown as U+FFFD, with a warning saying where; functions are left out, as JSON leaves them.
 
 ## Without JavaScript

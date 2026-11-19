@@ -7,6 +7,7 @@
 
 const SOURCE_EXTENSION = /\.zb(?:\.[jt]sx)?$/;
 const escapeAttribute = (text) => String(text).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const escapeText = (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const TYPES = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json' };
 
 export { SOURCE_EXTENSION, TYPES };
@@ -682,6 +683,24 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
     return out;
   };
 
+  /**
+   * The answer to a request that failed (`{ status: 500, type, body }`), for an app's own
+   * `catch`. In development, an HTML page with what went wrong: the error's message (a
+   * component's comes with its file, line, a caret and often a fix) and, for an error with a
+   * stack, where it was thrown; with `reload`, it carries the script, so it goes away when the fix
+   * is saved. In production, "Something went wrong" and nothing more: an error's message can hold
+   * what a visitor shouldn't see (a query, a path, a host). `options.nonce`: the page's nonce, for
+   * a policy that needs one on the script.
+   */
+  function errorPage(error, options = {}) {
+    if (production) return { status: 500, type: 'text/plain; charset=utf-8', body: 'Something went wrong' };
+    const message = error instanceof Error ? error.message : String(error);
+    // Where it was thrown: the stack's frames, without its first line (the message again).
+    const frames = error instanceof Error && typeof error.stack === 'string' ? error.stack.split('\n').filter((line) => /^\s+at /.test(line)).join('\n') : '';
+    const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Error</title></head><body><pre>${escapeText(message)}</pre>${frames ? `<pre>${escapeText(frames)}</pre>` : ''}${reloading(options, [])}</body></html>`;
+    return { status: 500, type: 'text/html; charset=utf-8', body };
+  }
+
   /** One page: render components into it, then `finish()` it (or use `head()` and `scripts()`). */
   function page(options = {}) {
     nonceAttribute(options); // a nonce that can't be one fails here, not in the middle of a page
@@ -938,6 +957,7 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
     shadowHosts,
     injectShadowRoots,
     page,
+    errorPage,
     importMap,
     fetch: fetchHandler,
     module: (name) => js(nameOf(name) ?? name),
