@@ -1,0 +1,9 @@
+<f-template name="slice-steps">
+  <template>
+    <link rel="stylesheet" href="/slice.css">
+    <f-when value="{{status == 'placed'}}"><ol class="steps" aria-label="Where your order is"><li class="done">Placed</li><li>Being made</li><li>Ready at the window</li><li>Picked up</li></ol></f-when>
+    <f-when value="{{status == 'making'}}"><ol class="steps" aria-label="Where your order is"><li class="done">Placed</li><li class="done">Being made</li><li>Ready at the window</li><li>Picked up</li></ol></f-when>
+    <f-when value="{{status == 'ready'}}"><ol class="steps" aria-label="Where your order is"><li class="done">Placed</li><li class="done">Being made</li><li class="done">Ready at the window</li><li>Picked up</li></ol></f-when>
+    <f-when value="{{status == 'picked-up'}}"><ol class="steps" aria-label="Where your order is"><li class="done">Placed</li><li class="done">Being made</li><li class="done">Ready at the window</li><li class="done">Picked up</li></ol></f-when>
+  </template>
+</f-template>

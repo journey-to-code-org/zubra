@@ -1,6 +1,6 @@
 # Server rendering, honestly
 
-"Server-side rendering isn't great with web components" is the objection people give most often, and it has been true of most web-component tooling. This page says exactly what Zubra renders on the server, where, with what, and where it still falls short. The README's [Server rendering and hydration](../README.md#server-rendering-and-hydration) section is the reference; this is the plain account.
+"Server-side rendering isn't great with web components" is the objection people give most often, and it has been true of most web-component tooling. This page says exactly what Zubra renders on the server, where, with what, and where it still falls short. The README's [Server rendering and hydration](reference.md#server-rendering-and-hydration) section is the reference; this is the plain account.
 
 ## What's different
 

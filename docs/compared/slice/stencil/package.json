@@ -1,0 +1,13 @@
+{
+  "name": "counter-slice-stencil",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "stencil build",
+    "start": "NODE_ENV=production node server.js"
+  },
+  "dependencies": {
+    "counter-slice-backend": "file:../shared"
+  },
+  "devDependencies": { "@stencil/core": "4.45.3" }
+}

@@ -36,7 +36,7 @@ function checkTimeout(value) {
  * host serves under `<base>/` beyond the components' modules (`{ status, type, body }` or null).
  * `needs(name, code)`: the host's check on a compiled module (a package it needs being installed).
  */
-export function createCore({ request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, changed = null, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, runtimeSplit = null, runtimeBuilt = null, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}`, production = false, onError = null, streamTimeout = STREAM_TIMEOUT, minify = false }) {
+export function createCore({ reload, request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, changed = null, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, runtimeSplit = null, runtimeBuilt = null, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}`, production = false, onError = null, streamTimeout = STREAM_TIMEOUT, minify = false }) {
   if (gaps !== 'warn' && gaps !== 'ignore') throw new Error(`@zubra/server: gaps is "warn" or "ignore", not ${JSON.stringify(gaps)}`);
   if (clientModules !== 'all' && clientModules !== 'needed') throw new Error(`@zubra/server: clientModules is "all" or "needed", not ${JSON.stringify(clientModules)}`);
   if (typeof inline !== 'boolean') throw new Error(`@zubra/server: inline is true or false, not ${JSON.stringify(inline)}`);
@@ -555,6 +555,8 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
   /** What a request for `pathname` gets: `{ status, type, body }`, or null if it isn't ours. */
   function serve(pathname) {
     if (!pathname.startsWith(`${base}/`)) return null;
+    // `reload`: the script a page gets (its event stream is the server's own to answer).
+    if (reload && pathname === `${base}/reload.js`) return { status: 200, type: TYPES['.js'], body: `(${RELOAD_IN_BROWSER})(${scriptJson(`${base}/reload`)})` };
     let rest;
     // A malformed escape (`%E0%A4%A`) is the client's mistake: a 400, never a throw that
     // takes down a server written as `if (zubra.handle(req, res)) return;`.
@@ -640,6 +642,11 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
     return new Response(served.body, { status: served.status, headers: { 'content-type': served.type, 'cache-control': cacheControlOf(served) } });
   }
 
+  // `reload` (development): a page asks for a script that keeps an event stream to the server
+  // open and reloads the page when the server is back after going away, which is what a restart
+  // on a saved file looks like from the browser. A file of its own, so no policy has to allow it inline.
+  const reloading = (options) => (reload ? `<script src="${escapeAttribute(`${base}/reload.js`)}" async${nonceAttribute(options)}></script>` : '');
+
   /** One page: render components into it, then `finish()` it (or use `head()` and `scripts()`). */
   function page(options = {}) {
     nonceAttribute(options); // a nonce that can't be one fails here, not in the middle of a page
@@ -719,11 +726,11 @@ export function createCore({ request, files, fromPackage = () => false, sourcesO
       /** The components' CSS and the import map, for the page's `<head>`. */
       head: () => head(used, options),
       /** The module script that makes the components interactive, for the end of `<body>`. */
-      scripts: () => scripts(used, false, options),
+      scripts: () => scripts(used, false, options) + reloading(options),
       /** A whole page with the head and scripts put in (before `</head>` and `</body>`). */
       finish(html) {
         strangers(html);
-        return insertBefore(insertBefore(html, '</head>', head(used, options)), '</body>', scripts(used, false, options));
+        return insertBefore(insertBefore(html, '</head>', head(used, options)), '</body>', scripts(used, false, options) + reloading(options));
       },
     };
 
@@ -1206,6 +1213,15 @@ function swapScript(id, regions, values, options) {
 //
 // Runs in the browser, inlined, right after a streamed host: a promise per pending prop, as a
 // property the element captures when it upgrades, resolved by the swap script later.
+// `reload`: the stream opens, is lost when the server stops, and the browser asks again by
+// itself; when it opens a second time the server is back, with whatever was saved.
+const RELOAD_IN_BROWSER = String.raw`function (url) {
+  var lost = false;
+  var stream = new EventSource(url);
+  stream.onerror = function () { lost = true; };
+  stream.onopen = function () { if (lost) location.reload(); };
+}`;
+
 const HOLD_IN_BROWSER = String.raw`function (id, names) {
   var host = document.querySelector('[data-zb-stream="' + id + '"]');
   var held = (window.__zubraStream = window.__zubraStream || {});
