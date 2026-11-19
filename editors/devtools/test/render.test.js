@@ -72,3 +72,70 @@ test('the other states: no runtime, connecting, outside a component, another ver
   assert.match(render({ version: 2, component: null }), /speaks DevTools version 2/);
   assert.match(render({ error: 'x is not defined' }), /Couldn't read the page: x is not defined/);
 });
+
+test('the engine: Zubra\'s own, TC39 Signals native or not, and an older runtime\'s wording', () => {
+  assert.match(render({ ...reading, engine: 'zubra' }), /Zubra's engine/);
+  assert.match(render({ ...reading, engine: 'tc39', native: true }), /TC39 Signals, native <code>Signal<\/code>/);
+  assert.match(render({ ...reading, engine: 'tc39', native: false }), /TC39 Signals, Zubra's implementation/);
+  assert.match(render(reading), /Signals: polyfill/, 'a runtime from before 6.0 says only native or not');
+});
+
+test('why a binding re-ran: the signals behind it that changed, or that it has no name', () => {
+  const with_ = (because) => render({ ...reading, bindings: [{ ...reading.bindings[0], because }] });
+  assert.match(with_(['doubled ← count']), /re-ran because <code>doubled ← count<\/code> changed/);
+  assert.match(with_([]), /re-ran: what changed has no name here/);
+  assert.ok(!/re-ran because|no name here/.test(render(reading)), 'an older runtime gives no cause: nothing is said');
+  assert.ok(!/re-ran because|no name here/.test(render({ ...reading, bindings: [{ ...reading.bindings[1], because: [] }] })), 'only for one that ran');
+});
+
+test("the component's signals: value, how often it changed, what reads it and what it reads", () => {
+  const html = render({
+    ...reading,
+    signals: [
+      { name: 'count', kind: 'state', value: '2', changes: 2, reads: [], readBy: ['textContent = … on <button.inc>', 'doubled'], readers: 2 },
+      { name: 'doubled', kind: 'computed', value: '4', changes: null, reads: ['count'], readBy: ['textContent = … on <p.double>'], readers: 14 },
+      { name: 'label', kind: 'prop', value: '"<b>"', changes: 0, reads: [], readBy: [], readers: 0 },
+    ],
+  });
+  assert.match(html, /Signals \(3\)/);
+  assert.match(html, /<code>count<\/code><span class="kind">state<\/span><span[^>]*>changed 2×/);
+  assert.match(html, /read by <code>textContent = … on &lt;button.inc&gt;<\/code>, <code>doubled<\/code>/);
+  assert.match(html, /<code>doubled<\/code><span class="kind">computed<\/span><\/div>/, 'no count where the engine keeps none');
+  assert.match(html, /reads <code>count<\/code>/);
+  assert.match(html, /and 13 more/);
+  assert.match(html, /read by nothing live/);
+  assert.match(html, /&quot;&lt;b&gt;&quot;/);
+  assert.ok(!html.includes('<b>'));
+  assert.ok(!/Signals \(/.test(render(reading)), 'an older runtime: no section');
+});
+
+test('live counts: in the component and on the page, with the trend and a line of it', () => {
+  const history = (counts) => counts.map((effects, i) => ({ update: i + 1, effects }));
+  const html = render({ ...reading, live: { component: 12, page: 3214, owners: 4000, components: 31, history: history([2000, 2214, 2500, 3000, 3214]) } });
+  assert.match(html, /12 effects in this component · 31 components on the page · 3,214 effects alive of those made since the pane connected/);
+  assert.match(html, /\+1,214 over the last 4 updates/);
+  assert.match(html, /only grown/);
+  assert.match(html, /<svg class="spark"[^>]*><polyline points="0.0,18.0 [^"]+ 100.0,2.0"\/>/);
+  const settled = render({ ...reading, live: { component: 1, page: 9, owners: 9, components: 1, history: history([9, 12, 9]) } });
+  assert.match(settled, /unchanged over the last 2 updates/);
+  assert.ok(!/only grown/.test(settled));
+  assert.match(settled, /· 1 component on the page ·/);
+  assert.ok(!/only grown/.test(render({ ...reading, live: { component: 1, page: 12, owners: 9, components: 1, history: history([9, 12]) } })), 'two updates are too few to call');
+});
+
+test('the timeline: newest first, what each wrote and re-ran, and how long it took', () => {
+  const html = render({
+    ...reading,
+    timeline: [
+      { number: 7, took: 0.4, writes: 1, written: [{ name: '<dt-panel> count', from: '0', to: '1' }], ran: 2, reran: ['<dt-panel> textContent = … on <p>', '<dt-badge> .value = …'] },
+      { number: 8, took: 1.25, writes: 23, written: [{ name: null, from: null, to: '"<i>"' }], ran: 9, reran: Array.from({ length: 9 }, (_, i) => `effect ${i}`) },
+    ],
+  });
+  assert.match(html, /Updates \(2\)/);
+  assert.ok(html.indexOf('<b>8</b>') < html.indexOf('<b>7</b>'), 'newest first');
+  assert.match(html, /<b>7<\/b><span class="quiet">0.4 ms/);
+  assert.match(html, /wrote <code>&lt;dt-panel&gt; count<\/code> <code>0<\/code> → <code>1<\/code>/);
+  assert.match(html, /wrote <code>an unnamed signal<\/code> → <code>&quot;&lt;i&gt;&quot;<\/code>, and 22 more/);
+  assert.match(html, /re-ran 9: <code>effect 0<\/code>.*<code>effect 5<\/code>, and 3 more/);
+  assert.ok(!html.includes('<i>'));
+});
