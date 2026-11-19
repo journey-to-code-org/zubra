@@ -104,6 +104,8 @@ createSyncServer({
 
 `field` and `value` let an app keep fields, or whole collections, for the server: a page may move a card but not change what it costs. A push is all or nothing, so one refused change refuses the push.
 
+**A page on another site** is let in only if it's listed: `createSyncServer({ origins: ['https://shop.example'] })`. Its writes are taken (a page on any other site is refused, as a browser says where a request comes from), and its answers carry CORS headers, so its browser lets it read its pulls and its live stream and send JSON at all. That's the same as the `zubra-sync` binary's `--origin`. `authorize` still decides what it may read and change. Cookies aren't sent across sites, so a page on another site is anonymous to `authorize` unless the app knows it some other way.
+
 For a page everyone may edit (a shared board on a trusted network, a demo), say so: `createSyncServer({ authorize: allowAnyone })`. A Durable Object takes reads only unless its class has an `authorize()`, and the `zubra-sync` binary unless it's started with `--open`.
 
 Components don't change. The protocol is plain HTTP, so any server can keep the log:
