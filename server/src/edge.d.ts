@@ -93,6 +93,8 @@ export interface EdgeOptions {
    * `bundle`, whose files hold Zubra's engine. Default `false`.
    */
   signals?: boolean;
+  /** Minify the component modules (and their CSS), with the compiler. Default: `production`, without the DevTools. */
+  minify?: boolean;
 }
 
 export declare function createZubra(options: EdgeOptions): EdgeZubra;

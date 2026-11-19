@@ -172,6 +172,12 @@ export interface ZubraOptions {
    * built with the same option. Default `false`.
    */
   signals?: boolean;
+  /**
+   * Minify the component modules this server sends (and their CSS), with the compiler: about a
+   * sixth fewer bytes, compressed. Default: on in production, off in development and with the
+   * DevTools. `false` sends them as the compiler writes them, to read.
+   */
+  minify?: boolean;
 }
 
 export declare function createZubra(options?: ZubraOptions): Zubra;

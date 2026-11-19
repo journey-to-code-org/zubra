@@ -199,7 +199,7 @@ test('inline: false: a prop given as a promise needs the nonce, and streams with
 });
 
 test('inline: false: writeAssets() writes the stylesheets and resolved modules, and the static site runs under the strict policy', async () => {
-  const zubra = createZubra({ components, inline: false, production: true, devtools: false });
+  const zubra = createZubra({ minify: false, components, inline: false, production: true, devtools: false });
   const site = mkdtempSync(join(tmpdir(), 'zubra-csp-static-'));
   after(() => rmSync(site, { recursive: true, force: true }));
   zubra.writeAssets(site);
@@ -220,7 +220,7 @@ test('inline: false: writeAssets() writes the stylesheets and resolved modules, 
   // Without the option, nothing changes: no stylesheets, and the runtime as it is.
   const plain = mkdtempSync(join(tmpdir(), 'zubra-csp-plain-'));
   after(() => rmSync(plain, { recursive: true, force: true }));
-  createZubra({ components, production: true, devtools: false }).writeAssets(plain);
+  createZubra({ minify: false, components, production: true, devtools: false }).writeAssets(plain);
   assert.equal(existsSync(join(plain, '_zubra/components/hello-there.css')), false);
   assert.match(readFileSync(join(plain, '_zubra/components/hello-there.js'), 'utf8'), /from ['"]\.\.\/runtime\/zubra\.js['"]/);
 

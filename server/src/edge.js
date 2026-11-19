@@ -44,7 +44,7 @@ function normalize(path) {
  * the runtime you serve has the TC39 engine, `dist/production` with its `signal-tc39.js` served as
  * `signal.js`; not with `bundle`.
  */
-export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : null, components = {}, prefix = '/_zubra', cache = true, devtools = false, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, production = true, onError, streamTimeout, signals = false } = {}) {
+export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : null, components = {}, prefix = '/_zubra', cache = true, devtools = false, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, production = true, onError, streamTimeout, signals = false, minify = production && !devtools } = {}) {
   if (signals && bundle) throw new Error("@zubra/server/edge: signals: true can't go with bundle: true, whose files hold Zubra's engine. Serve @zubra/runtime's dist/production, with signal-tc39.js as signal.js");
   if (!compiler) throw new Error("@zubra/server/edge: createZubra() needs the compiler's WebAssembly module (`wasm`), or a `compiler` from createCompiler()");
   const sources = new Map(); // path → source
@@ -87,6 +87,7 @@ export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : nul
     production,
     onError,
     streamTimeout,
+    minify,
     gaps,
     clientModules,
     inline,

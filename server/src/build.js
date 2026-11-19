@@ -79,7 +79,7 @@ async function build({ keep = [], esbuild, scripts = [], ...options }, whole) {
   if (options.imports?.['@zubra/runtime']) throw new Error("@zubra/server/build: `imports['@zubra/runtime']` says the runtime is served from somewhere else, so there is nothing here to build");
   // What a production server sends without a built runtime: every module with its runtime
   // imports already taken from the file that has each name.
-  const zubra = createZubra({ ...options, production: true, devtools: false, cache: true, runtime: null });
+  const zubra = createZubra({ ...options, production: true, devtools: false, cache: true, runtime: null, minify: false });
   const prefix = (options.prefix ?? '/_zubra').replace(/\/$/, '');
   const text = async (path) => {
     const response = await zubra.fetch(new Request(`http://localhost${prefix}/${path}`));
