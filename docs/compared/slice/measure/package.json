@@ -1,0 +1,12 @@
+{
+  "name": "counter-slice-measure",
+  "private": true,
+  "type": "module",
+  "scripts": { "measure": "node measure.mjs" },
+  "dependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "autocannon": "9.0.0",
+    "lighthouse": "13.6.0",
+    "playwright": "1.63.0"
+  }
+}

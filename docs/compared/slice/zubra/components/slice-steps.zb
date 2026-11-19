@@ -1,0 +1,21 @@
+<!--
+  Where an order is. The order is a Sync document only the server writes, and the page may read it
+  because it's this guest's own, so when the kitchen moves it along the page follows.
+-->
+<script>
+  'use collection orders by order'
+  import { from } from '@zubra/runtime'
+
+  let status = from(statusNow)
+
+  const steps = ['placed', 'making', 'ready', 'picked-up']
+  const words = { placed: 'Placed', making: 'Being made', ready: 'Ready at the window', 'picked-up': 'Picked up' }
+  const reached = steps.indexOf(status)
+</script>
+<slice-steps order="" status-now="placed">
+  <ol class="steps" aria-label="Where your order is">
+    <zb-each items={steps} as="step" key={step}>
+      <li class:done={steps.indexOf(step) <= reached}>{words[step]}</li>
+    </zb-each>
+  </ol>
+</slice-steps>
