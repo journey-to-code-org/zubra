@@ -249,7 +249,7 @@ A shadow component's CSS is used as written, because the root does the scoping. 
   styles: "@layer theme, base, components, utilities;\n@layer components {\n  button { font: inherit; }\n}\n",
 ```
 
-Each is delivered as one constructed stylesheet shared by every instance. [Styles](../../README.md#styles) in the README has the rest.
+Each is delivered as one constructed stylesheet shared by every instance. [Styles](../reference.md#styles) in the reference has the rest.
 
 ### 8. Form controls need `ElementInternals`
 
