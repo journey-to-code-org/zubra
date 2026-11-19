@@ -1161,7 +1161,40 @@ fn attribute_case_warnings(
     for node in nodes {
         match node {
             Node::Element(element) => {
-                if let Some(child) = component.child(&element.name) {
+                // React's names for two attributes. HTML has no `className`: it is sent as it is
+                // written, the browser reads `classname`, and nothing does anything with it, so
+                // the styling is gone without a word. (A child that declares a prop of that
+                // name is given it; a JSX component's are `class` and `for` by the time they
+                // are here.)
+                let child = component.child(&element.name);
+                for attribute in &element.attributes {
+                    let Some((_, html)) = REACT_ATTRIBUTES
+                        .iter()
+                        .find(|(react, _)| *react == attribute.name)
+                    else {
+                        continue;
+                    };
+                    let declared = child.is_some_and(|child| {
+                        child
+                            .ast
+                            .props
+                            .iter()
+                            .any(|prop| prop.name == attribute.name)
+                    });
+                    if !declared {
+                        out.push(
+                            Diagnostic::new(
+                                attribute.span,
+                                format!(
+                                    "`{}` is React's name for the `{html}` attribute, and HTML has no such attribute: <{}> gets no {html}",
+                                    attribute.name, element.name
+                                ),
+                            )
+                            .with_help(format!("write `{html}`")),
+                        );
+                    }
+                }
+                if let Some(child) = child {
                     for attribute in &element.attributes {
                         let name = &attribute.name;
                         if !name
@@ -1221,6 +1254,9 @@ fn attribute_case_warnings(
         }
     }
 }
+
+/// Attributes React spells its own way, and what HTML calls them.
+const REACT_ATTRIBUTES: &[(&str, &str)] = &[("className", "class"), ("htmlFor", "for")];
 
 /// `HTMLElement` properties a prop would shadow, and what the attribute does on its own.
 const BUILT_IN_PROPERTIES: &[(&str, &str)] = &[
