@@ -21,7 +21,7 @@
     {
       "name": "choice-cards",
       "category": "input",
-      "description": "Pick one of several cards: a radio group. A form control; arrow keys move the choice. Each item is `{ id, title, detail, price, note }` (`note` and `price` optional).",
+      "description": "Pick one of several cards: a radio group. A form control; arrow keys move the choice. Each item is `{ id, title, detail, price, note }` (`detail`, `note` and `price` optional: a card without them is only as tall as its title).",
       "files": [
         "choice-cards.zb"
       ],

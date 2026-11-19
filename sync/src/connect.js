@@ -106,6 +106,29 @@ const remember = (name, fallback) => {
 const keep = (name, value) => { try { localStorage.setItem(name, value); } catch {} };
 
 /**
+ * A live-stream key a stopped connection leaves for the next connection to the same server, by
+ * server and peer id. The server keeps a peer id for a while after its stream closes, for that
+ * stream to come back with its key: a new connection that presents it takes the id over, where
+ * one without it is refused (409) and gives the whole page a new peer id. Only a stopped
+ * connection hands its key over; two open connections sharing one would keep taking the stream
+ * from each other.
+ */
+const handedOver = new Map();
+
+/** Whether a presence room (`collection/key`) is in a connection's scope (null is everything). */
+function roomInScope(scope, room) {
+  if (!scope) return true;
+  const at = room.indexOf('/');
+  if (at <= 0) return false;
+  const rule = Object.hasOwn(scope, room.slice(0, at)) ? scope[room.slice(0, at)] : undefined;
+  const key = room.slice(at + 1);
+  if (rule === true) return true;
+  if (typeof rule === 'string') return key.startsWith(rule);
+  if (Array.isArray(rule)) return rule.some((prefix) => key.startsWith(prefix));
+  return false;
+}
+
+/**
  * Start sharing. `url`: where the log is (`/_zb/sync`). `interval`: how often to pull, in ms
  * (default 2000). `scope`: only what this page shows, per collection `true` or a key prefix (or a
  * list of them), e.g. `{ seats: 'showing-12/', brands: true }`; leave it out for everything.
@@ -247,8 +270,11 @@ export function connect({ url = '/_zb/sync', interval = 2000, live = true, webrt
   let open = false;
   let retry = null;
   // The live stream's secret for this tab's peer id (its `hello`): presence and signals sent as
-  // this peer carry it, and a reconnect presents it to keep the peer id.
-  let key = '';
+  // this peer carry it, and a reconnect presents it to keep the peer id. A connection to the same
+  // server stopped before this one began left its own (above).
+  const handover = () => `${base}\u0000${peerId()}`;
+  let key = handedOver.get(handover()) ?? '';
+  handedOver.delete(handover());
   const listen = () => {
     if (!live || typeof EventSource === 'undefined' || stopped) return;
     const at = `${base}/live?since=${encodeURIComponent(cursor)}&peer=${encodeURIComponent(peerId())}${key ? `&key=${key}` : ''}${scoped}`;
@@ -312,6 +338,9 @@ export function connect({ url = '/_zb/sync', interval = 2000, live = true, webrt
       : null;
 
   const offPresence = onPresence((message) => {
+    // Only what this connection's server is for: with two connections on a page, each server is
+    // sent its own rooms' presence, not the other's (which it would refuse, or keep).
+    if (!roomInScope(scope, message.room)) return;
     if (rtc?.send(message) && message.state !== null) return;
     fetch(`${base}/presence`, {
       method: 'POST',
@@ -358,6 +387,7 @@ export function connect({ url = '/_zb/sync', interval = 2000, live = true, webrt
     direct: () => rtc?.direct() ?? [],
     stop() {
       stopped = true;
+      if (key) handedOver.set(handover(), key);
       off();
       offPresence();
       rtc?.close();
