@@ -1,8 +1,8 @@
 // The whole server: it renders the page with its components already in the HTML, serves their
 // browser modules, and runs the form's server function. No bundler and no build step.
 //
-//   npm run dev     restarts when this file or anything in src/ changes, and the open page
-//                   reloads, so an edited component or 'use server' function shows on save
+//   npm run dev     restarts when this file or anything in src/ changes: an edited component is
+//                   swapped into the open page, keeping its state, and any other change reloads it
 //   npm start       the same server with NODE_ENV=production (compiled once, cached)
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -17,7 +17,8 @@ const components = 'src/components';
 // `cache: false` compiles on each request, so an edit to a .zb file is in the next page.
 // `compress` sends the modules in Brotli or gzip (a third of the bytes); take it out if your
 // host or a proxy in front compresses already.
-// `reload`: in development the page loads again when this server is back from a restart.
+// `reload`: in development, when this server is back from a restart, the components that changed
+// are swapped into the open page (keeping their state), and any other change reloads it.
 const zubra = createZubra({ components, cache: production, compress: true, reload: !production });
 // The functions marked 'use server' in the components, served at /_zb/action/<tag>/<name>.
 const actions = await createActions({ components });
@@ -56,7 +57,7 @@ function home(sent) {
   const page = zubra.page();
   const body = `
     <main>
-      ${page.render('zubra-welcome', { heading: '{{title}}', framework: 'a Node server', reloads: true })}
+      ${page.render('zubra-welcome', { heading: '{{title}}', framework: 'a Node server' })}
       <section class="try">
         ${page.render('hello-counter', { label: 'Clicks', count: 2 })}
         <p>Rendered on the server at 2, and counting in the browser from there.</p>

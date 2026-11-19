@@ -1,5 +1,6 @@
-// `createZubra({ reload: true })` (development): a page reloads when the server is back after
-// going away, which is what a restart on a saved file looks like from the browser.
+// `createZubra({ reload: true })` (development): when the server is back after going away (a
+// restart on a saved file, from the browser's side), the components that changed are swapped into
+// the open page, keeping their state, and anything else reloads it.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -13,7 +14,8 @@ import { createZubra } from '../src/index.js';
 // Inside the package, so the server it starts finds `../src/index.js`'s packages.
 const work = mkdtempSync(join(fileURLToPath(new URL('.', import.meta.url)), '.tmp-reload-'));
 const components = join(work, 'components');
-const word = (text) => `<say-word>\n  <p>${text}</p>\n</say-word>\n`;
+// A word, and a count of taps that a swap keeps. `prop` adds a prop (a change of interface).
+const word = (text, prop = '') => `<script>\n  let taps = 0\n</script>\n<say-word${prop}>\n  <p>${text}</p>\n  <button onclick={() => taps++}>{taps}</button>\n</say-word>\n`;
 const serverFile = join(work, 'server.mjs');
 let browser;
 let child;
@@ -22,6 +24,8 @@ before(async () => {
   writeFileSync(join(work, 'package.json'), '{ "type": "module" }\n');
   (await import('node:fs')).mkdirSync(components);
   writeFileSync(join(components, 'say-word.zb'), word('first'));
+  // One that imports another: a page that renders it loads both.
+  writeFileSync(join(components, 'say-pair.zb'), "<script>\n  import './say-word.zb'\n</script>\n<say-pair>\n  <say-word></say-word>\n</say-pair>\n");
   writeFileSync(serverFile, `import { createServer } from 'node:http';
 import { createZubra } from ${JSON.stringify(new URL('../src/index.js', import.meta.url).href)};
 const zubra = createZubra({ components: ${JSON.stringify(components)}, cache: false, reload: process.env.RELOAD !== 'off' });
@@ -59,20 +63,54 @@ test('off by default: no script in the page, no stream, no file', async () => {
   assert.equal(await zubra.fetch(new Request('http://x/_zubra/reload')), null);
 });
 
-test('on: finish() and scripts() add the script, by the prefix and with the page\'s nonce; the file is served', async () => {
+test('on: finish() and scripts() add the script, by the prefix and with the page\'s nonce, naming the page\'s components; the file is served', async () => {
   const zubra = production({ reload: true, prefix: '/assets/z' });
   const page = zubra.page({ nonce: 'abc123' });
   const html = page.finish(`<html><head></head><body>${page.render('say-word')}</body></html>`);
-  assert.match(html, /<script src="\/assets\/z\/reload\.js" async nonce="abc123"><\/script><\/body>/);
-  assert.match(page.scripts(), /<script src="\/assets\/z\/reload\.js" async nonce="abc123"><\/script>$/);
+  assert.match(html, /<script src="\/assets\/z\/reload\.js" data-components="say-word" async nonce="abc123"><\/script><\/body>/);
+  assert.match(page.scripts(), /<script src="\/assets\/z\/reload\.js" data-components="say-word" async nonce="abc123"><\/script>$/);
+  // The components a page's components import are named too: a change to one is swapped as well.
+  const pair = zubra.page();
+  assert.match(pair.finish(`<html><head></head><body>${pair.render('say-pair')}</body></html>`), /data-components="say-pair say-word"/);
+  // With the components joined into one module, there is nothing to swap one by one: the page reloads.
+  const joined = production({ reload: true, bundle: true }).page();
+  assert.match(joined.finish(`<html><head></head><body>${joined.render('say-pair')}</body></html>`), /<script src="\/_zubra\/reload\.js" async><\/script>/);
   // A page with no component gets it too: it is the page that reloads.
   assert.match(zubra.page().finish('<html><head></head><body><p>plain</p></body></html>'), /<script src="\/assets\/z\/reload\.js" async><\/script><\/body>/);
   const file = await zubra.fetch(new Request('http://x/assets/z/reload.js'));
   assert.equal(file.status, 200);
   assert.match(file.headers.get('content-type'), /^text\/javascript/);
   const code = await file.text();
-  assert.match(code, /new EventSource\(url\)/);
-  assert.match(code, /\("\/assets\/z\/reload"\)$/);
+  assert.match(code, /new EventSource\(base \+ '\/reload'\)/);
+  assert.match(code, /\("\/assets\/z"\)$/);
+});
+
+test("on: each component's module says the page swaps new versions in, and what each is now is served", async () => {
+  const folder = mkdtempSync(join(work, 'versions-'));
+  try {
+    writeFileSync(join(folder, 'say-word.zb'), word('one'));
+    const zubra = createZubra({ components: folder, production: true, reload: true, cache: false });
+    const module = await (await zubra.fetch(new Request('http://x/_zubra/components/say-word.js'))).text();
+    assert.ok(module.startsWith('globalThis.__ZUBRA_HOT__ = true; '), 'before it defines its element, on the first line');
+    assert.ok(!(await (await production().fetch(new Request('http://x/_zubra/components/say-word.js'))).text()).includes('__ZUBRA_HOT__'), 'not without the option');
+    const versions = async () => {
+      const answer = await zubra.fetch(new Request('http://x/_zubra/reload/versions/say-word+not-one'));
+      assert.equal(answer.headers.get('content-type'), 'application/json');
+      return answer.json();
+    };
+    const first = await versions();
+    assert.deepEqual(Object.keys(first), ['say-word'], 'a name that is no component is left out');
+    assert.match(first['say-word'], /^[0-9a-z]+$/);
+    assert.deepEqual(await versions(), first, 'the same while nothing changed');
+    writeFileSync(join(folder, 'say-word.zb'), word('two'));
+    const second = await versions();
+    assert.notEqual(second['say-word'], first['say-word']);
+    writeFileSync(join(folder, 'say-word.zb'), '<say-word>\n  <p {oops}>x</p>\n</say-word>\n');
+    assert.deepEqual(await versions(), { 'say-word': 'error' }, "one that doesn't compile");
+    assert.equal(await production().fetch(new Request('http://x/_zubra/reload/versions/say-word')), null, 'not without the option');
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
 });
 
 test('the stream: an event stream that stays open and says when to ask again, from handle and from fetch', async () => {
@@ -105,23 +143,43 @@ test('the stream: an event stream that stays open and says when to ask again, fr
   }
 });
 
-test('a browser: the server stops and comes back with an edit, and the page shows it without being touched', async () => {
+test('a browser: an edited component is swapped into the open page, keeping its state; anything else reloads it', async () => {
   writeFileSync(join(components, 'say-word.zb'), word('first'));
   const port = await freePort();
   await start(port);
   const tab = await browser.newPage();
+  const errors = [];
+  tab.on('pageerror', (error) => errors.push(error.message));
+  const restart = async (edit) => {
+    await stop();
+    edit?.();
+    await start(port);
+  };
   try {
     await tab.goto(`http://127.0.0.1:${port}/`);
     assert.equal(await tab.locator('say-word p').innerText(), 'first');
+    await tab.click('say-word button');
+    await tab.click('say-word button');
     await tab.evaluate(() => { window.untouched = true; });
-    // While the server stays up, nothing reloads.
+    // While the server stays up, nothing changes.
     await tab.waitForTimeout(700);
     assert.equal(await tab.evaluate(() => window.untouched), true);
-    await stop();
-    writeFileSync(join(components, 'say-word.zb'), word('second'));
-    await start(port);
+    // The component changed: swapped in place, the same page, its taps kept.
+    await restart(() => writeFileSync(join(components, 'say-word.zb'), word('second')));
     await tab.locator('say-word p', { hasText: 'second' }).waitFor({ timeout: 8000 });
-    assert.equal(await tab.evaluate(() => window.untouched), undefined, 'a new page');
+    assert.equal(await tab.evaluate(() => window.untouched), true, 'the same page');
+    assert.equal(await tab.locator('say-word button').innerText(), '2', 'its state kept');
+    // Back with no component changed (the server's own code, say): the page reloads.
+    await restart();
+    await tab.waitForFunction(() => window.untouched === undefined, null, { timeout: 8000 });
+    assert.equal(await tab.locator('say-word button').innerText(), '0');
+    // Its interface changed (a new prop): the runtime refuses the swap, and the page reloads.
+    await tab.click('say-word button');
+    await tab.evaluate(() => { window.untouched = true; });
+    await restart(() => writeFileSync(join(components, 'say-word.zb'), word('third', ' tone="plain"')));
+    await tab.waitForFunction(() => window.untouched === undefined, null, { timeout: 8000 });
+    assert.equal(await tab.locator('say-word p').innerText(), 'third');
+    assert.deepEqual(errors, []);
   } finally {
     await tab.close();
     await stop();
