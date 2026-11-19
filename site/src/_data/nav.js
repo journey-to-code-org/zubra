@@ -42,7 +42,7 @@ export default [
     { file: 'docs/editor-support.md', label: 'Editor support' },
   ] },
   { group: 'Reference', pages: [
-    { file: 'README.md', slug: 'reference', label: 'Reference (the README)' },
+    { file: 'docs/reference.md', label: 'Reference' },
     { file: 'docs/stability.md', label: 'Stability and tiers' },
     { file: 'docs/browser-support.md', label: 'Browser support' },
     { file: 'docs/javascript-support.md', label: 'What JavaScript runs where' },
