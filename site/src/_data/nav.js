@@ -34,6 +34,7 @@ export default [
     { file: 'docs/server-rendering.md', label: 'Server rendering, honestly' },
     { file: 'docs/compared-with-lit-and-stencil.md', label: 'Compared with Lit and Stencil' },
     { file: 'docs/compared-with-html-first.md', label: 'Compared with WebUI, FAST, Enhance and WebC' },
+    { file: 'docs/compared-on-one-app.md', label: 'Compared on one app, twelve ways' },
     { file: 'docs/typescript.md', label: 'TypeScript in .zb files' },
     { file: 'docs/guide/other-peoples-pages.md', label: 'On other people’s pages' },
     { file: 'docs/guide/accessible-widgets.md', label: 'Accessible widgets' },
@@ -41,7 +42,7 @@ export default [
     { file: 'docs/editor-support.md', label: 'Editor support' },
   ] },
   { group: 'Reference', pages: [
-    { file: 'README.md', slug: 'reference', label: 'Reference (the README)' },
+    { file: 'docs/reference.md', label: 'Reference' },
     { file: 'docs/stability.md', label: 'Stability and tiers' },
     { file: 'docs/browser-support.md', label: 'Browser support' },
     { file: 'docs/javascript-support.md', label: 'What JavaScript runs where' },

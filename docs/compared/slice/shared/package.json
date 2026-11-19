@@ -1,0 +1,6 @@
+{
+  "name": "counter-slice-backend",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./slice.js", "./slice.css": "./slice.css" }
+}
