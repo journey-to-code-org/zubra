@@ -164,6 +164,14 @@ export interface ZubraOptions {
    * are. Not at the edge, where the platform compresses.
    */
   compress?: boolean;
+  /**
+   * Signals mode (experimental): the runtime's reactivity on the TC39 Signals API in place of
+   * Zubra's own engine. `state()` then returns a real `Signal.State`, the runtime's `Signal`
+   * export is the proposal's whole API, and a browser's native `Signal` is used when it has one.
+   * The runtime is served file by file in production too. A built runtime (`runtime`) must be
+   * built with the same option. Default `false`.
+   */
+  signals?: boolean;
 }
 
 export declare function createZubra(options?: ZubraOptions): Zubra;

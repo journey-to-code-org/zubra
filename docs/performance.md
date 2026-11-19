@@ -40,7 +40,9 @@ When the official results exist, they replace this table.
 
 ## The Signals core
 
-Compiled components get their reactivity from `runtime/src/signal-impl.js`, Zubra's implementation of the TC39 Signals API (the native `Signal` replaces it where a browser has one). Profiling the benchmark's create and clear found most of the runtime's own time, and most of its garbage collection, in that file and in `effect.js`. Three things cost it, all fixed without changing the API:
+**Since 6.0** the default engine is Zubra's own (`runtime/src/signal.js`), and the TC39 API is signals mode (experimental). Against the API on the same effects, in Node (median of 30): creating and disposing 2,000 effects 6.6 ms to 1.5 ms, selecting one row of 1,000 0.54 ms to 0.47 ms, updating 1,000 states in one flush 0.35 ms to 0.30 ms; the engine is 1,685 B compressed against 2,716 B, and what every page loads fell from 16.1 KB to 15.1 KB. An effect there is one node the graph marks directly; on the API it is a Computed and a Watcher's links to it. This section is about 5.x, and about signals mode now.
+
+Compiled components got their reactivity from `runtime/src/signal-impl.js`, Zubra's implementation of the TC39 Signals API (the native `Signal` replaces it where a browser has one). Profiling the benchmark's create and clear found most of the runtime's own time, and most of its garbage collection, in that file and in `effect.js`. Three things cost it, all fixed without changing the API:
 
 - **A `WeakMap` from each signal to its internal node.** A `WeakMap` with tens of thousands of keys is a table the garbage collector walks on every collection. Each signal now holds its node in a private field, which is also the check that a method was called on the right kind of object.
 - **`Watcher.getPending()` looked at every watched signal.** Zubra's effects share one Watcher and call `getPending()` on each flush, the pattern the proposal's README shows, so every update cost something for every effect on the page. The Watcher now records computeds as they're marked dirty: O(pending), not O(watched). The one visible difference is the order, listed in `runtime/README.md`.

@@ -40,9 +40,12 @@ function normalize(path) {
  * runtime's base as one file, `<prefix>/runtime/zubra.js`, and the files beside it that their
  * components name; serve `@zubra/runtime`'s `dist/split` there (where `dist/production` would
  * otherwise go). `dist/bundled`, from before the split, still works there: `zubra.js` is then
- * the whole core and the files beside it only pass its names on.
+ * the whole core and the files beside it only pass its names on. `signals: true` (experimental):
+ * the runtime you serve has the TC39 engine, `dist/production` with its `signal-tc39.js` served as
+ * `signal.js`; not with `bundle`.
  */
-export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : null, components = {}, prefix = '/_zubra', cache = true, devtools = false, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, production = true, onError, streamTimeout } = {}) {
+export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : null, components = {}, prefix = '/_zubra', cache = true, devtools = false, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, production = true, onError, streamTimeout, signals = false } = {}) {
+  if (signals && bundle) throw new Error("@zubra/server/edge: signals: true can't go with bundle: true, whose files hold Zubra's engine. Serve @zubra/runtime's dist/production, with signal-tc39.js as signal.js");
   if (!compiler) throw new Error("@zubra/server/edge: createZubra() needs the compiler's WebAssembly module (`wasm`), or a `compiler` from createCompiler()");
   const sources = new Map(); // path → source
   const files = new Map(); // name → path

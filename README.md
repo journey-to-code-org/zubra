@@ -4,7 +4,7 @@
 
 Zubra is a compiler for Web Components. You write a component as HTML with `{expr}` bindings and a `<script>`. Zubra turns it into server-rendered HTML and a small custom element that hydrates that HTML. React, Vue and any other framework can then use the element without integration code.
 
-The runtime is built on what the web platform is standardizing: the TC39 Signals API, template parts in the shape of DOM Parts, the Context Protocol, form-associated custom elements and declarative shadow DOM. The aim is for the platform to absorb what Zubra proves, so the runtime shrinks as native features ship. See `runtime/README.md`.
+The runtime is built on what the web platform is standardizing: template parts in the shape of DOM Parts, the Context Protocol, form-associated custom elements and declarative shadow DOM. The aim is for the platform to absorb what Zubra proves, so the runtime shrinks as native features ship. Reactivity follows the TC39 Signals proposal's model on an engine of Zubra's own, so how an app updates doesn't depend on a Stage 1 API; the proposal's API itself is an experimental mode (`signals: true`). See `runtime/README.md`.
 
 **Nothing is hidden.** `zubra compile` prints the HTML and the JavaScript module it generates, and every part of them exists because of a rule of the platform. Reading the output is the quickest way to learn how Web Components work: [Read the output](docs/guide/08-read-the-output.md) goes through one component's real output and the nine rules behind it (names, constructors, attributes, upgrades, lifecycle, events, shadow DOM, forms, server HTML).
 
@@ -124,7 +124,7 @@ The reactivity is the point, not a feature. `let` is state, and the template is 
 </click-counter>
 ```
 
-Nothing re-renders: `count++` updates one text node. The script runs once per element, the way Solid and Svelte 5 work, on the TC39 Signals API.
+Nothing re-renders: `count++` updates one text node. The script runs once per element, the way Solid and Svelte 5 work: signals, on Zubra's own engine.
 
 **Who it's for.** One component with more than one consumer: a component library or design system used from more than one framework, components handed to other people's stacks, anything that has to live in a CMS, an older app or a static site, and servers that aren't JavaScript. If one app on one framework is the only consumer, you don't need it; [Who Zubra is for](docs/who-this-is-for.md) says why, and [What crosses the boundary](docs/what-crosses-the-boundary.md) says which components fit through an element and which belong in the framework. Astro lets frameworks coexist on a page; Zubra lets one component be used by all of them. If you're weighing it against Lit or Stencil, [Compared with Lit and Stencil](docs/compared-with-lit-and-stencil.md) says where each is the better choice. Against the HTML-first tools closest to it, Microsoft's WebUI and FAST, Enhance and WebC, [Compared with WebUI, FAST, Enhance and WebC](docs/compared-with-html-first.md) does the same, with what each server renders and how fast.
 

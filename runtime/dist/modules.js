@@ -118,11 +118,11 @@ export default {
   "shadow.js": [
     "element.js"
   ],
-  "signal-core.js": [],
   "signal-impl.js": [],
-  "signal.js": [
+  "signal-tc39.js": [
     "signal-impl.js"
   ],
+  "signal.js": [],
   "slots.js": [
     "blocks.js",
     "effect.js",
@@ -232,7 +232,10 @@ export const bundled = {
   "shadow.js": [
     "zubra.js"
   ],
-  "signal-core.js": [],
+  "signal-impl.js": [],
+  "signal-tc39.js": [
+    "signal-impl.js"
+  ],
   "signal.js": [
     "zubra.js"
   ],
@@ -377,7 +380,10 @@ export const split = {
     "shadow.js": [
       "zubra.js"
     ],
-    "signal-core.js": [],
+    "signal-impl.js": [],
+    "signal-tc39.js": [
+      "signal-impl.js"
+    ],
     "signal.js": [
       "zubra.js"
     ],

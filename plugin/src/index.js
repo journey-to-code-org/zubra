@@ -119,6 +119,16 @@ $zubraRegister(tag, (props, slots) => {
 `;
 }
 
+// A module of @zubra/runtime, as source or as its production build (installed, or linked).
+const RUNTIME_FILE = /[\\/]runtime[\\/](?:src|dist[\\/]production)[\\/][^\\/]+\.js(?:\?.*)?$/;
+const SIGNALS_ENGINE = /[\\/]runtime[\\/](?:src|dist[\\/]production)[\\/]signal-tc39\.js$/;
+/** Signals mode's engine, beside the runtime module that imports the engine. */
+function signalsEngine(importer) {
+  const path = join(dirname(importer.split('?')[0]), 'signal-tc39.js');
+  if (!existsSync(path)) throw new Error(`zubra: signals: true needs @zubra/runtime 6.0 or later (no ${path})`);
+  return path;
+}
+
 export const unplugin = createUnplugin((options = {}, meta = {}) => {
   // The compiler: a CLI when one is given (option or $ZUBRA_COMPILER); otherwise the WebAssembly
   // build (@zubra/compiler) if it's installed, so no Rust toolchain is needed; else `zubra` on PATH.
@@ -154,6 +164,9 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
   // An app that never renders on a server: components compiled without what takes over server
   // markup, so the runtime's hydrate.js stays out of the bundle.
   const clientOnly = options.hydrate === false;
+  // Signals mode (experimental): @zubra/runtime's engine on the TC39 Signals API
+  // (`signal-tc39.js`) in place of Zubra's own (`signal.js`), wherever the runtime imports it.
+  const signals = options.signals === true;
 
   /** CLI flags → a request for the WebAssembly compiler. */
   function asRequest(args) {
@@ -326,6 +339,7 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
     },
 
     async resolveId(source, importer) {
+      if (signals && source === './signal.js' && importer && RUNTIME_FILE.test(importer)) return signalsEngine(importer);
       // With devtools in builds: @zubra/runtime's development build, wherever it's imported from.
       if (devtoolsInBuilds && /^@zubra\/runtime(\/|$)/.test(source)) {
         const resolved = await this.resolve?.(source, importer, { skipSelf: true });
@@ -360,10 +374,13 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
     },
 
     loadInclude(id) {
-      return /\.zb(?:\.[jt]sx)?\?zubra=/.test(id);
+      return /\.zb(?:\.[jt]sx)?\?zubra=/.test(id) || (signals && SIGNALS_ENGINE.test(id));
     },
 
     load(id, loadOptions) {
+      // Signals mode's engine, which esbuild asks this plugin for (what a plugin resolves is in its
+      // namespace there); the other bundlers read the file themselves.
+      if (signals && SIGNALS_ENGINE.test(id)) return readFileSync(id, 'utf8');
       // A server build (Vite's SSR, or its server environments): the module also registers its
       // server renderer.
       const server = loadOptions?.ssr === true || this?.environment?.config?.consumer === 'server';
@@ -449,7 +466,11 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
     vite: {
       config() {
         // One copy of each framework, even when @zubra/runtime is linked from elsewhere.
-        return { resolve: { dedupe: ['react', 'react-dom', 'vue', '@angular/core', '@angular/common', '@angular/forms'] } };
+        const config = { resolve: { dedupe: ['react', 'react-dom', 'vue', '@angular/core', '@angular/common', '@angular/forms'] } };
+        // Signals mode: the dev server's pre-bundling would join the runtime before resolveId
+        // could choose its engine, so the runtime is served as it is.
+        if (signals) config.optimizeDeps = { exclude: ['@zubra/runtime'] };
+        return config;
       },
       configResolved(config) {
         root ??= config.root;
