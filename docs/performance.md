@@ -12,31 +12,45 @@ Zubra's own size budgets and benchmarks run in CI (`runtime/test/tools/size.test
 
 **Status: ready to submit, not yet submitted.** Until it's merged upstream and appears in the official results, there are no official numbers. The official runner reads Chrome's traces, throttles the CPU for some operations, and repeats each many times on a quiet machine. Its results are the ones to quote, and this page will link them.
 
-**Checked in CI.** `benchmarks/js-framework-benchmark/run.mjs` runs the nine operations with the benchmark's own selectors and checks: the warmups, then the measured step and its check. It fails if any check fails or the page logs an error (the `benchmark` job).
+**Checked in CI.** `benchmarks/js-framework-benchmark/run.mjs` runs the nine operations with the benchmark's own selectors and checks: the warmups, then the measured step and its check. It fails if any check fails or the page logs an error (the `benchmark` job). The job builds the implementation twice: from the published packages (`npm run build`, as the benchmark's repository would, pinned to the latest release), and from the checkout (`npm run build:checkout`, this repository's runtime and plugin with the compiler `$ZUBRA_COMPILER` names), so a change that breaks the benchmark fails when it's made.
 
 ### Measured locally, not the official method
 
-`node run.mjs --time --compare <checkout> vanillajs lit` times each operation from the click to the frame after it, with `requestAnimationFrame`. Same machine, same run, Chromium without throttling, median of nine runs. It's good for comparing implementations side by side, and for finding where Zubra is slow; it isn't the benchmark's score. Zubra 5.7.0, measured 2026-11-12, beside the benchmark's hand-written JavaScript (`vanillajs`) and Lit 3:
+Two scripts, both on one machine in one run; neither is the benchmark's score.
 
-| Operation | Zubra | vanilla JS | Lit |
-|---|---|---|---|
-| create rows | 88.0 | 51.5 | 70.1 |
-| replace all rows | 122.0 | 51.9 | 67.1 |
-| partial update | 14.2 | 9.6 | 14.8 |
-| select row | 9.5 | 8.1 | 10.6 |
-| swap rows | 60.7 | 13.6 | 14.8 |
-| remove row | 18.8 | 15.8 | 15.6 |
-| create many rows | 1,046.5 | 595.8 | 676.9 |
-| append rows to large table | 105.6 | 52.2 | 65.3 |
-| clear rows | 17.2 | 5.9 | 6.2 |
+`node run.mjs --time --compare <checkout> vanillajs lit solid` times each operation from the click to the frame after it, with `requestAnimationFrame`: Chromium without throttling, median of nine runs. Layout and paint are most of each operation, so these move 10 to 20% between runs. `main` (unreleased 6.0: Zubra's own reactive engine, minified components, faster removals), measured 2026-11-19, beside the benchmark's hand-written JavaScript (`vanillajs`), Lit 3 and Solid:
 
-Milliseconds; lower is better. What it says:
+| Operation | Zubra | vanilla JS | Lit | Solid |
+|---|---|---|---|---|
+| create rows | 90.3 | 67.1 | 89.5 | 68.9 |
+| replace all rows | 86.3 | 70.3 | 79.3 | 67.0 |
+| partial update | 14.5 | 20.7 | 13.6 | 14.0 |
+| select row | 10.3 | 10.3 | 8.6 | 11.4 |
+| swap rows | 14.2 | 12.7 | 13.9 | 13.8 |
+| remove row | 20.8 | 17.7 | 19.4 | 18.0 |
+| create many rows | 934.1 | 689.2 | 829.3 | 742.1 |
+| append rows to large table | 101.1 | 73.4 | 73.1 | 81.2 |
+| clear rows | 12.0 | 8.7 | 9.0 | 6.5 |
 
-- **Updates are on a par with Lit:** partial update, select and remove. That's fine-grained reactivity doing its job.
-- **Swapping two rows is four times slower than Lit.** A keyed `zb-each` walks the new order and moves every row that isn't where the walk expects. A swap of rows 2 and 999 therefore moves every row in between, about a thousand moves for what should be two. Keeping the longest run of rows already in order, as most keyed renderers do, fixes it.
-- **Creating, replacing and clearing rows are 1.3 to 3 times slower than Lit.** Each row costs two comment markers and its own effect scope, and clearing disposes each. These need profiling before a fix.
+`node profile.mjs --compare <checkout> vanillajs lit solid` measures script time instead: a CPU profile over cycles of clicks, without layout, paint and garbage collection, interleaved over rounds so the machine's drift falls on every implementation alike. It is the steadier measure, and the one to use before and after a change to the runtime. Same day, median of three rounds of eight cycles:
 
-When the official results exist, they replace this table.
+| Cycle (script ms) | Zubra | vanilla JS | Lit | Solid |
+|---|---:|---:|---:|---:|
+| create 1,000 rows, clear | 26.6 | 10.8 | 21.1 | 13.4 |
+| create 1,000 rows twice, clear | 48.1 | 23.3 | 43.9 | 27.5 |
+| create 1,000, append 1,000, clear | 54.8 | 26.6 | 45.3 | 30.4 |
+| create 1,000, update ×10, clear | 33.9 | 17.5 | 28.6 | 20.1 |
+| create 1,000, select ×10, clear | 33.5 | 17.3 | 27.9 | 15.7 |
+| create 1,000, swap ×10, clear | 39.2 | 17.2 | 27.6 | 21.7 |
+| create 1,000, remove ×10, clear | 32.8 | 17.6 | 24.2 | 17.9 |
+| garbage collection, create and clear | 6.9 | 1.8 | 5.6 | 3.4 |
+
+Milliseconds; lower is better. What they say:
+
+- **Updates, selection, swaps and removals are level with the others** on the clock. (In 5.7.0 a swap of rows 2 and 999 moved every row in between, 61 ms; the keyed pass now keeps the longest run in order and moves two.)
+- **Making rows costs about twice the hand-written script time**, and 10 to 30% more than Lit: creating, replacing and appending. Each row has its own effect per binding, a list of parts with their paths, and a proxy with a signal per property it reads, and its garbage shows. Compiling the paths in, one effect per row and shared event listeners are the work that's left.
+
+When the official results exist, they replace these tables.
 
 ## The Signals core
 
