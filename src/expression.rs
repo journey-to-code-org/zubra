@@ -270,6 +270,29 @@ impl Expression {
                 }
             }
             Self::Binary {
+                operator: operator @ (BinaryOperator::Equal | BinaryOperator::NotEqual),
+                left,
+                right,
+            } if matches!(**left, Self::String(_)) || matches!(**right, Self::String(_)) => {
+                // A comparison with a string literal (`type === "money"`, in every row), made
+                // without copying the literal, or the other side where it can be read in place.
+                let ((Self::String(text), other) | (other, Self::String(text))) =
+                    (&**left, &**right)
+                else {
+                    unreachable!("one side is a string literal")
+                };
+                let held;
+                let value = match names.lent.and_then(|lend| other.lent(lend)) {
+                    Some(value) => value,
+                    None => {
+                        held = other.eval(names)?;
+                        &held
+                    }
+                };
+                let equal = matches!(value, Value::String(value) if value == text);
+                Ok(Value::Bool(equal == (*operator == BinaryOperator::Equal)))
+            }
+            Self::Binary {
                 operator,
                 left,
                 right,
@@ -541,6 +564,14 @@ pub fn is_truthy(value: &Value) -> bool {
 
 /// JavaScript's `String(value)` for the scalar types; objects and arrays are rejected
 /// because interpolating them is almost always a mistake (`[object Object]`).
+/// [`to_display_string`], keeping a string as it is rather than copying it.
+pub fn into_display_string(value: Value) -> Result<String, String> {
+    match value {
+        Value::String(text) => Ok(text),
+        other => to_display_string(&other),
+    }
+}
+
 pub fn to_display_string(value: &Value) -> Result<String, String> {
     match value {
         Value::Null => Ok(String::new()),
@@ -1099,6 +1130,31 @@ fn logical(operator: LogicalOperator, left: Expression, right: Expression) -> Ex
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn comparing_with_a_string_literal() {
+        let scope = serde_json::json!({ "row": { "status": "shipped", "id": 7, "none": null }, "word": "shipped" });
+        let is = |source: &str| eval(source, scope.clone());
+        for (source, expected) in [
+            ("row.status == \"shipped\"", true),
+            ("\"shipped\" == row.status", true),
+            ("row.status != \"shipped\"", false),
+            ("\"pending\" != row.status", true),
+            ("row.status == \"Shipped\"", false),
+            ("word == \"shipped\"", true),
+            ("row.id == \"7\"", false),
+            ("row.none == \"\"", false),
+            ("row.missing == \"x\"", false),
+            ("\"a\" == \"a\"", true),
+            ("\"a\" != \"b\"", true),
+        ] {
+            assert_eq!(is(source), Ok(Value::Bool(expected)), "{source}");
+        }
+        assert!(
+            is("nothing.status == \"x\"").is_err(),
+            "an unknown name is still an error"
+        );
+    }
 
     fn eval(source: &str, scope: Value) -> Result<Value, String> {
         let expression = parse(source).unwrap_or_else(|error| panic!("{source}: {error}"));

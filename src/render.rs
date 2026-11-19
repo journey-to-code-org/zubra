@@ -5,7 +5,7 @@ const VOID_ELEMENTS: &[&str] = &[
     "track", "wbr",
 ];
 
-pub fn render(component: &Component) -> String {
+pub fn render(component: &Component<'_>) -> String {
     let mut output = format!("<{}", component.tag);
     for (name, value) in &component.host_attributes {
         output.push(' ');
@@ -33,7 +33,7 @@ pub fn render(component: &Component) -> String {
     output
 }
 
-fn render_node(node: &Node, output: &mut String) {
+fn render_node(node: &Node<'_>, output: &mut String) {
     match node {
         Node::Text(parts) => render_parts(parts, output),
         Node::Anchor => output.push_str("<?zb ?>"),
@@ -54,7 +54,11 @@ fn render_node(node: &Node, output: &mut String) {
                 }
             }
             output.push('>');
-            if !VOID_ELEMENTS.contains(&element.name.to_ascii_lowercase().as_str()) {
+            // (Compared without a lowercased copy: this is every element of every render.)
+            if !VOID_ELEMENTS
+                .iter()
+                .any(|void| element.name.eq_ignore_ascii_case(void))
+            {
                 for child in &element.children {
                     render_node(child, output);
                 }
@@ -66,7 +70,7 @@ fn render_node(node: &Node, output: &mut String) {
     }
 }
 
-fn render_parts(parts: &[Part], output: &mut String) {
+fn render_parts(parts: &[Part<'_>], output: &mut String) {
     for part in parts {
         match part {
             Part::Literal(text) => output.push_str(text),
