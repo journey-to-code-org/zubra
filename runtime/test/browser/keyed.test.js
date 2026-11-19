@@ -95,6 +95,45 @@ test('a reorder moves only the rows that are out of order: a swap moves two', as
   await page.close();
 });
 
+test('a change at one place touches only that place: appends, inserts and removals move no other row', async () => {
+  const { page, messages } = await open('<zb-todos></zb-todos>', { modules: ['todos'] });
+  const list = (ids) => ids.map((id) => ({ id, text: `item ${id}` }));
+  await setTodos(page, list([1, 2, 3, 4, 5, 6]));
+  await page.evaluate(() => { window.liById = Object.fromEntries([...document.querySelectorAll('zb-todos li')].map((li) => [li.dataset.id, li])); });
+  // Each change: the <li>s put into the list and taken out of it.
+  const change = async (ids) => {
+    await page.evaluate(() => {
+      window.added = [];
+      window.removed = [];
+      window.observer = new MutationObserver((records) => {
+        for (const record of records) {
+          for (const node of record.addedNodes) if (node.nodeName === 'LI') window.added.push(node.dataset.id);
+          for (const node of record.removedNodes) if (node.nodeName === 'LI') window.removed.push(node.dataset.id);
+        }
+      });
+      window.observer.observe(document.querySelector('zb-todos ul'), { childList: true });
+    });
+    await setTodos(page, list(ids));
+    assert.deepEqual(await rows(page), ids.map((id, i) => `${id}@${i}:item ${id}`), ids.join(','));
+    // (Which rows, not in what order they arrived.)
+    return page.evaluate(() => { window.observer.disconnect(); return { added: window.added.sort(), removed: window.removed.sort() }; });
+  };
+  assert.deepEqual(await change([1, 2, 3, 4, 5, 6, 7, 8]), { added: ['7', '8'], removed: [] }, 'appended');
+  assert.deepEqual(await change([0, 1, 2, 3, 4, 5, 6, 7, 8]), { added: ['0'], removed: [] }, 'prepended');
+  assert.deepEqual(await change([0, 1, 2, 9, 3, 4, 5, 6, 7, 8]), { added: ['9'], removed: [] }, 'inserted in the middle');
+  assert.deepEqual(await change([0, 1, 2, 3, 4, 5, 6, 7, 8]), { added: [], removed: ['9'] }, 'removed from the middle');
+  assert.deepEqual(await change([0, 1, 2, 6, 7, 8]), { added: [], removed: ['3', '4', '5'] }, 'a run removed');
+  // Two rows swapped, with the rest in place: those two move. With moveBefore a move is no
+  // removal and insertion, so count the rows that came back instead.
+  const swapped = await change([0, 7, 2, 6, 1, 8]);
+  assert.equal(swapped.added.length <= 2, true, `swapped: ${swapped.added}`);
+  assert.deepEqual([...new Set(swapped.added)].sort(), swapped.added.length ? ['1', '7'] : []);
+  const kept = await page.evaluate(() => [...document.querySelectorAll('zb-todos li')].every((li) => !window.liById[li.dataset.id] || li === window.liById[li.dataset.id]));
+  assert.equal(kept, true, 'every row that stayed is the same element');
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
 test('random reorders with rows added and removed end in the list order, and rows that stay keep their elements', async () => {
   const { page, messages } = await open('<zb-todos></zb-todos>', { modules: ['todos'] });
   // A seeded shuffle, so a failure is the same failure on the next run.
