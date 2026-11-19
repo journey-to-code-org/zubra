@@ -1,0 +1,15 @@
+{
+  "name": "counter-slice-fast",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "webui build ./src --out ./dist --plugin=fast-v3 && esbuild src/index.ts --bundle --minify --format=esm --outfile=dist/client.js",
+    "start": "NODE_ENV=production node server.js"
+  },
+  "dependencies": {
+    "@microsoft/fast-element": "3.1.4",
+    "@microsoft/webui": "3.1.2",
+    "counter-slice-backend": "file:../shared"
+  },
+  "devDependencies": { "esbuild": "0.28.2" }
+}

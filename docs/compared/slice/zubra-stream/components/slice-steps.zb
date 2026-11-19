@@ -1,0 +1,13 @@
+<!-- Where an order is. `status` is a plain prop the page sets from the server's event stream. -->
+<script>
+  const steps = ['placed', 'making', 'ready', 'picked-up']
+  const words = { placed: 'Placed', making: 'Being made', ready: 'Ready at the window', 'picked-up': 'Picked up' }
+  const reached = steps.indexOf(status)
+</script>
+<slice-steps status="placed">
+  <ol class="steps" aria-label="Where your order is">
+    <zb-each items={steps} as="step" key={step}>
+      <li class:done={steps.indexOf(step) <= reached}>{words[step]}</li>
+    </zb-each>
+  </ol>
+</slice-steps>

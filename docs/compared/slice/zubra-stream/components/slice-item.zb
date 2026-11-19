@@ -1,0 +1,18 @@
+<!--
+  One thing on the menu. `left-now` is a plain prop: the page sets it from the server's event
+  stream, the way the other builds do, so this build has no @zubra/sync.
+-->
+<script>
+  const money = (cents) => `$${(cents / 100).toFixed(2)}`
+  const out = leftNow !== null && leftNow <= 0
+  const words = leftNow === null ? '' : leftNow > 0 ? `${leftNow} left` : 'Sold out'
+</script>
+<slice-item item="" name="" unit="" cents={0} left-now={null} add="">
+  <h3 class:out={out}>{name}</h3>
+  <p class="meta">{money(cents)} · {unit}<span zb-if={words}> · <span class="left">{words}</span></span></p>
+  <form method="post" action={add} data-zb-updates="site said">
+    <input type="hidden" name="item" value={item}>
+    <input type="number" name="qty" value="1" min="1" max="24" aria-label={`How many ${name}`} disabled={out}>
+    <button type="submit" disabled={out}>Add</button>
+  </form>
+</slice-item>

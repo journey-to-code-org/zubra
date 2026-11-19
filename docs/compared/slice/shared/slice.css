@@ -1,0 +1,41 @@
+/* The slice's one stylesheet, served as-is by every implementation (not counted in their lines). */
+:root {
+  --background: #fbf6ef; --foreground: #2d2017; --card: #ffffff; --border: #e3d6c6; --muted: #f1e7da;
+  --muted-foreground: #7a6a58; --primary: #6b3f22; --primary-foreground: #ffffff; --accent: #b4532a;
+  --radius: 0.75rem; color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 1.0625rem; line-height: 1.5; background: var(--background); color: var(--foreground); }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.site-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 1rem; padding: 1rem clamp(1rem, 4vw, 2.5rem); background: var(--primary); color: var(--primary-foreground); }
+.site-head > a { font-size: 1.35rem; font-weight: 800; text-decoration: none; }
+.site-head nav { display: flex; gap: 1rem; margin-left: auto; }
+main { width: min(60rem, 100% - 2 * clamp(1rem, 4vw, 2.5rem)); margin: 0 auto; padding: 2rem 0 3rem; display: grid; gap: 1.75rem; }
+h1 { margin: 0; font-size: clamp(1.9rem, 5vw, 2.75rem); line-height: 1.1; }
+h2 { margin: 0 0 0.75rem; font-size: 1.3rem; }
+h3 { margin: 0; font-size: 1.05rem; }
+.notice { margin: 0; padding: 0.7rem 1rem; border-radius: 0.5rem; background: var(--muted); }
+.notice.problem { background: #fbe4dc; }
+.items, .lines { display: grid; gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
+.items { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.item, .line, .panel { display: grid; gap: 0.5rem; padding: 1rem 1.1rem; border-radius: var(--radius); background: var(--card); box-shadow: 0 0 0 1px var(--border); }
+.item.out h3, .item h3.out, .item[data-out] h3 { color: var(--muted-foreground); text-decoration: line-through; }
+.meta { margin: 0; color: var(--muted-foreground); }
+.left { font-weight: 700; color: var(--accent); }
+form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0; }
+input[type=number] { width: 4.5rem; }
+input, select, button { font: inherit; padding: 0.4rem 0.6rem; border-radius: 0.5rem; border: 1px solid var(--border); }
+button { background: var(--primary); color: var(--primary-foreground); border: 0; font-weight: 700; cursor: pointer; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+.line { grid-template-columns: 1fr auto; align-items: center; }
+.qty { display: flex; gap: 0.35rem; align-items: center; }
+.total { margin: 0; font-weight: 800; }
+/* Checkout and the order page */
+a.button { justify-self: start; padding: 0.55rem 1rem; border-radius: 0.5rem; background: var(--primary); color: var(--primary-foreground); font-weight: 700; text-decoration: none; }
+.summary { margin: 0; font-weight: 700; }
+form.panel { display: grid; grid-template-columns: max-content 1fr; gap: 0.6rem 0.8rem; max-width: 32rem; }
+form.panel button { grid-column: 1 / -1; justify-self: start; }
+.steps { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.steps li { padding: 0.35rem 0.8rem; border-radius: 999px; box-shadow: 0 0 0 1px var(--border); color: var(--muted-foreground); font-weight: 600; }
+.steps li.done { background: var(--primary); color: var(--primary-foreground); box-shadow: none; }

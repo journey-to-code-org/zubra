@@ -34,6 +34,7 @@ export default [
     { file: 'docs/server-rendering.md', label: 'Server rendering, honestly' },
     { file: 'docs/compared-with-lit-and-stencil.md', label: 'Compared with Lit and Stencil' },
     { file: 'docs/compared-with-html-first.md', label: 'Compared with WebUI, FAST, Enhance and WebC' },
+    { file: 'docs/compared-on-one-app.md', label: 'Compared on one app, twelve ways' },
     { file: 'docs/typescript.md', label: 'TypeScript in .zb files' },
     { file: 'docs/guide/other-peoples-pages.md', label: 'On other people’s pages' },
     { file: 'docs/guide/accessible-widgets.md', label: 'Accessible widgets' },
