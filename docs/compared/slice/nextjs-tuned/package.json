@@ -1,0 +1,16 @@
+{
+  "name": "counter-slice-nextjs-tuned",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build && node copy-static.mjs",
+    "start": "PORT=${PORT:-3111} node .next/standalone/compare/slice/nextjs-tuned/server.js"
+  },
+  "dependencies": {
+    "counter-slice-backend": "file:../shared",
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "server-only": "^0.0.1"
+  }
+}

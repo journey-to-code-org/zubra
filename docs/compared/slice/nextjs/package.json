@@ -1,0 +1,16 @@
+{
+  "name": "counter-slice-nextjs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "start": "next start -p ${PORT:-3102}"
+  },
+  "dependencies": {
+    "counter-slice-backend": "file:../shared",
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "server-only": "^0.0.1"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "counter-slice-lit",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild client.js --bundle --minify --format=esm --outfile=dist/client.js",
+    "start": "NODE_ENV=production node server.js"
+  },
+  "dependencies": {
+    "@lit-labs/ssr": "4.1.0",
+    "@lit-labs/ssr-client": "1.1.8",
+    "counter-slice-backend": "file:../shared",
+    "lit": "3.3.3"
+  },
+  "devDependencies": { "esbuild": "0.28.2" }
+}
