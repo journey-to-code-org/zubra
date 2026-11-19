@@ -1,6 +1,7 @@
 <!--
   Pick one of several cards: a radio group. A form control; arrow keys move the choice.
-  Each item is `{ id, title, detail, price, note }` (`note` and `price` optional).
+  Each item is `{ id, title, detail, price, note }` (`detail`, `note` and `price` optional: a card
+  without them is only as tall as its title).
   @fires valuechange - The choice changed; `detail` is the chosen id.
 -->
 <script>
@@ -49,8 +50,8 @@
         onkeydown.up.left.prevent={() => move(index, -1)}
       >
         <strong>{item.title}</strong>
-        <span class="detail">{item.detail}</span>
-        <span class="row"><span class="note">{item.note ?? ""}</span><span class="price">{item.price ?? ""}</span></span>
+        <span zb-if={item.detail} class="detail">{item.detail}</span>
+        <span zb-if={item.note || item.price} class="row"><span class="note">{item.note ?? ""}</span><span class="price">{item.price ?? ""}</span></span>
       </button>
     </zb-each>
   </div>
