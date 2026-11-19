@@ -6,7 +6,10 @@ A **Zubra** pane in the browser's Elements panel (Chrome, Edge, Firefox). Select
 - **Props and state**, by the names in the script, with their current values.
 - **Bindings**: those on the selected node first, then the rest of the component. Each is named as the DOM operation it performs (`textContent = …`, `setAttribute('value', …)`, `classList.toggle('done', …)`, `addEventListener('click', …)`), with the `.zb` line that wrote it and the named signals it reads (`count`, `items[0].done`). That's what the compiled output does, which is the platform you're learning.
 - **What a parent binds onto a child**, when the selected node is a component's host.
-- **The last update**: what was written, and which bindings re-ran (marked *ran*).
+- **The last update**: what was written, and which bindings re-ran (marked *ran*), each with **why**: the signals it reads that the update wrote, followed through the computeds between them (`re-ran because doubled ← count changed`).
+- **Signals**: the component's props, state and computeds, each with its value, how many times it has changed, what reads it now (bindings by their DOM operation, computeds by name), and what a computed reads.
+- **Live**: the effects in the component, the components on the page, and the effects made since the pane connected that are still alive, with how that count moved over the last updates and a small line of it. A count that only grows while you add and remove things is worth a look.
+- **Updates**: the page's last 50 updates, newest first: what each wrote (from and to), which bindings and effects it re-ran, in which component, and how long it took.
 
 It's read-only, and it follows the page: it re-reads when the selection changes and when the page updates.
 
@@ -24,7 +27,9 @@ A production build has none of it: the compiler adds nothing without the flag, a
 
 ## How it reads the page
 
-Through `globalThis.__ZUBRA_DEVTOOLS__`, which the runtime's development build defines (`runtime/src/devhook.js` records; `runtime/src/devtools.js`, loaded when the pane connects, reads). The pane calls `inspectedWindow.eval` with `$0`, the selected node, and gets plain JSON back. No content script, no permissions, nothing sent anywhere. Dependencies come from `Signal.subtle.introspectSources`, the Signals proposal's own introspection, so the view is the same on the polyfill and on a native `Signal`.
+Through `globalThis.__ZUBRA_DEVTOOLS__`, which the runtime's development build defines (`runtime/src/devhook.js` records; `runtime/src/devtools.js`, loaded when the pane connects, reads). The pane calls `inspectedWindow.eval` with `$0`, the selected node, and gets plain JSON back. No content script, no permissions, nothing sent anywhere. Dependencies and readers come from the engine's own `sources()` and `sinks()` (`runtime/src/signal.js`), so the view is the same on Zubra's engine and in signals mode (`signals: true`, on the TC39 API), where it reads the proposal's own introspection; only the change counts need Zubra's engine (signals mode shows none). The header says which engine the page runs.
+
+The page's count comes from the development runtime alone, from when the pane connects (so a page that never opens it pays nothing): it counts effects as they're made and disposed, and, through a `FinalizationRegistry`, as they're garbage-collected (a removed element's effects are paused, not disposed, in case it comes back, so they leave the count when the browser collects them). None of this is in the production build.
 
 ## Install
 

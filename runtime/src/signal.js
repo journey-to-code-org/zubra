@@ -354,6 +354,23 @@ export function sinks(value) {
   return out;
 }
 
+// @dev
+/** Which engine this is, for the DevTools. */
+export const engine = 'zubra';
+/**
+ * How many times `value` has changed since it was made, for the DevTools: a state's writes of a
+ * new value, a computed's new values after its first.
+ */
+export function changes(value) {
+  if (!isObject(value)) return null;
+  const state = stateNode(value);
+  if (state) return state.version;
+  const node = computedNode(value);
+  if (!node) return null;
+  return node.value === UNSET ? 0 : node.version - 1;
+}
+// @dev-end
+
 // The public `Signal` export: enough of the old shape that `new Signal.State(0)` and
 // `Signal.subtle.untrack(fn)` keep working. It is not the TC39 API (no Watcher, no
 // introspection): that is signals mode (signal-tc39.js).

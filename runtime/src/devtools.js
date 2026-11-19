@@ -13,36 +13,53 @@
 //
 // The dependencies are read through the engine's `sources()` (signal.js), so the same view works
 // on any engine behind it.
-import { isNative, sources as introspectSources, untrack, isComputed, isState } from './signal.js';
-import { children, dev as effects } from './effect.js';
+import { isNative, engine, changes, sources as introspectSources, sinks as introspectSinks, untrack, isComputed, isState } from './signal.js';
+import { children, countLive, effectOf, dev as runtime } from './effect.js';
 import { dev as deep, raw } from './deep.js';
 import { elements, listeners, hooks, early } from './devhook.js';
 
 
-// The most recent flush since connecting: the effects it re-ran, and the signals written since
-// the one before.
-let writes = new Set();
+// Every component seen since connecting (WeakRefs: the pane keeps no element alive), what each
+// prop and named signal is called, and which component each scope is, to name what an update
+// wrote and re-ran anywhere on the page.
+const records = new Set();
+const owned = new WeakMap(); // signal → { record, name }
+const scopes = new WeakMap(); // a component's scope → its record
+
+// The most recent flush since connecting (the effects it re-ran, the signals written since the
+// one before), and the last TIMELINE of them as the pane shows them, with the effects alive after
+// each (a count that only grows is a list or a page keeping what it removed).
+const TIMELINE = 50;
+const NONE = Symbol('none');
+let writes = new Map(); // signal → its value before this update's first write to it (or NONE)
 let last = { ran: new Set(), written: new Set() };
 let updates = 0;
+const timeline = [];
+const live = [];
+const counts = countLive(); // owners made from now on (before connecting, nothing is counted)
 
-effects.flushed = (ran) => {
-  last = { ran: new Set(ran), written: writes };
-  writes = new Set();
+runtime.flushed = (ran, took) => {
   updates++;
+  last = { ran: new Set(ran), written: new Set(writes.keys()) };
+  timeline.push(entry(updates, ran, took, writes));
+  live.push({ update: updates, effects: counts.effects });
+  if (timeline.length > TIMELINE) timeline.shift();
+  if (live.length > TIMELINE) live.shift();
+  writes = new Map();
 };
-const wrote = (signal) => {
+const wrote = (signal, before = NONE) => {
   // A write nothing reads never flushes: don't let those pile up.
-  if (writes.size > 1000) writes = new Set();
-  writes.add(signal);
+  if (writes.size > 1000) writes = new Map();
+  if (!writes.has(signal)) writes.set(signal, before);
 };
-deep.wrote = wrote;
+deep.wrote = (signal) => wrote(signal);
 
-/** Watch writes to a signal (a prop's, or a named state's). */
+/** Watch writes to a signal (a prop's, or a named state's), keeping the value it had. */
 function watchWrites(signal) {
   if (signal.__zubraWatched) return;
   const set = signal.set;
   signal.set = function (value) {
-    wrote(signal);
+    if (!writes.has(signal)) wrote(signal, shown(signal));
     return set.call(this, value);
   };
   Object.defineProperty(signal, '__zubraWatched', { value: true });
@@ -52,10 +69,92 @@ function watchWrites(signal) {
 function watch(record) {
   if (record.watched) return;
   record.watched = true;
-  for (const signal of Object.values(record.props)) watchWrites(signal);
-  for (const signal of Object.values(record.named ?? {})) {
-    if (isState(signal) || typeof signal?.set === 'function') watchWrites(signal);
+  records.add(new WeakRef(record));
+  if (record.scope) scopes.set(record.scope, record);
+  for (const [name, signal] of Object.entries(record.props)) {
+    owned.set(signal, { record, name });
+    watchWrites(signal);
   }
+  for (const [name, signal] of Object.entries(record.named ?? {})) {
+    if (!signal || typeof signal !== 'object') continue;
+    owned.set(signal, { record, name });
+    if (isState(signal) || typeof signal.set === 'function') watchWrites(signal);
+  }
+}
+
+/** A signal's value as the pane shows it (never throws: a computed may). */
+function shown(signal) {
+  try { return preview(signal); } catch { return '(threw)'; }
+}
+
+/**
+ * What a written signal holds now. A property signal of a reactive array or object holds the
+ * engine's own counter, so for those it's the property's value (or the whole object's, for its
+ * keys).
+ */
+function nowHolds(signal) {
+  const property = deep.propertyOf.get(signal);
+  if (!property) return shown(signal);
+  const { target, key } = property;
+  try { return preview(typeof key === 'symbol' ? target : target[key]); } catch { return '(threw)'; }
+}
+
+/** The components seen and on the page now (a removed one's scope is paused, or disposed). */
+function* liveRecords() {
+  for (const ref of records) {
+    const record = ref.deref();
+    if (!record) records.delete(ref);
+    else if (!record.scope?.disposed && !record.scope?.paused) yield record;
+  }
+}
+
+/** `<tag> name` for a signal anywhere on the page, or null. `namers` caches one per component. */
+function pageName(signal, namers) {
+  const own = owned.get(signal);
+  if (own) return `<${own.record.tag}> ${own.name}`;
+  if (!deep.propertyOf.has(signal)) return null;
+  let tried = 0;
+  for (const record of liveRecords()) {
+    if (++tried > 100) break; // a page of thousands: leave it unnamed rather than walk them all
+    let name = namers.get(record);
+    if (!name) namers.set(record, (name = namer(record)));
+    const found = name(signal);
+    if (found) return `<${record.tag}> ${found}`;
+  }
+  return null;
+}
+
+/** The component an effect belongs to (its nearest owner that is a component's scope). */
+function componentOf(effect) {
+  for (let owner = effect; owner; owner = owner.parent) {
+    const record = scopes.get(owner);
+    if (record) return record;
+  }
+  return null;
+}
+
+/** An effect as the pane names it: its component, and the binding it is (if it is one). */
+function effectName(effect) {
+  const tag = componentOf(effect)?.tag;
+  const what = effect.label ? `${operation(effect.label.part, effect.label.node)} on ${describe(effect.label.node)}` : 'an effect';
+  return tag ? `<${tag}> ${what}` : what;
+}
+
+/** One update as the timeline shows it. */
+function entry(number, ran, took, written) {
+  const namers = new Map();
+  return {
+    number,
+    took: Math.round(took * 100) / 100,
+    writes: written.size,
+    written: [...written].slice(0, 20).map(([signal, before]) => ({
+      name: pageName(signal, namers),
+      from: before === NONE ? null : before,
+      to: nowHolds(signal),
+    })),
+    ran: ran.length,
+    reran: ran.slice(0, 20).map(effectName),
+  };
 }
 hooks.registered = watch;
 for (const ref of early.splice(0)) {
@@ -200,16 +299,80 @@ function dependencies(sink, name) {
 
 const location = (part) => (Array.isArray(part?.at) ? { line: part.at[0], column: part.at[1] } : null);
 
+/**
+ * Why `sink` re-ran in the last update: each signal it reads that the update wrote, followed
+ * through the computeds between (`doubled ← count`: it reads `doubled`, which reads `count`).
+ */
+function why(sink, name, depth = 0, seen = new Set()) {
+  const found = [];
+  let sources;
+  try { sources = introspectSources(sink); } catch { return found; }
+  for (const source of sources) {
+    if (seen.has(source)) continue;
+    seen.add(source);
+    if (last.written.has(source)) found.push(name(source) ?? 'an unnamed signal');
+    else if (isComputed(source) && depth < 6) {
+      const label = name(source);
+      for (const inner of why(source, name, depth + 1, seen)) found.push(label ? `${label} ← ${inner}` : inner);
+    }
+  }
+  return [...new Set(found)];
+}
+
 /** One binding as the pane shows it. */
 function binding(part, node, effect, name, selected) {
+  const ranLast = !!effect && last.ran.has(effect);
   return {
     operation: operation(part, node),
     target: describe(node),
     at: location(part),
     dependsOn: effect ? dependencies(effect.computed, name) : [],
-    ranLast: !!effect && last.ran.has(effect),
+    ranLast,
+    because: ranLast ? why(effect.computed, name) : [],
     here: node === selected || (node?.nodeType !== 1 && node?.parentNode === selected),
   };
+}
+
+/** What reads `signal` now (only live readers: an effect, or a computed one reads), named. */
+function readers(signal, name) {
+  let list;
+  try { list = introspectSinks(signal); } catch { return []; }
+  const out = [];
+  for (const sink of list) {
+    const effect = effectOf(sink);
+    let what;
+    if (effect) {
+      if (effect.disposed) continue;
+      what = effect.label ? `${operation(effect.label.part, effect.label.node)} on ${describe(effect.label.node)}` : 'an effect';
+    } else {
+      what = name(sink) ?? 'a computed';
+    }
+    if (!out.includes(what)) out.push(what);
+  }
+  return out;
+}
+
+/**
+ * The component's signals as a graph: each prop, state and computed with its value, how many
+ * times it has changed (null on an engine that doesn't count), what reads it, and, for a
+ * computed, what it reads.
+ */
+function graph(record, name) {
+  const node = (kind, key, signal) => {
+    const computed = kind === 'computed';
+    let reads = [];
+    if (computed) {
+      try { reads = dependencies(signal, name); } catch {}
+    }
+    const readBy = readers(signal, name);
+    return { name: key, kind, value: shown(signal), changes: changes(signal), reads, readBy: readBy.slice(0, 12), readers: readBy.length };
+  };
+  const out = Object.entries(record.props).map(([key, signal]) => node('prop', key, signal));
+  for (const [key, signal] of Object.entries(record.named ?? {})) {
+    if (isComputed(signal)) out.push(node('computed', key, signal));
+    else if (isState(signal)) out.push(node('state', key, signal));
+  }
+  return out;
 }
 
 /** What the pane shows for `node`: its component, and that component's state and bindings. */
@@ -240,9 +403,12 @@ export function inspect(node) {
   }
   const values = (entries) => entries.map(([key, signal]) => ({ name: key, value: preview(signal) }));
   const written = [...last.written].map(name).filter(Boolean);
+  let components = 0;
+  for (const _ of liveRecords()) components++;
   return {
     version: 1,
     native: isNative,
+    engine,
     update: updates,
     component: {
       tag: record.tag,
@@ -259,6 +425,15 @@ export function inspect(node) {
       written: [...new Set(written)],
       ran: bindings.filter((item) => item.ranLast).length,
     },
+    signals: graph(record, name),
+    live: {
+      component: effects.length,
+      page: counts.effects,
+      owners: counts.owners,
+      components,
+      history: live.slice(),
+    },
+    timeline: timeline.slice(),
   };
 }
 
