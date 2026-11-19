@@ -67,6 +67,19 @@ test('cross-site posts are refused', async () => {
   assert.equal((await post(URL_LOGIN, { email: 'a@example.com' }, { 'sec-fetch-site': 'same-origin', accept: 'application/json' })).status, 200);
 });
 
+test('a site in `origins` may post from its own pages, as a browser sends it', async () => {
+  const listed = await createActions({ components, onError: () => {}, origins: ['https://shop.example'] });
+  const from = (origin) => ({ origin, 'sec-fetch-site': 'cross-site', accept: 'application/json' });
+  const send = (headers) => {
+    const body = new FormData();
+    body.append('email', 'a@example.com');
+    return listed.fetch(new Request(URL_LOGIN, { method: 'POST', body, headers }));
+  };
+  assert.equal((await send(from('https://shop.example'))).status, 200);
+  assert.equal((await send(from('https://evil.example'))).status, 403);
+  assert.equal((await send({ 'sec-fetch-site': 'cross-site', accept: 'application/json' })).status, 403);
+});
+
 test('unknown actions are 404, other methods 405, other paths not ours', async () => {
   assert.equal((await post('http://localhost/_zb/action/login-form/nope', {})).status, 404);
   assert.equal((await actions.fetch(new Request(URL_LOGIN))).status, 405);

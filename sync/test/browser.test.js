@@ -49,6 +49,11 @@ const sync = createSyncServer({ authorize: allowAnyone });
 const closed = createSyncServer({ mount: '/_zb/closed' });
 // A second server on the same page, for a scope of its own (tasks), to see what each is sent.
 const other = createSyncServer({ mount: '/_zb/other', authorize: allowAnyone });
+// Servers for a page on another site (http://127.0.0.1:<port> is another site to http://localhost):
+// one that lists it in `origins` (filled in once the port is known), and one that doesn't.
+const awayOrigins = [];
+const away = createSyncServer({ mount: '/_zb/away', authorize: allowAnyone, origins: awayOrigins });
+const unlisted = createSyncServer({ mount: '/_zb/unlisted', authorize: allowAnyone });
 before(async () => {
   if (viaBinary) binary = await startBinary(['--keep-alive', '200', '--open']);
   server = createServer(async (req, res) => {
@@ -85,6 +90,8 @@ before(async () => {
     }
     if (await closed.handle(req, res)) return;
     if (await other.handle(req, res)) return;
+    if (await away.handle(req, res)) return;
+    if (await unlisted.handle(req, res)) return;
     if (await sync.handle(req, res)) return;
     const js = (text) => { res.setHeader('content-type', 'text/javascript'); res.end(text); };
     const file = (dir, rest) => {
@@ -105,6 +112,8 @@ before(async () => {
     const connectTo = url.searchParams.has('rtc') ? { interval: 60_000, webrtc: true } : url.searchParams.has('connect') ? { interval: 60_000 } : false;
     // A board connected to two servers: this one for boards, /_zb/other for tasks.
     if (url.pathname === '/two-servers') return res.end(page(`<board-view doc="${doc}"></board-view><script type="module">import { connect } from '/sync/connect.js'; window.link = connect({ interval: 60_000, scope: { boards: true } }); window.otherLink = connect({ url: '/_zb/other', interval: 60_000, scope: { tasks: true } });</script>`, false, 'board-view'));
+    // A page connected to a server on another site, live: ?server=away (it lists this page's site) or unlisted.
+    if (url.pathname === '/elsewhere') return res.end(page(`<task-item doc="${doc}"></task-item>`, { url: `${base}/_zb/${url.searchParams.get('server') === 'away' ? 'away' : 'unlisted'}`, interval: 60_000 }));
     if (url.pathname === '/board') return res.end(page(`<board-view doc="${doc}"></board-view>`, connectTo, 'board-view'));
     // Connected, with a store whose next get() waits window.slowNext ms (this device's own edit
     // takes that long to record its clock beside the document), and whose next set() is issued at
@@ -122,6 +131,7 @@ before(async () => {
   });
   await new Promise((done) => server.listen(0, done));
   base = `http://localhost:${server.address().port}`;
+  awayOrigins.push(`http://127.0.0.1:${server.address().port}`);
   // Real local addresses in ICE candidates (Chromium hides them behind mDNS names by default,
   // which a test machine may not resolve).
   browser = await chromium.launch({ args: ['--disable-features=WebRtcHideLocalIpsWithMdns'] });
@@ -214,6 +224,13 @@ async function device(doc) {
   return { context, tab };
 }
 const title = (tab, value) => tab.waitForFunction((value) => document.querySelector('.title').value === value, value, { timeout: 5000 });
+/** Until `check()` is true, or a failure after five seconds. */
+const waitFor = async (check) => {
+  for (const until = Date.now() + 5000; !(await check()); ) {
+    if (Date.now() > until) throw new Error('not within 5 s');
+    await new Promise((done) => setTimeout(done, 50));
+  }
+};
 
 test('connected: another device gets the change through the log', async () => {
   const a = await device('first');
@@ -742,6 +759,35 @@ test('a connection started after another stopped takes up its live stream, keepi
   assert.equal(await two.textContent('.count'), '1');
   await a.close();
   await b.close();
+});
+
+test('a page on another site that the server lists in `origins` reads, writes and follows it live; one it doesn\'t list gets nothing', async () => {
+  const context = await browser.newContext();
+  const elsewhere = base.replace('localhost', '127.0.0.1');
+  const listed = await context.newPage();
+  await listed.goto(`${elsewhere}/elsewhere?server=away&doc=abroad`);
+  await ready(listed);
+  await listed.waitForTimeout(300); // let the stream open
+  // Its edit reaches the server, from another site.
+  await listed.fill('.title', 'From another site');
+  await waitFor(async () => (await (await away.fetch(new Request(`${base}/_zb/away/pull?since=0`))).json()).changes.some((c) => c.key === 'abroad' && c.value === 'From another site'));
+  // And the server's change reaches it over the live stream.
+  await away.write('tasks', 'abroad', { title: 'Back from the server' });
+  await title(listed, 'Back from the server');
+
+  // A server that doesn't list that site: its browser keeps every answer from the page, and refuses to send its edits.
+  const refused = [];
+  const stranger = await context.newPage();
+  stranger.on('requestfailed', (request) => request.url().includes('/_zb/unlisted/') && refused.push(new URL(request.url()).pathname));
+  await unlisted.write('tasks', 'abroad', { title: 'Not for other sites' });
+  await stranger.goto(`${elsewhere}/elsewhere?server=unlisted&doc=abroad`);
+  await ready(stranger);
+  await stranger.fill('.title', 'Let me in');
+  await stranger.waitForTimeout(800);
+  assert.equal(await stranger.inputValue('.title'), 'Let me in');
+  assert.ok(refused.length > 0, 'the browser refused the cross-site requests');
+  assert.deepEqual((await (await unlisted.fetch(new Request(`${base}/_zb/unlisted/pull?since=0`))).json()).changes.map((c) => c.value), ['Not for other sites']);
+  await context.close();
 });
 
 test('webrtc.js is loaded only by a page that asks for webrtc', async () => {
