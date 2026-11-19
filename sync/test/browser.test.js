@@ -666,6 +666,33 @@ test('presence: other tabs see where you are, and see you leave; nothing is stor
   await context.close();
 });
 
+test('presence: moving through many documents leaves nothing behind for the rooms left', async () => {
+  const context = await browser.newContext();
+  const tab = await board(context, 'start');
+  const client = await context.newCDPSession(tab);
+  const sets = async () => {
+    for (let round = 0; round < 3; round++) await client.send('HeapProfiler.collectGarbage');
+    const { result: prototype } = await client.send('Runtime.evaluate', { expression: 'Set.prototype' });
+    const { objects } = await client.send('Runtime.queryObjects', { prototypeObjectId: prototype.objectId });
+    const { result } = await client.send('Runtime.callFunctionOn', { objectId: objects.objectId, functionDeclaration: 'function () { return this.length; }', returnByValue: true });
+    await client.send('Runtime.releaseObject', { objectId: objects.objectId });
+    return result.value;
+  };
+  const move = (from, to) => tab.evaluate(async ({ from, to }) => {
+    const element = document.querySelector('board-view');
+    for (let i = from; i < to; i++) {
+      element.setAttribute('doc', `room-${i}`);
+      await element.updateComplete;
+    }
+  }, { from, to });
+  await move(0, 20);
+  const before = await sets();
+  await move(20, 320);
+  const after = await sets();
+  assert.ok(after - before < 30, `${after - before} more Sets after joining and leaving 300 rooms`);
+  await context.close();
+});
+
 test('presence: other devices too, through the server, and a closed tab leaves', async () => {
   const a = await browser.newContext();
   const b = await browser.newContext();
