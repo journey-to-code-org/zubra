@@ -1,7 +1,7 @@
 //! `command: "minify"`: a browser module as small as it can be served, for `@zubra/server` in
 //! production. The module the compiler writes keeps its comments, its indentation and the names a
 //! component's author chose, so a person can read it; served as it is, that is about a sixth of a
-//! component's bytes, compressed, on every page. oxc's minifier takes them out.
+//! component's bytes, compressed, on every page. oxc's mangler and code generator take them out.
 //!
 //! A component's CSS is a string in the module (`styles: "…"`), which a JavaScript minifier leaves
 //! alone, so this also takes the whitespace and comments out of that one string: the `styles`
@@ -15,7 +15,7 @@ use oxc_allocator::Allocator;
 use oxc_ast::ast::{Argument, CallExpression, Expression, ObjectExpression, ObjectPropertyKind};
 use oxc_ast_visit::{walk_mut, VisitMut};
 use oxc_codegen::{Codegen, CodegenOptions};
-use oxc_minifier::{Minifier, MinifierOptions};
+use oxc_mangler::Mangler;
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 use oxc_str::JSStr;
@@ -34,10 +34,14 @@ pub fn minify(code: &str) -> Result<String, String> {
         },
         &mut program,
     );
-    let minified = Minifier::new(MinifierOptions::default()).minify(&allocator, &mut program);
+    // Names shortened (oxc's mangler), then printed without whitespace (its code generator). Not
+    // oxc's whole minifier: that one depends on browserslist, which needs JavaScript's `Date` on
+    // WebAssembly (`js-sys`), and the compiler's WebAssembly build imports nothing.
+    let mangled = Mangler::new().build(&program);
     Ok(Codegen::new()
         .with_options(CodegenOptions::minify())
-        .with_scoping(minified.scoping)
+        .with_scoping(Some(mangled.scoping))
+        .with_private_member_mappings(Some(mangled.class_private_mappings))
         .build(&program)
         .code)
 }
