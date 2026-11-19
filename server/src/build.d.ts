@@ -8,6 +8,8 @@ export interface BuiltRuntime {
   code: string;
   /** Every name it exports. A served module that imports another is refused when it is compiled. */
   names: string[];
+  /** Built with `signals: true` (signals mode): only a server with the same option takes it. */
+  signals?: true;
 }
 
 export interface BuildRuntimeOptions extends Omit<ZubraOptions, 'runtime'> {

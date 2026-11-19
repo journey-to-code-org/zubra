@@ -60,8 +60,8 @@ before(async () => {
   site = mkdtempSync(join(tmpdir(), 'zb-browser-'));
   // ZUBRA_RUNTIME=production runs the suite against the production build (no hot reloading).
   cpSync(join(here, production ? '../../dist/production' : '../../src'), join(site, 'runtime'), { recursive: true });
-  // ZUBRA_ENGINE=core runs the suite on Zubra's own engine: its file is served as the engine's.
-  if (process.env.ZUBRA_ENGINE === 'core') cpSync(join(site, 'runtime/signal-core.js'), join(site, 'runtime/signal.js'));
+  // ZUBRA_ENGINE=signals runs the suite in signals mode: the TC39 engine is served as the engine.
+  if (process.env.ZUBRA_ENGINE === 'signals') cpSync(join(site, 'runtime/signal-tc39.js'), join(site, 'runtime/signal.js'));
   // (A function is called once the compiler is built: a module compiled with other flags.)
   for (const [path, contents] of Object.entries(files)) writeFileSync(join(site, path), typeof contents === 'function' ? contents() : contents);
   for (const [name, path] of Object.entries(components)) {

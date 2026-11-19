@@ -589,6 +589,51 @@ test('esbuild builds the app', async () => {
   await checkBundle(root);
 });
 
+// One of signal-impl.js's messages: it survives minifying, and only the TC39 engine has it.
+const TC39_ENGINE = 'Called watch/unwatch without a Computed or State argument';
+
+test("signals: true puts the TC39 engine where Zubra's would be, in each bundler", async () => {
+  const { rollup } = await import('rollup');
+  const { nodeResolve } = await import('@rollup/plugin-node-resolve');
+  const { default: zubraRollup } = await import('../src/rollup.js');
+  const { build: esbuild } = await import('esbuild');
+  const { default: zubraEsbuild } = await import('../src/esbuild.js');
+  const builds = {
+    async rollup(root, options) {
+      const bundle = await rollup({ input: join(root, 'src/entry.js'), plugins: [zubraRollup({ compiler, ...options }), nodeResolve()], onwarn: () => {} });
+      await bundle.write({ file: join(root, 'dist/bundle.js'), format: 'es' });
+    },
+    async esbuild(root, options) {
+      await esbuild({ entryPoints: [join(root, 'src/entry.js')], bundle: true, format: 'esm', outfile: join(root, 'dist/bundle.js'), plugins: [zubraEsbuild({ compiler, ...options })], logLevel: 'silent' });
+    },
+    async webpack(root, options) {
+      const { default: webpack } = await import('webpack');
+      const { default: zubraWebpack } = await import('../src/webpack.js');
+      const stats = await new Promise((resolve, reject) => webpack({
+        mode: 'development', devtool: false, context: root, entry: join(root, 'src/entry.js'),
+        output: { path: join(root, 'dist'), filename: 'bundle.js', module: true },
+        experiments: { outputModule: true },
+        resolve: { modules: [join(here, '../node_modules'), 'node_modules'] },
+        plugins: [zubraWebpack({ compiler, ...options })],
+      }, (error, result) => (error ? reject(error) : resolve(result))));
+      assert.equal(stats.hasErrors(), false, stats.toString('errors-only'));
+    },
+    async vite(root, options) {
+      await build({ root, configFile: false, logLevel: 'silent', plugins: [zubra({ compiler, ...options })], build: { outDir: join(root, 'dist'), emptyOutDir: false, lib: { entry: join(root, 'src/entry.js'), formats: ['es'], fileName: () => 'bundle.js' } } });
+    },
+  };
+  for (const [name, run] of Object.entries(builds)) {
+    for (const signals of [false, true]) {
+      const root = bundlerApp(`${name}-signals-${signals}`);
+      await run(root, signals ? { signals } : {});
+      const code = readFileSync(join(root, 'dist/bundle.js'), 'utf8');
+      assert.equal(code.includes(TC39_ENGINE), signals, `${name}, signals: ${signals}`);
+      // (Vite's library build puts the styles in a file of their own, which the page doesn't load.)
+      if (name !== 'vite') await checkBundle(root);
+    }
+  }
+});
+
 test('esbuild reports a compile error as the compiler wrote it', async () => {
   // (esbuild's plugin context records errors rather than throwing them, so the plugin has to
   // stop by itself, or the build fails with an unrelated TypeError instead.)

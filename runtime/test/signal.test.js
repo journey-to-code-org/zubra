@@ -71,19 +71,33 @@ test('unwatched graphs keep no back-references (collectable, free on write)', ()
   assert.deepEqual(Signal.subtle.introspectSinks(s), []);
 });
 
-test('signal.js uses the native Signal when the platform provides one', async () => {
+test('signals mode (signal-tc39.js) uses the native Signal when the platform provides one', async () => {
   const native = { State: class {}, Computed: class {}, subtle: {} };
   globalThis.Signal = native;
   try {
-    const module = await import(`../src/signal.js?native=${Date.now()}`);
+    const module = await import(`../src/signal-tc39.js?native=${Date.now()}`);
     assert.equal(module.Signal, native);
     assert.equal(module.isNative, true);
   } finally {
     delete globalThis.Signal;
   }
-  const module = await import(`../src/signal.js?fallback=${Date.now()}`);
+  const module = await import(`../src/signal-tc39.js?fallback=${Date.now()}`);
   assert.equal(module.Signal, Signal);
   assert.equal(module.isNative, false);
+});
+
+test("Zubra's engine (signal.js, the default) leaves a native Signal alone", async () => {
+  const native = { State: class {}, Computed: class {}, subtle: {} };
+  globalThis.Signal = native;
+  try {
+    const module = await import(`../src/signal.js?native=${Date.now()}`);
+    assert.notEqual(module.Signal, native);
+    assert.equal(module.isNative, false);
+    assert.equal(module.isState(new module.State(1)), true);
+    assert.equal(module.isState(new native.State()), false);
+  } finally {
+    delete globalThis.Signal;
+  }
 });
 
 test('getPending lists computeds in the order they were marked, not the order they were watched', () => {
