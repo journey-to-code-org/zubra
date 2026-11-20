@@ -762,14 +762,11 @@ impl<'a> TemplateParser<'a> {
         if let Some(name) = closing {
             let end = self.current_span();
             return Err(match self.open.last() {
-                Some((_, opened)) => Diagnostic::new(
-                    *opened,
-                    format!("<{name}> is never closed"),
-                )
-                .with_help(format!(
-                    "the file ends at {}:{} with <{name}> still open; close it with </{name}>",
-                    end.line, end.column
-                )),
+                Some((_, opened)) => Diagnostic::new(*opened, format!("<{name}> is never closed"))
+                    .with_help(format!(
+                        "the file ends at {}:{} with <{name}> still open; close it with </{name}>",
+                        end.line, end.column
+                    )),
                 None => self.error(&format!("missing closing tag </{name}>")),
             });
         }
@@ -851,10 +848,16 @@ impl<'a> TemplateParser<'a> {
                 // Vue's and Lit's `@click`: Zubra writes the platform's own `onclick`.
                 let event = self.cursor.rest()[1..]
                     .bytes()
-                    .take_while(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
+                    .take_while(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.')
+                    })
                     .map(char::from)
                     .collect::<String>();
-                let event = if event.is_empty() { "click".to_owned() } else { event };
+                let event = if event.is_empty() {
+                    "click".to_owned()
+                } else {
+                    event
+                };
                 return Err(self
                     .error("expected an HTML tag or attribute name")
                     .with_help(format!(

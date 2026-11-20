@@ -8,13 +8,28 @@ fn error(source: &str) -> Diagnostic {
 #[test]
 fn an_unknown_zb_element_is_an_error_with_the_nearest_directive() {
     let diagnostic = error("<my-x>\n  <zb-iff when={true}><p>hi</p></zb-iff>\n</my-x>");
-    assert!(diagnostic.message.contains("unknown element <zb-iff>"), "{}", diagnostic.message);
-    assert!(diagnostic.message.contains("reserved"), "{}", diagnostic.message);
+    assert!(
+        diagnostic.message.contains("unknown element <zb-iff>"),
+        "{}",
+        diagnostic.message
+    );
+    assert!(
+        diagnostic.message.contains("reserved"),
+        "{}",
+        diagnostic.message
+    );
     assert_eq!(diagnostic.span, Span::new(2, 3));
     assert_eq!(diagnostic.help.as_deref(), Some("did you mean `<zb-if>`?"));
     let far = error("<my-x><zb-card></zb-card></my-x>");
-    assert!(far.message.contains("unknown element <zb-card>"), "{}", far.message);
-    assert_eq!(far.help.as_deref(), Some("a component of your own needs another prefix: `<app-card>`"));
+    assert!(
+        far.message.contains("unknown element <zb-card>"),
+        "{}",
+        far.message
+    );
+    assert_eq!(
+        far.help.as_deref(),
+        Some("a component of your own needs another prefix: `<app-card>`")
+    );
 }
 
 #[test]
@@ -48,7 +63,8 @@ fn an_at_event_attribute_says_to_write_the_on_attribute() {
 
 #[test]
 fn an_unclosed_element_is_reported_where_it_opened() {
-    let diagnostic = error("<my-x>\n  <section>\n    <div>\n      <p>hi</p>\n  </section>\n</my-x>");
+    let diagnostic =
+        error("<my-x>\n  <section>\n    <div>\n      <p>hi</p>\n  </section>\n</my-x>");
     assert_eq!(diagnostic.message, "<div> is never closed");
     assert_eq!(diagnostic.span, Span::new(3, 5));
     let help = diagnostic.help.unwrap();
@@ -63,7 +79,11 @@ fn an_unclosed_element_is_reported_where_it_opened() {
     assert_eq!(at_end.span, Span::new(2, 3));
     // A closing tag that matches nothing open is still a mismatch, where it is.
     let stray = error("<my-x>\n  <p></section>\n</my-x>");
-    assert!(stray.message.contains("does not match"), "{}", stray.message);
+    assert!(
+        stray.message.contains("does not match"),
+        "{}",
+        stray.message
+    );
     assert_eq!(stray.span, Span::new(2, 6));
 }
 
@@ -71,7 +91,13 @@ fn an_unclosed_element_is_reported_where_it_opened() {
 fn a_pascal_case_tag_warns_with_the_custom_element_name() {
     let warnings = zubra::warnings("<my-app>\n  <div><TodoList /></div>\n</my-app>");
     assert_eq!(warnings.len(), 1, "{warnings:?}");
-    assert!(warnings[0].message.contains("custom element names are lowercase with a hyphen"), "{}", warnings[0].message);
+    assert!(
+        warnings[0]
+            .message
+            .contains("custom element names are lowercase with a hyphen"),
+        "{}",
+        warnings[0].message
+    );
     assert_eq!(warnings[0].span, Span::new(2, 8));
     assert_eq!(
         warnings[0].help.as_deref(),
@@ -79,8 +105,13 @@ fn a_pascal_case_tag_warns_with_the_custom_element_name() {
     );
     // It still compiles (it's an element nothing defines), and lowercase or SVG names are fine.
     assert!(compile("<my-app><TodoList /></my-app>", "{}").is_ok());
-    assert!(zubra::warnings("<my-app><svg><linearGradient></linearGradient></svg><todo-list></todo-list></my-app>").is_empty());
+    assert!(zubra::warnings(
+        "<my-app><svg><linearGradient></linearGradient></svg><todo-list></todo-list></my-app>"
+    )
+    .is_empty());
     // Not in a JSX component, where a capitalized tag is a function component.
     let jsx = "import TodoList from './todo-list.zb'\n\nexport default function MyApp() {\n  return <div><TodoList /></div>;\n}\n";
-    assert!(zubra::warnings(jsx).iter().all(|warning| !warning.message.contains("lowercase with a hyphen")));
+    assert!(zubra::warnings(jsx)
+        .iter()
+        .all(|warning| !warning.message.contains("lowercase with a hyphen")));
 }

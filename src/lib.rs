@@ -935,7 +935,9 @@ fn pascal_case_elements(nodes: &[ast::Node]) -> Vec<Diagnostic> {
                     let name = &element.name;
                     if name.starts_with(|character: char| character.is_ascii_uppercase())
                         && name.chars().any(|character| character.is_ascii_lowercase())
-                        && name.chars().all(|character| character.is_ascii_alphanumeric())
+                        && name
+                            .chars()
+                            .all(|character| character.is_ascii_alphanumeric())
                     {
                         let mut kebab = String::new();
                         for (index, character) in name.chars().enumerate() {
@@ -959,7 +961,11 @@ fn pascal_case_elements(nodes: &[ast::Node]) -> Vec<Diagnostic> {
                     }
                     walk(&element.children, found);
                 }
-                ast::Node::If { consequent, alternate, .. } => {
+                ast::Node::If {
+                    consequent,
+                    alternate,
+                    ..
+                } => {
                     walk(consequent, found);
                     walk(alternate, found);
                 }
@@ -967,7 +973,12 @@ fn pascal_case_elements(nodes: &[ast::Node]) -> Vec<Diagnostic> {
                     walk(children, found)
                 }
                 ast::Node::Slot { fallback, .. } => walk(fallback, found),
-                ast::Node::Await { pending, then, catch, .. } => {
+                ast::Node::Await {
+                    pending,
+                    then,
+                    catch,
+                    ..
+                } => {
                     walk(pending, found);
                     for branch in then.iter().chain(catch) {
                         walk(&branch.children, found);
