@@ -24,6 +24,7 @@
 
 mod ast;
 mod bundle;
+pub mod cli;
 mod client;
 pub mod codes;
 mod components;

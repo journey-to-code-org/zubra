@@ -162,7 +162,10 @@ fn request_answers_one_json_request_on_stdin() {
     );
     let (ok, _, stderr) = zubra(&["request", "extra"]);
     assert!(!ok);
-    assert!(stderr.contains("unexpected argument `extra`"), "{stderr}");
+    assert!(
+        stderr.contains("takes no arguments, and was given `extra`"),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -551,5 +554,197 @@ fn check_takes_a_folder_and_checks_every_component_under_it() {
     assert!(
         stderr.contains("no components (.zb, .zb.jsx, .zb.tsx) in this folder"),
         "{stderr}"
+    );
+}
+
+/// The exit code, standard output and standard error.
+fn exit(arguments: &[&str]) -> (i32, String, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_zubra"))
+        .args(arguments)
+        .output()
+        .expect("zubra runs");
+    (
+        output.status.code().expect("an exit code"),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn help_and_version_come_first_and_exit_0() {
+    let (code, help, _) = exit(&["--help"]);
+    assert_eq!(code, 0);
+    assert_eq!(exit(&["-h"]).1, help);
+    assert_eq!(exit(&["help"]).1, help);
+    // The compile line lists every --emit and --framework value, and --client-only.
+    assert!(
+        help.contains("--emit html|js|element|css|dts|manifest|html-data|interface|server|tsx"),
+        "{help}"
+    );
+    assert!(
+        help.contains("--framework react|vue|svelte|solid|solid2|vanilla"),
+        "{help}"
+    );
+    assert!(help.contains("[--client-only]"), "{help}");
+    assert!(help.contains(
+        "Exit codes: 0 success (warnings included), 1 errors in the input, 2 a usage error."
+    ));
+    for command in zubra::cli::COMMANDS {
+        let (code, own, stderr) = exit(&[command.name, "--help"]);
+        assert_eq!(code, 0, "{} --help: {stderr}", command.name);
+        assert_eq!(exit(&[command.name, "-h"]).1, own);
+        assert_eq!(exit(&["help", command.name]).1, own);
+        // Before anything the command would do: no "unable to read source", no server started.
+        assert_eq!(exit(&[command.name, "x.zb", "--help"]).0, 0);
+        for flag in command.flags {
+            assert!(
+                own.contains(&flag.usage()),
+                "{} --help lacks {}",
+                command.name,
+                flag.name
+            );
+        }
+        assert!(help.contains(&format!("zubra {}", command.name)));
+    }
+    let version = format!("zubra {}\n", env!("CARGO_PKG_VERSION"));
+    for arguments in [
+        &["--version"][..],
+        &["-V"],
+        &["check", "--version"],
+        &["compile", "-V"],
+    ] {
+        assert_eq!(
+            exit(arguments),
+            (0, version.clone(), String::new()),
+            "{arguments:?}"
+        );
+    }
+}
+
+#[test]
+fn usage_errors_exit_2_and_suggest_the_near_name() {
+    let (code, _, stderr) = exit(&["chek", "x.zb"]);
+    assert_eq!(code, 2);
+    assert!(
+        stderr.starts_with("unknown command `chek`; did you mean `check`?"),
+        "{stderr}"
+    );
+    let (code, _, stderr) = exit(&["deploy"]);
+    assert_eq!(code, 2);
+    assert!(stderr.starts_with("unknown command `deploy`\n"), "{stderr}");
+    let (code, _, stderr) = exit(&["check", "--formt", "json", "x.zb"]);
+    assert_eq!(code, 2);
+    assert!(
+        stderr.starts_with("unknown flag `--formt`; did you mean `--format`?"),
+        "{stderr}"
+    );
+    let (code, _, stderr) = exit(&["compile", "x.zb", "--emit", "jss"]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("did you mean `js`?"), "{stderr}");
+    assert_eq!(exit(&["compile", "x.zb", "--emit"]).0, 2);
+    assert_eq!(exit(&["compile"]).0, 2);
+    assert_eq!(exit(&["check"]).0, 2);
+    assert_eq!(exit(&[]).0, 2);
+    // A command of the npm package's: named, with where it is.
+    for command in ["build", "add", "types", "mcp"] {
+        let (code, _, stderr) = exit(&[command]);
+        assert_eq!(code, 2, "{command}");
+        assert!(
+            stderr.starts_with(&format!(
+                "`zubra {command}` is in the npm package: npx zubra {command}"
+            )),
+            "{stderr}"
+        );
+    }
+    let (code, _, stderr) = exit(&["check", "--types", "x.zb"]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("npx zubra check --types"), "{stderr}");
+}
+
+#[test]
+fn errors_in_the_input_exit_1_and_warnings_0_unless_denied() {
+    let dir = temp_dir("exits");
+    let missing = dir.join("missing.zb");
+    let (code, _, stderr) = exit(&["check", missing.to_str().unwrap()]);
+    assert_eq!(code, 1);
+    assert_eq!(stderr, format!("no such file: {}\n", missing.display()));
+    let warned = dir.join("x-warned.zb");
+    fs::write(
+        &warned,
+        "<x-warned hidden={false}><p>{hidden}</p></x-warned>",
+    )
+    .unwrap();
+    let warned = warned.to_str().unwrap();
+    let (code, _, stderr) = exit(&["check", warned]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stderr.contains("warning[ZB4019]"), "{stderr}");
+    let (code, _, stderr) = exit(&["check", warned, "--deny-warnings"]);
+    assert_eq!(code, 1);
+    assert!(
+        stderr.ends_with("1 warning (--deny-warnings)\n"),
+        "{stderr}"
+    );
+    let (code, json, _) = exit(&["check", warned, "--deny-warnings", "--format", "json"]);
+    assert_eq!(code, 1);
+    let report: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(report[0]["code"], "ZB4019");
+    assert_eq!(report[0]["severity"], "warning");
+    // A TypeScript component: the check says its types weren't checked, and where they are.
+    let typed = dir.join("x-typed.zb");
+    fs::write(
+        &typed,
+        "<script lang=\"ts\">\n  let n: number = 1\n</script>\n<x-typed><p>{n}</p></x-typed>",
+    )
+    .unwrap();
+    let (code, _, stderr) = exit(&["check", typed.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        stderr.contains("TypeScript types weren't checked: run npx zubra check --types"),
+        "{stderr}"
+    );
+    assert!(!exit(&["check", warned]).2.contains("TypeScript"));
+}
+
+#[test]
+fn vanilla_is_no_framework_and_its_other_names_still_work() {
+    let dir = temp_dir("vanilla");
+    let path = dir.join("x-plain.zb");
+    fs::write(&path, "<x-plain label=\"\"><p>{label}</p></x-plain>").unwrap();
+    let path = path.to_str().unwrap();
+    let (code, vanilla, stderr) =
+        exit(&["compile", path, "--emit", "dts", "--framework", "vanilla"]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(exit(&["compile", path, "--emit", "dts"]).1, vanilla);
+    for alias in ["element", "none", "plain"] {
+        assert_eq!(
+            exit(&["compile", path, "--emit", "dts", "--framework", alias]).1,
+            vanilla,
+            "{alias}"
+        );
+        assert_eq!(
+            exit(&[
+                "compile",
+                path,
+                "--emit",
+                "dts",
+                &format!("--framework={alias}")
+            ])
+            .1,
+            vanilla,
+            "{alias}"
+        );
+    }
+    assert_ne!(
+        exit(&["compile", path, "--emit", "dts", "--framework", "react"]).1,
+        vanilla
+    );
+    // The emits both CLIs take.
+    for emit in zubra::cli::EMITS {
+        let (code, _, stderr) = exit(&["compile", path, "--emit", emit]);
+        assert_eq!(code, 0, "--emit {emit}: {stderr}");
+    }
+    assert_eq!(
+        exit(&["compile", path, "--emit", "js", "--client-only"]).0,
+        0
     );
 }

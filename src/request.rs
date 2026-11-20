@@ -86,6 +86,26 @@ fn respond(mut request: Map<String, Value>) -> Value {
     // `join`: several browser modules (`modules`: `[{ path, code }]`) as one, to be served at
     // `at` (see `joined.rs`). Where joining them would change what one of them sees, the answer
     // is not ok, with the reason as `error` and `"apart": true`: serve them as they are.
+    // `cli`: the command line's contract (commands, flags, values, help), for the npm CLI;
+    // `help`: the help text, for `topic` (a command) or all of it (see `cli.rs`).
+    if text("command") == Some("cli") {
+        return json!({ "ok": true, "output": crate::cli::spec(), "error": null, "warnings": [], "diagnostics": [] });
+    }
+    if text("command") == Some("help") {
+        return match crate::cli::help_for(text("topic")) {
+            Some(help) => {
+                json!({ "ok": true, "output": help, "error": null, "warnings": [], "diagnostics": [] })
+            }
+            None => failure(&crate::cli::unknown(
+                "command",
+                text("topic").unwrap_or_default(),
+                &crate::cli::COMMANDS
+                    .iter()
+                    .map(|command| command.name)
+                    .collect::<Vec<_>>(),
+            )),
+        };
+    }
     if text("command") == Some("minify") {
         let Some(code) = text("code") else {
             return failure("`code` is required: the module to minify");
@@ -181,7 +201,7 @@ fn answer(
     let files = &set.files;
     let path = normalize(path);
     let Some(source) = files.get(&path) else {
-        return failure(&format!("`files` has no source for `{path}`"));
+        return failure(&format!("no such file: {path}"));
     };
     let loader = |specifier: &str, from: &str| -> Result<(String, String), String> {
         // A package's component (`@acme/kit/components/cart-panel.zb`) is keyed by its specifier,
@@ -478,28 +498,34 @@ fn answer(
             // `gaps`: also say what this render left for the browser (as `check --server` does),
             // so a server can warn that part of a component's HTML is empty without JavaScript.
             let want_gaps = partial && request.get("gaps").and_then(Value::as_bool) == Some(true);
-            let render = || crate::validate::with_provided(provided, || crate::validate::with_id_prefix(id_prefix, || crate::compile_html_values(
-                source,
-                &path,
-                props,
-                slots,
-                crate::HtmlOptions {
-                    slot_source,
-                    partial,
-                    pending: request
-                        .get("pending")
-                        .and_then(Value::as_array)
-                        .map(|names| {
-                            names
-                                .iter()
-                                .filter_map(Value::as_str)
-                                .map(str::to_owned)
-                                .collect()
-                        })
-                        .unwrap_or_default(),
-                },
-                &loader,
-            )));
+            let render = || {
+                crate::validate::with_provided(provided, || {
+                    crate::validate::with_id_prefix(id_prefix, || {
+                        crate::compile_html_values(
+                            source,
+                            &path,
+                            props,
+                            slots,
+                            crate::HtmlOptions {
+                                slot_source,
+                                partial,
+                                pending: request
+                                    .get("pending")
+                                    .and_then(Value::as_array)
+                                    .map(|names| {
+                                        names
+                                            .iter()
+                                            .filter_map(Value::as_str)
+                                            .map(str::to_owned)
+                                            .collect()
+                                    })
+                                    .unwrap_or_default(),
+                            },
+                            &loader,
+                        )
+                    })
+                })
+            };
             if want_gaps {
                 let (rendered, gaps) = crate::validate::record_gaps(render);
                 render_gaps = crate::describe_gaps(gaps)
@@ -521,20 +547,22 @@ fn answer(
         }
         ("compile", "css") => crate::css_with(source, &path, &loader),
         ("compile", "dts") => {
-            let framework = match text("framework") {
-                Some("react") => Framework::React,
-                Some("vue") => Framework::Vue,
-                Some("svelte") => Framework::Svelte,
-                Some("solid") => Framework::Solid,
-                Some("solid2") => Framework::Solid2,
-                None | Some("none") => Framework::None,
-                Some(other) => {
+            let framework = match Framework::named(text("framework").unwrap_or("vanilla")) {
+                Some(framework) => framework,
+                None => {
                     return failure(&format!(
-                        "unknown framework `{other}`; expected react, vue, svelte, solid, solid2 or none"
+                        "unknown framework `{}`; expected {}",
+                        text("framework").unwrap_or_default(),
+                        crate::cli::FRAMEWORKS.join(", ")
                     ))
                 }
             };
             crate::compile_declarations_for(source, file_name(&path), framework)
+        }
+        ("compile", "html-data") => crate::compile_html_data(source),
+        // The TypeScript `check --types` has tsc check (`command: "virtual"` gives its map too).
+        ("compile", "tsx") => {
+            crate::virtual_typescript_with(source, &path, &loader).map(|(code, _)| code)
         }
         ("compile", "interface") => crate::compile_interface_with(source, &path, &loader),
         // `sourceMap`: the module ends with a map of its functions' lines to this file's.
@@ -551,8 +579,9 @@ fn answer(
         }
         ("compile", other) => {
             return failure(&format!(
-            "unknown emit `{other}`; expected html, js, element, css, dts, manifest, interface or server"
-        ))
+                "unknown emit `{other}`; expected {}",
+                crate::cli::EMITS.join(", ")
+            ))
         }
         (other, _) => {
             return failure(&format!(
