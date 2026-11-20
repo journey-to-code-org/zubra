@@ -50,17 +50,14 @@ fn a_spread_known_only_in_the_browser_is_left_for_the_element() {
 
 #[test]
 fn what_an_attribute_couldn_t_do_a_known_spread_can_t() {
-    for (attrs, message) in [(r#"[1, 2]"#, "spreads an object")] {
-        let source = format!(
-            "<script>\n  const attrs = {attrs}\n</script>\n<x-a><a {{...attrs}}>go</a></x-a>"
-        );
-        let error = compile(&source, "{}").unwrap_err();
-        assert!(
-            error.message.contains(message),
-            "{attrs}: {}",
-            error.message
-        );
-    }
+    // (A spread's `style` it can't write is left out: see the test below.)
+    let source = "<script>\n  const attrs = [1, 2]\n</script>\n<x-a><a {...attrs}>go</a></x-a>";
+    let error = compile(source, "{}").unwrap_err();
+    assert!(
+        error.message.contains("spreads an object"),
+        "{}",
+        error.message
+    );
 }
 
 // Found by the pre-6.0 audit: a spread's `style` that was text, or held a value like `red;}`,
