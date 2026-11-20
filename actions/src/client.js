@@ -53,10 +53,19 @@ async function submit(event) {
 /**
  * Navigate after a redirect. Back to this same page with only a different #fragment (the usual
  * "post, then show the page again") is a hash change to the browser, which doesn't reload: reload,
- * so the page shows what the post changed.
+ * so the page shows what the post changed. Only an http(s) URL is followed: a `javascript:` one
+ * (an action redirecting to a visitor's `next`) would run script on this page, so anything else is
+ * ignored, with a warning in the console.
  */
 function go(next) {
-  const url = new URL(next, location.href);
+  let url;
+  try {
+    url = new URL(next, location.href);
+  } catch {}
+  if (url?.protocol !== 'http:' && url?.protocol !== 'https:') {
+    console.warn(`@zubra/actions: not navigating to ${JSON.stringify(next)}, which isn't an http(s) URL`);
+    return;
+  }
   const same = url.origin === location.origin && url.pathname === location.pathname && url.search === location.search;
   location.assign(url);
   if (same) location.reload();

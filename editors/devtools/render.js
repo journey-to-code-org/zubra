@@ -138,3 +138,29 @@ ${signals(result.signals)}
 ${live(result.live)}
 ${timeline(result.timeline)}`;
 }
+
+/**
+ * What a screen reader is told after a reading, as plain text (the pane puts it in a status
+ * element's textContent), or '' when nothing worth saying changed. The pane re-reads every
+ * update; announcing the whole pane each time drowned everything else out.
+ * `selected`: the reading follows a new selection, which is always said.
+ */
+export function announcement(before, after, selected = false) {
+  if (!after || after.loading) return '';
+  const said = (result) => {
+    if (!result || result.missing) return 'No Zubra development runtime on this page';
+    if (result.error) return "Couldn't read the page";
+    if (result.version !== VERSION) return 'This page speaks another DevTools version';
+    if (!result.component) return 'Not inside a Zubra component';
+    return `Inspecting <${String(result.component.tag)}>`;
+  };
+  const now = said(after);
+  if (selected || !before || before.loading || said(before) !== now) return now;
+  if (!after.component || after.version !== VERSION) return '';
+  const was = Number(before.lastUpdate?.number) || 0;
+  const is = Number(after.lastUpdate?.number) || 0;
+  if (is <= was) return '';
+  const ran = Number(after.lastUpdate?.ran) || 0;
+  const updates = is - was;
+  return `${updates === 1 ? `Update ${count(is)}` : `${count(updates)} updates`}: ${count(ran)} of this component's binding${ran === 1 ? '' : 's'} re-ran`;
+}

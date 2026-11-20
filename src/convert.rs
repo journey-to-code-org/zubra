@@ -65,6 +65,30 @@ pub struct Conversion {
     pub compile_error: Option<Diagnostic>,
 }
 
+/// Why `tag` can't be a converted component's name, which is also its file's name: a custom
+/// element name (a lowercase ASCII letter first, a hyphen, only `a-z 0-9 . _ -`), so a tag read
+/// from the input (`../../x-y`, `/tmp/x-y`) can't put the file outside its folder.
+pub(crate) fn tag_problem(tag: &str) -> Option<String> {
+    let problem = if !tag.starts_with(|character: char| character.is_ascii_lowercase()) {
+        "it must start with a lowercase letter a-z"
+    } else if !tag.contains('-') {
+        "it needs a hyphen"
+    } else if !tag.chars().all(|character| {
+        character.is_ascii_lowercase()
+            || character.is_ascii_digit()
+            || matches!(character, '-' | '.' | '_')
+    }) {
+        "it may hold only a-z, 0-9, `-`, `.` and `_`"
+    } else if tag.contains("..") {
+        "it can't hold `..`"
+    } else {
+        return None;
+    };
+    Some(format!(
+        "`{tag}` isn't a custom element name, which is also the file's: {problem}"
+    ))
+}
+
 const CONVERTED: &[&str] = &[
     "useState",
     "useMemo",
@@ -325,6 +349,10 @@ pub fn convert_component(
         )));
     };
     let tag = kebab(&name);
+    if let Some(problem) = tag_problem(&tag) {
+        return Err(Diagnostic::new(at_offset(source, id.span.start), problem)
+            .with_help("name the function in PascalCase ASCII (`TodoItem` is `<todo-item>`), with a plain word for `--prefix`"));
+    }
 
     // Props must be destructured: their names are the props. The `on<Name>` ones are events,
     // which the component may only call; passing one on (`onClose={onClose}`) becomes a call.

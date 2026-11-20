@@ -181,8 +181,16 @@ test("'use collection': the note is kept on the device, through a reload", async
   await pad.waitForFunction(() => document.querySelector('note-pad p').textContent.startsWith('4 words'));
   // Ephemeral: focus shows, and isn't what's stored.
   assert.match(await pad.textContent('note-pad p'), /editing/);
-  // Stored: wait for IndexedDB to have it, then reload.
-  await pad.waitForFunction(() => new Promise((resolve) => {
+  // The other previews (sandboxed, each its own origin) follow, through the playground.
+  if (frameworks) {
+    for (const kind of ['react', 'vue']) {
+      const other = await frame(page, kind);
+      await other.waitForFunction(() => document.querySelector('note-pad textarea')?.value === 'kept on the device');
+    }
+  }
+  // Stored: wait for IndexedDB to have it, then reload. The preview is sandboxed (no storage of
+  // its own), so the playground keeps it, on its own origin.
+  await page.waitForFunction(() => new Promise((resolve) => {
     const open = indexedDB.open('zubra-sync', 1);
     open.onsuccess = () => {
       const get = open.result.transaction('docs').objectStore('docs').get(['notes', 'playground']);
@@ -246,18 +254,17 @@ test('the source and the output are coloured, and the docs link goes to the docs
   await page.close();
 });
 
-test('the Zubra DevTools extension works on the playground: its hook reaches the previews, and a line opens in the editor', async () => {
+test('the Zubra DevTools extension works in each preview, and a line opens in the editor', async () => {
   const { page, errors } = await openPlayground();
-  await frame(page, 'html');
-  // As the extension calls it, on the page it inspects: connect, then inspect the selected node.
-  const result = await page.evaluate(async () => {
+  const preview = await frame(page, 'html');
+  // As the extension calls it, in the frame it inspects: connect, then inspect the selected node.
+  const result = await preview.evaluate(async () => {
     const hook = globalThis.__ZUBRA_DEVTOOLS__;
     hook.connect();
     for (let i = 0; i < 100 && !hook.ready; i++) await new Promise((resolve) => setTimeout(resolve, 20));
-    const preview = document.querySelector('[data-preview=html] iframe').contentDocument;
-    const output = preview.querySelector('hello-counter output');
+    const output = document.querySelector('hello-counter output');
     const before = hook.inspect(output);
-    preview.querySelector('hello-counter button.more').click();
+    document.querySelector('hello-counter button.more').click();
     await new Promise((resolve) => setTimeout(resolve, 100));
     const after = hook.inspect(output);
     return {
@@ -277,15 +284,48 @@ test('the Zubra DevTools extension works on the playground: its hook reaches the
   // The Runtime module tab is still the plain build: the DevTools fields are only in the preview.
   assert.doesNotMatch(await page.$eval('#out-js', (pre) => pre.textContent), /\bat: \[|\$dev/);
 
-  // "Open in editor" from the pane: the frame's own hook (newer extensions read it) and the
-  // page's both select the line in the source.
+  // "Open in editor" from the pane: the frame's hook tells the playground, which selects the line.
   const selected = () => page.$eval('#source', (area) => area.value.slice(area.selectionStart, area.selectionEnd));
-  await page.evaluate(() => document.querySelector('[data-preview=html] iframe').contentWindow.__ZUBRA_DEVTOOLS__.open('/playground/component.zb', 15, 3));
+  await preview.evaluate(() => globalThis.__ZUBRA_DEVTOOLS__.open('/playground/component.zb', 15, 3));
+  await page.waitForFunction(() => { const area = document.querySelector('#source'); return area.value.slice(area.selectionStart, area.selectionEnd).includes('<output>'); });
   assert.equal(await selected(), '  <output>{label}: {count}</output>');
-  await page.evaluate(() => globalThis.__ZUBRA_DEVTOOLS__.open('/playground/component.zb', 16, 3));
-  assert.match(await selected(), /^  <button type="button" class="more"/);
+  await preview.evaluate(() => globalThis.__ZUBRA_DEVTOOLS__.open('/playground/component.zb', 16, 3));
+  await page.waitForFunction(() => { const area = document.querySelector('#source'); return /class="more"/.test(area.value.slice(area.selectionStart, area.selectionEnd)); });
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+// Found by the pre-6.0 audit: a shared link (#<deflate>) ran its code in the playground's origin.
+test("a shared link's code runs sandboxed: it can't reach the playground, and its errors still show", async () => {
+  const { page } = await openPlayground();
+  const hash = await page.evaluate(async () => {
+    const value = {
+      source: `<script>
+  let n = 0
+  try { parent.document.title = 'pwned' } catch {}
+  try { localStorage.setItem('pwned', '1') } catch {}
+  try { document.cookie = 'pwned=1' } catch {}
+  setTimeout(() => { throw new Error('boom from the preview') }, 50)
+</script>
+<x-pwn><p>ran</p></x-pwn>`,
+      page: '<x-pwn></x-pwn>',
+    };
+    const stream = new Blob([JSON.stringify(value)]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+    const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  });
+  await page.close();
+  const { page: shared } = await openPlayground(`#${hash}`);
+  const preview = await frame(shared, 'html');
+  await preview.waitForSelector('x-pwn p');
+  await shared.waitForFunction(() => document.querySelector('#error').textContent.startsWith('In the preview:'));
+  assert.match(await shared.textContent('#error'), /In the preview: .*boom from the preview/);
+  assert.notEqual(await shared.title(), 'pwned');
+  assert.equal(await shared.evaluate(() => localStorage.getItem('pwned')), null);
+  assert.doesNotMatch(await shared.evaluate(() => document.cookie), /pwned/);
+  assert.equal(await shared.evaluate(() => document.querySelector('[data-preview=html] iframe').contentDocument), null, 'the page cannot reach in either');
+  assert.equal(await shared.getAttribute('[data-preview=html] iframe', 'sandbox'), 'allow-scripts allow-forms allow-modals');
+  await shared.close();
 });
 
 test('after a compile error the tabs show it and the preview is marked old; an empty source clears everything', async () => {
@@ -398,6 +438,74 @@ test('the new examples: a form control validates and resets, data loads, events 
   for (let i = 0; i < 6; i++) await firstMeter.locator('button').nth(1).click();
   assert.equal((await firstMeter.locator('output').textContent()).trim(), '100%');
   assert.equal(await firstMeter.locator('button').nth(1).isDisabled(), true, 'clamped at the maximum');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('the output tabs are a tab list with one tab stop; arrows, Home and End choose', async () => {
+  const { page, errors } = await openPlayground();
+  const list = page.getByRole('tablist', { name: 'Output' });
+  const tabs = list.getByRole('tab');
+  assert.equal(await tabs.count(), 7);
+  // Each tab controls its panel, and each panel is labelled by its tab.
+  for (const tab of await tabs.all()) {
+    const panel = page.locator(`#${await tab.getAttribute('aria-controls')}`);
+    assert.equal(await panel.getAttribute('role'), 'tabpanel');
+    assert.equal(await panel.getAttribute('aria-labelledby'), await tab.getAttribute('id'));
+  }
+  const selected = () => page.evaluate(() => [document.activeElement.dataset.tab, document.querySelector('[role=tab][aria-selected=true]').dataset.tab, [...document.querySelectorAll('[role=tabpanel]:not([hidden])')].map((el) => el.dataset.panel).join()]);
+  await page.getByRole('tab', { name: 'Preview' }).focus();
+  await page.keyboard.press('ArrowRight');
+  assert.deepEqual(await selected(), ['element', 'element', 'element']);
+  await page.keyboard.press('End');
+  assert.deepEqual(await selected(), ['server', 'server', 'server']);
+  await page.keyboard.press('ArrowRight'); // wraps
+  assert.deepEqual(await selected(), ['preview', 'preview', 'preview']);
+  await page.keyboard.press('ArrowLeft');
+  assert.deepEqual(await selected(), ['server', 'server', 'server']);
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowRight');
+  assert.deepEqual(await selected(), ['element', 'element', 'element']);
+  assert.deepEqual(await tabs.evaluateAll((els) => els.map((el) => el.tabIndex)), [-1, 0, -1, -1, -1, -1, -1]);
+  // Tab leaves the list for the panel, a scrolling code block the keyboard can reach.
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'panel-element');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Tab indents in the editors; Escape or Ctrl+M makes it move focus, and says so', async () => {
+  const { page, errors } = await openPlayground();
+  const source = page.getByRole('textbox', { name: 'Component source' });
+  const hint = page.locator('#tab-hint');
+  assert.match(await source.evaluate((el) => document.getElementById(el.getAttribute('aria-describedby')).textContent), /Tab indents/);
+  await source.focus();
+  await source.evaluate((el) => el.setSelectionRange(0, 0));
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'source');
+  assert.equal((await source.inputValue()).slice(0, 2), '  ');
+  await page.keyboard.press('Escape');
+  assert.match(await hint.textContent(), /^Tab moves focus/);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'page', 'Tab moved on to the next editor');
+  await page.keyboard.press('Tab');
+  assert.notEqual(await page.evaluate(() => document.activeElement.id), 'page', 'and out of it');
+  // Ctrl+M switches it back.
+  await page.locator('#page').focus();
+  await page.keyboard.press('Control+m');
+  assert.match(await hint.textContent(), /^Tab indents/);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'page');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('at 375px wide the page does not scroll sideways', async () => {
+  const { page, errors } = await openPlayground();
+  await page.setViewportSize({ width: 375, height: 740 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 375);
+  const list = await page.getByRole('tablist', { name: 'Output' }).boundingBox();
+  assert.ok(list.x + list.width <= 375, `the tab list is ${list.width}px wide`);
   assert.deepEqual(errors, []);
   await page.close();
 });

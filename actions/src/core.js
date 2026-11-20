@@ -133,8 +133,11 @@ export function createActionsCore({ routes, client = null, forms = null, origins
     if (value instanceof Response) {
       // A redirect after success: the enhanced path is told where to go rather than following it,
       // so the page navigates once, with the location's #fragment kept (fetch drops it).
+      // Only an http(s) location is passed on: a `javascript:` one (a redirect to a visitor's
+      // `next`) would run on the page. Anything else goes out as the plain redirect it was, which
+      // neither fetch nor a browser follows.
       const location = value.headers.get('location');
-      if (wantsJson && location && value.status >= 300 && value.status < 400) {
+      if (wantsJson && location && value.status >= 300 && value.status < 400 && httpUrl(location, url)) {
         const headers = new Headers({ 'zb-location': location });
         for (const cookie of value.headers.getSetCookie()) headers.append('set-cookie', cookie);
         return new Response(null, { status: 204, headers });
@@ -205,6 +208,15 @@ export function routesFrom(...maps) {
     }
   }
   return routes;
+}
+
+/** Whether `location`, read against the request's URL, is an http(s) URL. */
+function httpUrl(location, base) {
+  try {
+    return ['http:', 'https:'].includes(new URL(location, base).protocol);
+  } catch {
+    return false;
+  }
 }
 
 function text(status, body, headers = {}) {

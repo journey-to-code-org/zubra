@@ -127,3 +127,4 @@ section h2 { margin: 0 0 0.75rem; font-size: clamp(1.7rem, 3.6vw, 2.5rem); font-
 .foot p { margin: 0; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 40rem) { section { padding: 3rem 0; } .hero { padding: 3rem 0; } .top nav a:nth-child(n+3):not(:last-child) { display: none; } }
+.moving { margin: 1rem 0 0; color: var(--muted); }

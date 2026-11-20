@@ -153,6 +153,19 @@ pub(crate) fn spread_never_sets(tag: &str, name: &str) -> bool {
     )) || (tag == "meta" && name == "http-equiv")
 }
 
+/// Note a spread's `style` property left out of the HTML because its value isn't a single CSS
+/// value (`red;}` would end the declaration, a nested object isn't one).
+fn omit_css_value(property: &str, value: &Value) {
+    let text = value.to_string();
+    let start: String = text.chars().take(24).collect();
+    let more = if text.chars().count() > 24 { "…" } else { "" };
+    OMITTED.with(|omitted| {
+        omitted.borrow_mut().push(format!(
+            "left the spread's `style` property `{property}` out of the HTML: its value isn't a single CSS value (`{start}{more}`)"
+        ));
+    });
+}
+
 fn omit_name(what: &str, key: &str) {
     let start: String = key.chars().take(24).collect();
     let more = if key.chars().count() > 24 { "…" } else { "" };
@@ -2774,7 +2787,8 @@ impl<'a, 't: 'a> Context<'a, 't> {
 
     /// `{...object}` in the HTML output: its entries as attributes, when the object is known at
     /// build time (otherwise left for the element), with the checks an attribute gets. Listeners
-    /// and properties aren't markup; `class` merges; `style` must be an object.
+    /// and properties aren't markup; `class` merges; `style` is an object, and what it can't write is
+    /// left out with a warning.
     fn lower_spread(
         &self,
         element: &'t ast::Element,
@@ -2853,13 +2867,13 @@ impl<'a, 't: 'a> Context<'a, 't> {
             }
             if name == "style" {
                 let Value::Object(properties) = value else {
-                    if value.is_null() || value == Value::Bool(false) {
-                        continue;
+                    if !value.is_null() && value != Value::Bool(false) {
+                        omit_name(
+                            "an object of CSS properties, which a spread's `style` is",
+                            &key,
+                        );
                     }
-                    return Err(Diagnostic::new(
-                        *span,
-                        "a spread's `style` must be an object of properties, not text",
-                    ));
+                    continue;
                 };
                 let mut declarations = Vec::new();
                 for (property, value) in properties {
@@ -2878,14 +2892,15 @@ impl<'a, 't: 'a> Context<'a, 't> {
                     if own.contains(&format!("style:{css}")) {
                         continue;
                     }
-                    let text = expression::to_display_string(&value)
-                        .map_err(|message| Diagnostic::new(*span, message))?;
-                    if !is_safe_css_value(&text) {
-                        return Err(Diagnostic::new(
-                            *span,
-                            format!("the spread's `{css}` value `{text}` isn't a single CSS value"),
-                        ));
-                    }
+                    // A value, maybe a visitor's: one that isn't a single CSS value is left out
+                    // (as the runtime leaves it out), not an error failing every render.
+                    let Some(text) = expression::to_display_string(&value)
+                        .ok()
+                        .filter(|text| is_safe_css_value(text))
+                    else {
+                        omit_css_value(&css, &value);
+                        continue;
+                    };
                     declarations.push(format!("{css}: {text}"));
                 }
                 if !declarations.is_empty() {

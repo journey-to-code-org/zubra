@@ -1,10 +1,10 @@
 :root {
-  --bg: #ffffff; --surface: #f6f7fb; --ink: #1c2030; --muted: #61677a; --line: #dfe2ea; --accent: #4f5df5; --code: #eef0f7;
+  --bg: #ffffff; --surface: #f6f7fb; --ink: #1c2030; --muted: #61677a; --line: #dfe2ea; --accent: #4f5df5; --code: #eef0f7; --link-code: #3f4ee0;
   --t-comment: #5b6074; --t-tag: #b0235c; --t-attr: #8a4b00; --t-string: #0b6b3a; --t-keyword: #4a3fd0; --t-fn: #0b5cad; --t-num: #9a3412;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #12141b; --surface: #1a1d27; --ink: #e8eaf2; --muted: #9aa0b4; --line: #2c3040; --accent: #8b95ff; --code: #1f2330; --t-comment: #8d93a8; --t-tag: #ff8fb3; --t-attr: #f5b97a; --t-string: #7ee0a6; --t-keyword: #aab2ff; --t-fn: #7cc4ff; --t-num: #ffa27a; color-scheme: dark; }
+  :root { --bg: #12141b; --surface: #1a1d27; --ink: #e8eaf2; --muted: #9aa0b4; --line: #2c3040; --accent: #8b95ff; --code: #1f2330; --link-code: #8b95ff; --t-comment: #8d93a8; --t-tag: #ff8fb3; --t-attr: #f5b97a; --t-string: #7ee0a6; --t-keyword: #aab2ff; --t-fn: #7cc4ff; --t-num: #ffa27a; color-scheme: dark; }
 }
 * { box-sizing: border-box; }
 html { scroll-padding-top: 4.5rem; }
@@ -13,11 +13,11 @@ a { color: var(--accent); }
 .skip { position: absolute; left: -999px; }
 .skip:focus { left: 1rem; top: 1rem; z-index: 10; background: var(--bg); padding: 0.5rem 0.75rem; }
 
-.top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.7rem 1rem; border-bottom: 1px solid var(--line); background: var(--bg); }
+.top { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.4rem 1rem; padding: 0.7rem 1rem; border-bottom: 1px solid var(--line); background: var(--bg); }
 .brand { display: inline-flex; align-items: center; gap: 0.5rem; white-space: nowrap; color: var(--ink); font-weight: 700; font-size: 1.1rem; text-decoration: none; }
 .brand span { color: var(--muted); font-weight: 500; }
 .brand .mark { width: 1.5rem; height: 1.5rem; }
-.top nav { display: flex; gap: 1rem; font-size: 0.95rem; }
+.top nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; font-size: 0.95rem; }
 .top nav a { white-space: nowrap; text-decoration: none; }
 
 .layout { display: grid; grid-template-columns: 17rem minmax(0, 1fr); max-width: 80rem; margin: 0 auto; }
@@ -40,8 +40,13 @@ main { min-width: 0; padding: 1.5rem 1.25rem 3rem 2rem; }
 .doc p, .doc ul, .doc ol { margin: 0 0 1rem; }
 .doc li { margin: 0.25rem 0; }
 .doc code { padding: 0.1em 0.3em; border-radius: 0.3rem; background: var(--code); font: 0.88em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+/* A link's code sits on the code background, where the accent alone is 4.4:1. */
+.doc a code { color: var(--link-code); }
+/* A long name in a sentence breaks rather than widening the page on a phone. */
+.doc :not(pre) > code { overflow-wrap: anywhere; }
 .doc pre { margin: 0 0 1.25rem; padding: 0.9rem 1rem; overflow-x: auto; border: 1px solid var(--line); border-radius: 0.6rem; background: var(--code); line-height: 1.5; }
 .doc pre code { padding: 0; background: none; font-size: 0.86rem; }
+.doc [data-scrolls]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .token.comment, .token.prolog, .token.doctype { color: var(--t-comment); }
 .token.tag, .token.selector, .token.deleted { color: var(--t-tag); }
 .token.attr-name, .token.property, .token.constant, .token.symbol { color: var(--t-attr); }
@@ -51,7 +56,9 @@ main { min-width: 0; padding: 1.5rem 1.25rem 3rem 2rem; }
 .token.number, .token.regex { color: var(--t-num); }
 .token.punctuation, .token.operator { color: var(--ink); }
 .doc blockquote { margin: 0 0 1rem; padding: 0.1rem 1rem; border-left: 3px solid var(--accent); color: var(--muted); }
-.doc table { display: block; max-width: 100%; margin: 0 0 1.25rem; overflow-x: auto; border-collapse: collapse; font-size: 0.93rem; }
+/* A wide table scrolls in its own box (the table stays a table to assistive technology). */
+.doc .table-scroll { max-width: 100%; margin: 0 0 1.25rem; overflow-x: auto; }
+.doc table { border-collapse: collapse; font-size: 0.93rem; }
 .doc th, .doc td { padding: 0.45rem 0.7rem; border: 1px solid var(--line); text-align: left; vertical-align: top; }
 .doc th { background: var(--surface); }
 .doc img { max-width: 100%; height: auto; }
@@ -74,3 +81,9 @@ main { min-width: 0; padding: 1.5rem 1.25rem 3rem 2rem; }
   .side { order: 2; position: static; max-height: none; border-top: 1px solid var(--line); }
   .all-pages { display: inline; }
 }
+@media (max-width: 30rem) {
+  /* The header wraps to two lines here: it scrolls away rather than covering a quarter of the screen. */
+  .top { position: static; }
+  html { scroll-padding-top: 0.5rem; }
+}
+.moving { max-width: 48rem; margin: 0 0 1.25rem; padding: 0.6rem 0.9rem; border: 1px solid var(--line); border-radius: 0.6rem; background: var(--surface); }

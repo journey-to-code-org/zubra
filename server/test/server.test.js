@@ -69,6 +69,24 @@ test("a value that isn't a safe URL is left out, the page still renders, and the
   }
 });
 
+// Pre-6.0 audit: a spread's style that was text, or held `red;}`, failed the whole render.
+test("a spread's style it can't write is left out, the page still renders, and the server says so", () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-omitted-style-'));
+  try {
+    writeFileSync(join(dir, 'farm-box.zb'), '<farm-box attrs={{}}><div {...attrs}>box</div></farm-box>\n');
+    const warned = [];
+    const zubra = createZubra({ components: dir, warn: (message) => warned.push(message) });
+    const page = zubra.page();
+    assert.match(page.render('farm-box', { attrs: { style: 'color: red', title: 't' } }), /<div title="t">box<\/div>/);
+    assert.match(page.render('farm-box', { attrs: { style: { color: 'red;}', margin: '0' } } }), /<div style="margin: 0">box<\/div>/);
+    assert.equal(warned.length, 2, warned.join('\n'));
+    assert.match(warned[0], /<farm-box>: left the spread's key `style` out of the HTML/);
+    assert.match(warned[1], /<farm-box>: left the spread's `style` property `color` out of the HTML: its value isn't a single CSS value/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a page: render, finish (CSS, import map, modules), and the browser modules served by handle()', async () => {
   const zubra = createZubra({ components });
   assert.deepEqual(zubra.names, ['book-card', 'count-stepper', 'hello-there', 'id-field', 'order-form', 'review-list', 'review-panel', 'slot-child', 'slot-frame']);

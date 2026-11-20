@@ -178,7 +178,7 @@
     {
       "name": "star-rating",
       "category": "input",
-      "description": "A star rating that is a form control: it submits its value under its `name`, is invalid while `required` and unset, and goes back to 0 when its form resets. `readonly` shows a rating.",
+      "description": "A star rating that is a form control: it submits its value under its `name`, is invalid while `required` and unset, and goes back to 0 when its form resets. `readonly` shows a rating. A radio group with one tab stop: the arrow keys move the rating one star (Right and Up add one, Left and Down take one away), Home picks one star and End all of them. A disabled control (its own `disabled` attribute, or a disabled `<fieldset>`) leaves the tab order.",
       "files": [
         "star-rating.zb"
       ],
