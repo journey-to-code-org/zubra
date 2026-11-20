@@ -32,7 +32,8 @@
   button:hover { border-color: var(--accent, #4f5df5); }
   ul { display: grid; gap: 0.25rem; margin: 0; padding: 0; list-style: none; }
   li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-  li.done label { text-decoration: line-through; opacity: 0.6; }
+  /* Muted, not faded: opacity left the label at 4.3:1; the muted colour is at least 4.5:1 in both themes. */
+  li.done label { text-decoration: line-through; color: var(--muted, #5d6375); }
   li button { padding: 0 0.5rem; border-color: transparent; }
   p { margin: 0; font-size: 0.9rem; color: var(--muted, #5d6375); }
 </style>

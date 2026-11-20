@@ -11,6 +11,10 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { createZubra } from '../src/index.js';
 
+// What these tests call development is NODE_ENV=development (since 6.0 an unset NODE_ENV is
+// production: production-default.test.js); a test of production passes `production: true`.
+process.env.NODE_ENV = 'development';
+
 // Inside the package, so the server it starts finds `../src/index.js`'s packages.
 const work = mkdtempSync(join(fileURLToPath(new URL('.', import.meta.url)), '.tmp-reload-'));
 const components = join(work, 'components');

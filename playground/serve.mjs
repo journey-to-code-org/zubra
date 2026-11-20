@@ -34,7 +34,9 @@ export async function serve(dir = join(here, 'dist'), { port = 0, compiler = pro
     } catch {
       return response.writeHead(404).end();
     }
-    response.writeHead(200, { 'content-type': TYPES[extname(path)] ?? 'text/plain' }).end(body);
+    // The previews are sandboxed frames (an opaque origin) that load the runtime from here, as
+    // modules: those are CORS requests, which GitHub Pages answers with this header too.
+    response.writeHead(200, { 'content-type': TYPES[extname(path)] ?? 'text/plain', 'access-control-allow-origin': '*' }).end(body);
   });
   await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));
   server.url = `http://127.0.0.1:${server.address().port}/`;

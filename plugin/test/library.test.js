@@ -180,7 +180,7 @@ test('a plain page imports the elements with an import map, no build step', asyn
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(`${url}/`);
   await page.waitForFunction(() => window.ready === true);
-  assert.equal(await page.getByRole('button', { name: '3 of 5' }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.getByRole('radio', { name: '3 of 5' }).getAttribute('aria-checked'), 'true');
   assert.deepEqual(errors, []);
   await page.close();
 });

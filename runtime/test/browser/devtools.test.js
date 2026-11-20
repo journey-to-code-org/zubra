@@ -167,9 +167,22 @@ test('the extension\'s pane, on a live page: the selection, Open in editor, and 
   assert.equal(opened.length, 1);
   assert.match(opened[0], /fixtures\/devtools\/dt-panel\.zb:11:21$/);
 
-  // The page updates; the pane follows (it polls the update counter while visible).
-  await page.click('dt-panel button.inc');
+  // A new selection is said in the status line, not by reading the whole pane out.
+  await page.waitForFunction(() => document.querySelector('#pane-status')?.textContent === 'Inspecting <dt-panel>');
+  assert.equal(await page.$eval('#pane-status', (el) => el.getAttribute('role')), 'status');
+  assert.equal(await page.$eval('#pane', (el) => el.hasAttribute('aria-live')), false);
+
+  // The page updates; the pane follows (it polls the update counter while visible), keeping
+  // the focused button and the sections the reader closed, and says only what changed.
+  await page.focus('#pane button[data-line="11"]');
+  const button = await page.$('#pane button[data-line="11"]');
+  await page.$eval('#pane details:has(.signals)', (details) => { details.open = false; });
+  await page.evaluate(() => document.querySelector('dt-panel button.inc').click());
   await page.waitForFunction(() => document.querySelector('#pane')?.textContent.includes('wrote count'), null, { timeout: 5000 });
+  assert.equal(await page.evaluate((el) => el.isConnected && document.activeElement === el, button), true, 'focus stays on the same button');
+  assert.equal(await page.$eval('#pane details:has(.signals)', (details) => details.open), false);
+  await page.waitForFunction(() => /^Update 1: \d+ of this component's bindings? re-ran$/.test(document.querySelector('#pane-status')?.textContent), null, { timeout: 5000 });
+  await page.$eval('#pane details:has(.signals)', (details) => { details.open = true; });
   assert.match(await pane(), /On this node textContent = …\s*ran <p\.double>/);
   // Why it re-ran, the component's signals, the live counts and the page's updates.
   assert.match(await pane(), /re-ran because doubled ← count changed/);

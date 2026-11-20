@@ -40,7 +40,7 @@
     class:selected
     tabindex="0"
     aria-label={`${symbol} ${price.toFixed(2)}`}
-    aria-pressed={selected ? "true" : "false"}
+    aria-current={selected ? "true" : "false"}
     onclick={() => emit('tileselect')}
     onkeydown.enter.space.prevent={() => emit('tileselect')}
   >

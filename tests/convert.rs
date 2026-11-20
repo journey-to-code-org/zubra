@@ -463,3 +463,32 @@ fn a_component_built_on_a_react_primitive_is_refused_up_front() {
     let typed = "import type { DialogProps } from \"@radix-ui/react-dialog\"\nexport default function UiThing() {\n  return <p />;\n}\n";
     assert!(convert(typed, "Thing.tsx", None).is_ok());
 }
+
+// Found by the pre-6.0 audit: the tag names the file written, so it must be a custom element name.
+#[test]
+fn a_name_that_makes_no_custom_element_name_is_refused() {
+    let source = "export default function Card() {\n  return <div />;\n}\n";
+    for prefix in ["x/../../evil", "x\\..\\evil", "a.."] {
+        let error = convert(source, "Card.jsx", Some(prefix)).unwrap_err();
+        assert!(
+            error.message.contains("isn't a custom element name"),
+            "{prefix}: {}",
+            error.message
+        );
+    }
+    let error = convert(
+        "export default function Todo$Item() {\n  return <div />;\n}\n",
+        "TodoItem.jsx",
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        error.message.contains("isn't a custom element name"),
+        "{}",
+        error.message
+    );
+    assert_eq!(
+        convert(source, "Card.jsx", Some("ui")).unwrap().tag,
+        "ui-card"
+    );
+}

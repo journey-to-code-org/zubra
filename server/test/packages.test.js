@@ -10,6 +10,10 @@ import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
 import { createZubra } from '../src/index.js';
 
+// What these tests call development is NODE_ENV=development (since 6.0 an unset NODE_ENV is
+// production: production-default.test.js); a test of production passes `production: true`.
+process.env.NODE_ENV = 'development';
+
 let root;
 let browser;
 const components = () => join(root, 'components');

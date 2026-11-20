@@ -43,6 +43,12 @@ export function inScope(scope: Scope | null, collection: string, key: string): b
 /** For `createSyncServer({ authorize: allowAnyone })`: every page may read and write everything. */
 export const allowAnyone: () => true;
 
+/**
+ * For `createSyncServer({ authorize: allowReads(['notes', 'board']) })`: pages may read those
+ * collections and write nothing. With no list, every collection.
+ */
+export function allowReads(collections?: string[]): (asked: { collection: string; write: boolean }) => boolean;
+
 export function createSyncServer(options?: {
   log?: Log;
   /** Default `/_zb/sync`. */
@@ -53,8 +59,10 @@ export function createSyncServer(options?: {
    * or 'read' (a change about to be sent to this request). `write` is true for the first two. A
    * 'change' has the `field` and `value` it sets.
    *
-   * Without it, pages may read but every write from a page is refused (403, saying why). Pass
-   * `allowAnyone` for a page everyone may edit. The server's own `write()` is never asked.
+   * Without it, pages may neither read nor write: pull and live send them nothing, and every
+   * write from a page is refused (403, saying why). `allowReads(['notes'])` opens those
+   * collections to reading, `allowAnyone` everything to reading and writing. The server's own
+   * `write()` is never asked.
    */
   /**
    * How far ahead of the server's clock a pushed change's clock may be, in ms (default 60 000).
@@ -73,8 +81,8 @@ export function createSyncServer(options?: {
   /**
    * Told, once per collection, when a page read the whole log and was sent none of a collection
    * that has documents (`authorize` refused every read, or `scope` left them all out): to the
-   * page that is an empty collection. By default `console.warn` where `process.env.NODE_ENV`
-   * exists and isn't `production`, and nothing elsewhere; `false` turns it off.
+   * page that is an empty collection. By default `console.warn` where `process.env.NODE_ENV` is
+   * `development`, and nothing elsewhere; `false` turns it off.
    */
   warn?: ((message: string) => void) | false;
   /** How often the live stream sends a keep-alive comment (ms, default 15000). */

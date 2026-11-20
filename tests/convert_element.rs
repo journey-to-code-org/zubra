@@ -273,3 +273,51 @@ fn the_request_api_converts_an_element_with_its_children() {
     );
     assert_eq!(response["complete"], true, "{response}");
 }
+
+// Found by the pre-6.0 audit: the tag names the file written (`<tag>.zb` beside the input), so a
+// tag read from the module (`../../../pwned-x`, `/tmp/x/victim`) wrote outside the folder.
+#[test]
+fn a_tag_that_is_not_a_custom_element_name_is_refused() {
+    let dir = temp_dir("hostile-tag");
+    let component = dir.join("x-greeting.zb");
+    fs::write(
+        &component,
+        "<x-greeting name=\"you\"><p>Hello, {name}!</p></x-greeting>\n",
+    )
+    .unwrap();
+    let element = zubra::compile_element_file(component.to_str().unwrap()).unwrap();
+    let path = dir.join("x-greeting.js");
+    let path = path.to_str().unwrap();
+    assert!(zubra::convert_element(&element, path).is_ok());
+    for hostile in [
+        "../../../pwned-x",
+        "/tmp/x/victim",
+        "x-a/../../b",
+        "x-a\\\\..\\\\b",
+        "x..-y",
+        "X-Greeting",
+        "1-greeting",
+        "greeting",
+    ] {
+        let source = element.replace("x-greeting", hostile);
+        let error = zubra::convert_element(&source, path).unwrap_err();
+        assert!(
+            error.message.contains("isn't a custom element name"),
+            "{hostile}: {}",
+            error.message
+        );
+    }
+    // The command line writes nothing.
+    let parent = dir.parent().unwrap().join("pwned-x.zb");
+    let _ = fs::remove_file(&parent);
+    let hostile = dir.join("hostile.js");
+    fs::write(&hostile, element.replace("x-greeting", "../pwned-x")).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_zubra"))
+        .args(["convert", hostile.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("isn't a custom element name"));
+    assert!(!parent.exists());
+    let _ = fs::remove_dir_all(&dir);
+}

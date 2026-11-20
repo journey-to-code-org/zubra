@@ -13,7 +13,8 @@
 //! keep the peer id (as `@zubra/sync/server`).
 //!
 //! It has no notion of users: run it behind the app (a reverse proxy at `/_zb/sync`, after the
-//! app's own sign-in) or on a trusted network. Posts from a browser are accepted only from the
+//! app's own sign-in) or on a trusted network. Pages read nothing until it's told what they may
+//! (`--read <collection>`, `--read-all`) and write nothing without `--open`, which opens both. Posts from a browser are accepted only from the
 //! binary's own origin and the `--origin`s given, which also get CORS headers.
 
 use rusqlite::{params, Connection};
@@ -37,9 +38,30 @@ struct Options {
     port: u16,
     origins: Vec<String>,
     keep_alive: Duration,
-    /// Take writes (push, presence, signal) from pages. Off by default: the binary can't tell
-    /// who is asking, so it serves reads only until it's put behind the app's sign-in.
+    /// Take writes (push, presence, signal) from pages, and let them read everything. Off by
+    /// default: the binary can't tell who is asking.
     open: bool,
+    /// What pages may read without `--open`: nothing by default.
+    reads: Reads,
+}
+
+/// The collections pages may read, as `@zubra/sync/server`'s `authorize`: nothing unless told
+/// (`allowReads([…])` there, `--read <collection>` here; `allowReads()`, `--read-all`).
+#[derive(Clone)]
+enum Reads {
+    Nothing,
+    Everything,
+    Only(HashSet<String>),
+}
+
+impl Reads {
+    fn allows(&self, collection: &str) -> bool {
+        match self {
+            Reads::Nothing => false,
+            Reads::Everything => true,
+            Reads::Only(collections) => collections.contains(collection),
+        }
+    }
 }
 
 fn options() -> Result<Options, String> {
@@ -50,6 +72,7 @@ fn options() -> Result<Options, String> {
         origins: Vec::new(),
         keep_alive: Duration::from_secs(15),
         open: false,
+        reads: Reads::Nothing,
     };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -64,6 +87,17 @@ fn options() -> Result<Options, String> {
             }
             "--origin" => options.origins.push(value("--origin")?),
             "--open" => options.open = true,
+            "--read-all" => options.reads = Reads::Everything,
+            "--read" => {
+                let collection = value("--read")?;
+                match &mut options.reads {
+                    Reads::Everything => {}
+                    Reads::Only(collections) => {
+                        collections.insert(collection);
+                    }
+                    Reads::Nothing => options.reads = Reads::Only(HashSet::from([collection])),
+                }
+            }
             "--keep-alive" => {
                 options.keep_alive = Duration::from_millis(
                     value("--keep-alive")?
@@ -72,11 +106,14 @@ fn options() -> Result<Options, String> {
                 )
             }
             "-h" | "--help" => {
-                println!("usage: zubra-sync [--db sync.db] [--host 127.0.0.1] [--port 4000] [--origin https://app.example]... [--keep-alive 15000] [--open]");
+                println!("usage: zubra-sync [--db sync.db] [--host 127.0.0.1] [--port 4000] [--origin https://app.example]... [--keep-alive 15000] [--read <collection>]... [--read-all] [--open]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument {other} (try --help)")),
         }
+    }
+    if options.open {
+        options.reads = Reads::Everything;
     }
     Ok(options)
 }
@@ -103,6 +140,7 @@ struct State {
     origins: Vec<String>,
     keep_alive: Duration,
     open: bool,
+    reads: Reads,
 }
 
 /// What a page is told when the binary wasn't started with --open.
@@ -142,6 +180,9 @@ fn main() {
         server.server_addr(),
         options.db
     );
+    if matches!(options.reads, Reads::Nothing) {
+        eprintln!("zubra-sync: pages may read nothing: start it with --read <collection> (repeatable), --read-all, or --open (see its README)");
+    }
     let state = Arc::new(State {
         db: Mutex::new(db),
         listeners: Mutex::new(Vec::new()),
@@ -150,6 +191,7 @@ fn main() {
         origins: options.origins,
         keep_alive: options.keep_alive,
         open: options.open,
+        reads: options.reads,
     });
     for request in server.incoming_requests() {
         let state = Arc::clone(&state);
@@ -281,16 +323,18 @@ fn in_scope(scope: &Option<Value>, collection: &str, key: &str) -> bool {
     }
 }
 
-/// The changes a scope lets through.
-fn scoped(scope: &Option<Value>, changes: &[Value]) -> Vec<Value> {
+/// The changes a scope lets through, of the collections pages may read.
+fn scoped(reads: &Reads, scope: &Option<Value>, changes: &[Value]) -> Vec<Value> {
     changes
         .iter()
         .filter(|change| {
-            in_scope(
-                scope,
-                change["collection"].as_str().unwrap_or_default(),
-                change["key"].as_str().unwrap_or_default(),
-            )
+            let collection = change["collection"].as_str().unwrap_or_default();
+            reads.allows(collection)
+                && in_scope(
+                    scope,
+                    collection,
+                    change["key"].as_str().unwrap_or_default(),
+                )
         })
         .cloned()
         .collect()
@@ -393,7 +437,7 @@ fn handle(state: &State, mut request: Request) {
             );
             match after(state, since) {
                 Ok((changes, cursor)) => {
-                    let mut body = json!({ "changes": scoped(&scope, &changes), "cursor": cursor });
+                    let mut body = json!({ "changes": scoped(&state.reads, &scope, &changes), "cursor": cursor });
                     if reset {
                         body["reset"] = json!(true);
                     }
@@ -484,7 +528,10 @@ fn handle(state: &State, mut request: Request) {
             let text = event("signal", &clean);
             // Only to a recipient whose own scope lets it into the room.
             for listener in state.listeners.lock().expect("listeners").iter() {
-                if listener.peer == to && in_scope(&listener.scope, collection, key) {
+                if listener.peer == to
+                    && state.reads.allows(collection)
+                    && in_scope(&listener.scope, collection, key)
+                {
                     let _ = listener.events.send(text.clone());
                 }
             }
@@ -730,7 +777,7 @@ fn event(name: &str, data: &Value) -> String {
 fn broadcast_changes(state: &State, changes: &[Value], cursor: i64) {
     let mut listeners = state.listeners.lock().expect("listeners");
     listeners.retain(|listener| {
-        let visible = scoped(&listener.scope, changes);
+        let visible = scoped(&state.reads, &listener.scope, changes);
         if visible.is_empty() {
             return true;
         }
@@ -747,6 +794,7 @@ fn broadcast_presence(state: &State, message: &Value, except_peer: &str) {
     let mut listeners = state.listeners.lock().expect("listeners");
     listeners.retain(|listener| {
         listener.peer == except_peer
+            || !state.reads.allows(collection)
             || !in_scope(&listener.scope, collection, key)
             || listener.events.send(text.clone()).is_ok()
     });
@@ -829,7 +877,8 @@ fn live(state: &State, request: Request, url: &str, extra: Vec<Header>) {
         if empty && !first {
             break;
         }
-        let mut data = json!({ "changes": scoped(&scope, &changes), "cursor": cursor });
+        let mut data =
+            json!({ "changes": scoped(&state.reads, &scope, &changes), "cursor": cursor });
         if reset && first {
             data["reset"] = json!(true);
         }

@@ -1,9 +1,12 @@
 // The documentation's navigation: each group is a heading in the sidebar, and `file` is a path from the
 // repository root. A page's address is its `slug`, or its path under docs/ without .md. The pages
-// themselves are rendered by docs.js; demos/test/docs.test.js reads this list too.
+// themselves are rendered by docs.js; demos/test/docs.test.js reads this list too. `step: false` keeps a
+// Guide entry out of the guide's Previous and Next links.
 export default [
   { group: 'Guide', pages: [
     { file: 'docs/guide/README.md', slug: '', label: 'Overview' },
+    // Near the top while 5.x apps move; not one of the guide's steps, so outside its Previous/Next.
+    { file: 'docs/migrating-to-6.0.md', label: 'Migrating to 6.0', step: false },
     { file: 'docs/guide/starter-app.md', label: 'The starter app' },
     { file: 'docs/guide/01-first-component.md', label: 'Your first component' },
     { file: 'docs/guide/02-templates.md', label: 'Templates' },
@@ -44,7 +47,6 @@ export default [
   { group: 'Reference', pages: [
     { file: 'docs/reference.md', label: 'Reference' },
     { file: 'docs/stability.md', label: 'Stability and tiers' },
-    { file: 'docs/migrating-to-6.0.md', label: 'Migrating to 6.0' },
     { file: 'docs/browser-support.md', label: 'Browser support' },
     { file: 'docs/javascript-support.md', label: 'What JavaScript runs where' },
     { file: 'docs/security.md', label: 'Security model' },

@@ -47,7 +47,7 @@ connect({ url: '/_zb/sync' });
 ```js
 import { createSyncServer } from '@zubra/sync/server';
 const sync = createSyncServer({
-  // Who may change what. Without it, pages read but can't write.
+  // Who may see and change what. Without it, pages can neither read nor write.
   authorize: ({ request, collection, kind }) => kind === 'read' || isSignedIn(request),
 });
 if (await sync.handle(req, res)) return;

@@ -86,11 +86,18 @@ follow(); // the same url, interval, live and scope options as connect()
 
 It pulls and listens exactly as `connect()` does, and leaves out what only a writing page uses: the outbox, pushes, presence and peers. That is about 1.4 KB less to download (3.5 KB against 4.9, compressed). An edit made on such a page stays on that device, and the first one is reported in the console; use `connect()` on any page that writes. The server is the same either way, and `authorize` still decides what the page may read.
 
-### Who may write
+### Who may read and write
 
-**Without `authorize`, pages may read but not write.** Every push, presence and signal from a page is refused with a 403 that says why, and the page says so once in its console. The server's own `write()` is never asked. This is deliberate: a log that takes any change from anyone lets a visitor set a price, mark an order paid or take every seat.
+**Without `authorize`, pages may neither read nor write.** Pull and the live stream send a page nothing (in development the server says so, once per collection, with what would open it), and every push, presence and signal from a page is refused with a 403 that says why, and the page says so once in its console. The server's own `write()` is never asked. This is deliberate: a log that takes any change from anyone lets a visitor set a price, mark an order paid or take every seat, and one that hands every page every document shows a visitor what was never on their screen (another customer's order, the staff notes). Before 6.0 reads were open by default; see [the 6.0 guide](migrating-to-6.0.md).
 
-So say who may change what:
+Collections anyone may read and nobody may write (a menu, an order board the server writes) are named:
+
+```js
+import { createSyncServer, allowReads } from '@zubra/sync/server';
+createSyncServer({ authorize: allowReads(['menu', 'stock']) });   // allowReads() for every collection
+```
+
+Anything more, say who may see and change what:
 
 ```js
 createSyncServer({
@@ -106,7 +113,7 @@ createSyncServer({
 
 **A page on another site** is let in only if it's listed: `createSyncServer({ origins: ['https://shop.example'] })`. Its writes are taken (a page on any other site is refused, as a browser says where a request comes from), and its answers carry CORS headers, so its browser lets it read its pulls and its live stream and send JSON at all. That's the same as the `zubra-sync` binary's `--origin`. `authorize` still decides what it may read and change. Cookies aren't sent across sites, so a page on another site is anonymous to `authorize` unless the app knows it some other way.
 
-For a page everyone may edit (a shared board on a trusted network, a demo), say so: `createSyncServer({ authorize: allowAnyone })`. A Durable Object takes reads only unless its class has an `authorize()`, and the `zubra-sync` binary unless it's started with `--open`.
+For a page everyone may edit (a shared board on a trusted network, a demo), say so: `createSyncServer({ authorize: allowAnyone })`, which opens reading and writing everything. A Durable Object takes no reads or writes from pages unless its class has an `authorize()` (or `options.authorize`), and the `zubra-sync` binary reads nothing unless it's started with `--read <collection>`, `--read-all` or `--open`, and takes writes only with `--open`.
 
 Components don't change. The protocol is plain HTTP, so any server can keep the log:
 
@@ -121,7 +128,7 @@ Components don't change. The protocol is plain HTTP, so any server can keep the 
 - **A clock can't run far ahead.** A push whose clock is more than `maxSkew` (default 60 s) ahead of the server's is refused with a 400, since a change stamped far in the future would win every merge for ever. A device a little fast is fine, and the server's own writes still come after it. Devices don't follow a far-future stamp they hear either, and a clock's counter carries into the next millisecond rather than outgrowing its five digits.
 - **Two field names are taken:** `$clocks` (where a document keeps its clocks) and `key` (a listed document's own key). A push with either is refused, and `write()` throws.
 - **The server keeps a log, in order, and doesn't merge.** Every device applies the same rule to the same changes: for each field, the change with the later clock wins. So they converge, whichever order the changes arrive in. The clock of each field's winning write is stored beside the document (`$clocks`).
-- **`authorize`** decides who may write a document and who sees its changes. It's told what's asked: `kind` is `'change'` (a push), `'presence'` (joining a document's room; nothing is stored) or `'read'` (a change about to be sent to this request), and `write` is true for the first two. A `'change'` also has the `field` and `value` it sets. See [Who may write](#who-may-write).
+- **`authorize`** decides who may write a document and who sees its changes. It's told what's asked: `kind` is `'change'` (a push), `'presence'` (joining a document's room; nothing is stored) or `'read'` (a change about to be sent to this request), and `write` is true for the first two. A `'change'` also has the `field` and `value` it sets. Without it pages read and write nothing. See [Who may read and write](#who-may-read-and-write).
 - **The log** is in memory by default. `sqliteLog(path)` from `@zubra/sync/sqlite` keeps it in a SQLite file through the runtime's own SQLite (`node:sqlite` on Node 22.5+, `bun:sqlite` on Bun), so it survives a restart with nothing to install. Any `{ append(changes), after(cursor, limit) }` works too.
 - **A log that doesn't grow with every change:** `sqliteLog(path, { keep: 'latest' })` (and `memoryLog`, `durableObjectLog`, with the same option) keeps each field's latest value only. A change with a newer clock replaces the field's row and takes the next cursor; one with an older clock is dropped. A new device reads what's there now, not the evening's history of every seat held and released. Devices merge the same either way: what's dropped would have lost to the newer write on every device anyway. Opening a file that has the full log as `keep: 'latest'` carries each field's latest value across, numbered after the old cursors, so devices that had read the old log miss nothing. The `zubra-sync` binary keeps every change.
 - Cross-site pushes are refused, like actions.
@@ -138,7 +145,7 @@ Changes arrive over a live channel: `GET /_zb/sync/live?since=<cursor>` is a ser
 @zubra/sync: a page read "secrets" (GET /_zb/sync/pull) and was sent none of its 2 documents: `authorize` refused every read. …
 ```
 
-It names the cause (`authorize`, or the server's `scope` leaving them all out). It's logged where `process.env.NODE_ENV` exists and isn't `production`; `createSyncServer({ warn })` takes a function to send it elsewhere, or `false` to turn it off (a server where one tenant rightly sees nothing of another's collection, say). A collection the page's own `scope` leaves out, a page that sees some of the collection, and later batches (other people's changes, refused as a matter of course) say nothing.
+It names the cause (`authorize`, the server's `scope` leaving them all out, or no `authorize` at all, with the `allowReads([...])` that would open the collection). It's logged where `process.env.NODE_ENV` is `development` (an unset NODE_ENV is production, as for `@zubra/server`); `createSyncServer({ warn })` takes a function to send it elsewhere, or `false` to turn it off (a server where one tenant rightly sees nothing of another's collection, say). A collection the page's own `scope` leaves out, a page that sees some of the collection, and later batches (other people's changes, refused as a matter of course) say nothing.
 
 ### Only what the page shows: `scope`
 
@@ -224,7 +231,7 @@ export default {
 
 ### Without Node: the `zubra-sync` binary
 
-`sync-server/` in the repository builds `zubra-sync`, the same protocol as one binary with SQLite built in: `zubra-sync --db sync.db --port 4000 --open`. It reads and writes the same table as `sqliteLog()`, so a log can move between them. It has no notion of users, so without `--open` it takes reads only; with it, put it behind your app at `/_zb/sync` (a reverse proxy after the app's sign-in), or allow a page's origin with `--origin` on a trusted network. The same protocol and browser tests run against it.
+`sync-server/` in the repository builds `zubra-sync`, the same protocol as one binary with SQLite built in: `zubra-sync --db sync.db --port 4000 --open`. It reads and writes the same table as `sqliteLog()`, so a log can move between them. It has no notion of users, so it serves pages nothing until told: `--read <collection>` (repeatable) lets pages read those collections, `--read-all` every one, and `--open` reads and writes; with `--open`, put it behind your app at `/_zb/sync` (a reverse proxy after the app's sign-in), or allow a page's origin with `--origin` on a trusted network. The same protocol and browser tests run against it.
 
 ## Presence: who else is here
 

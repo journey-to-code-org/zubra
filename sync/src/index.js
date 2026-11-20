@@ -150,7 +150,7 @@ export function collection(name, keys, props, fields, presenceFields = null, pee
   };
   const loaded = new Signal.State(null);
   let current = null;
-  let last = null; // the JSON last loaded or saved, so a load isn't written back
+  let last = null; // each field's JSON as last loaded or saved, so a load isn't written back
   let applying = false;
 
   const apply = (doc) => {
@@ -162,11 +162,18 @@ export function collection(name, keys, props, fields, presenceFields = null, pee
       applying = false;
     }
   };
+  // Each field's value as JSON text, kept until the field changes: a save re-serialises only the
+  // fields that changed, not the whole document (one small edit beside a 10 000-item list was
+  // the list written out again, every time). Reading the text subscribes to every nested change.
+  const names = Object.keys(fields);
+  const texts = Object.fromEntries(names.map((field) => [field, new Signal.Computed(() => JSON.stringify(fields[field].get() ?? null))]));
   /** Each field's current value, as JSON text. */
-  const values = () => Object.fromEntries(Object.entries(fields).map(([field, signal]) => [field, JSON.stringify(snapshot(signal.get()))]));
+  const values = () => Object.fromEntries(names.map((field) => [field, texts[field].get()]));
+  /** The document's JSON, from its fields' texts. */
+  const documentText = (now) => `{${names.map((field) => `${JSON.stringify(field)}:${now[field]}`).join(',')}}`;
   const onRemote = (doc) => {
     apply(doc);
-    last = JSON.stringify(Object.fromEntries(Object.keys(fields).map((field) => [field, snapshot(fields[field].get())])));
+    last = Signal.subtle.untrack(values);
   };
 
   const join = (key) => {
@@ -200,7 +207,7 @@ export function collection(name, keys, props, fields, presenceFields = null, pee
         const edited = new Set(Object.keys(fields).filter((field) => now[field] !== before[field]));
         apply(Object.fromEntries(Object.entries(doc).filter(([field]) => !edited.has(field))));
         // `last` is what's stored, so the save effect writes exactly the edits.
-        last = JSON.stringify(Object.fromEntries(Object.keys(fields).map((field) => [field, field in doc ? snapshot(doc[field]) : JSON.parse(before[field])])));
+        last = Object.fromEntries(names.map((field) => [field, field in doc ? JSON.stringify(doc[field] ?? null) : before[field]]));
         loaded.set(key);
       })
       .catch((error) => console.error(`@zubra/sync: couldn't load ${name}/${key}`, error));
@@ -210,13 +217,14 @@ export function collection(name, keys, props, fields, presenceFields = null, pee
   // Save on every change, once the document is loaded (so the defaults never overwrite it).
   effect(() => {
     const key = keyOf();
-    const doc = Object.fromEntries(Object.entries(fields).map(([field, signal]) => [field, snapshot(signal.get())]));
+    const now = values();
     if (key === null || loaded.get() !== key || applying) return;
-    const text = JSON.stringify(doc);
-    if (text === last) return;
-    const before = last === null ? {} : JSON.parse(last);
-    last = text;
-    const changed = Object.fromEntries(Object.entries(doc).filter(([field, value]) => JSON.stringify(value) !== JSON.stringify(before[field])));
+    const edited = names.filter((field) => last === null || now[field] !== last[field]);
+    if (!edited.length) return;
+    last = now;
+    // (Parsed from the texts: a copy of the state, as every reader of the document gets.)
+    const doc = JSON.parse(documentText(now));
+    const changed = Object.fromEntries(edited.map((field) => [field, doc[field]]));
     for (const write of writers) write(name, key, changed);
     theStore()
       .set(name, key, doc)

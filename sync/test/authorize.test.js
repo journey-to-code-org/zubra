@@ -1,11 +1,15 @@
-// Who may write: without `authorize`, pages read but don't write (security audit K2). With it,
+// Who may read and write: without `authorize`, pages neither read (6.0) nor write (security audit K2). With it,
 // each change is asked with its field and value (S6), so an app can keep fields for the server.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createSyncServer, allowAnyone } from '../src/server.js';
+import { createSyncServer, allowAnyone, allowReads } from '../src/server.js';
 import { syncObject } from '../src/durable-core.js';
 import { durableStorage } from './durable-storage.js';
 import { binaryPath, startBinary } from './backends.js';
+import { sqliteLog } from '../src/sqlite.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const clock = (n) => `00000000000000${n}-00000-dev1`;
 const change = (field, value, n = 1, collection = 'tasks') => ({ collection, key: 't1', field, value, clock: clock(n) });
@@ -36,11 +40,33 @@ test('without authorize, a page may not push, join or signal, and is told why', 
   }
 });
 
-test('without authorize, pages still read, and the server still writes', async () => {
-  const sync = createSyncServer();
+test('without authorize, pages read nothing, on pull or live, and the server still writes (6.0)', async () => {
+  const sync = createSyncServer({ warn: false });
   await sync.write('tasks', 't1', { title: 'from the server' });
-  const read = await pull(sync);
-  assert.deepEqual(read.changes.map((c) => c.value), ['from the server']);
+  assert.deepEqual((await pull(sync)).changes, []);
+  assert.equal((await sync.documents()).get('tasks', 't1').title, 'from the server');
+  const stream = (await sync.fetch(new Request('http://localhost/_zb/sync/live?since=0&peer=p1'))).body.getReader();
+  let text = '';
+  while (!/event: changes\ndata: .*\n\n/.test(text)) text += new TextDecoder().decode((await stream.read()).value);
+  assert.deepEqual(JSON.parse(/event: changes\ndata: (.*)\n\n/.exec(text)[1]).changes, []);
+  stream.cancel().catch(() => {});
+});
+
+test('allowReads: the collections it names are read, others not, and pages write nothing', async () => {
+  const sync = createSyncServer({ authorize: allowReads(['tasks']), warn: false });
+  await sync.write('tasks', 't1', { title: 'shown' });
+  await sync.write('salaries', 'ada', { amount: 1 });
+  assert.deepEqual((await pull(sync)).changes.map((one) => [one.collection, one.value]), [['tasks', 'shown']]);
+  const pushed = await post(sync, 'push', { changes: [change('title', 'no')] });
+  assert.equal(pushed.status, 403);
+  assert.match((await pushed.json()).error, /takes no writes from pages/);
+  // With no list, every collection; and only a list of names is taken.
+  const all = createSyncServer({ authorize: allowReads() });
+  await all.write('tasks', 't1', { title: 'shown' });
+  await all.write('salaries', 'ada', { amount: 1 });
+  assert.equal((await pull(all)).changes.length, 2);
+  assert.equal((await post(all, 'push', { changes: [change('title', 'no')] })).status, 403);
+  assert.throws(() => allowReads('tasks'), /a list of collection names/);
 });
 
 test('allowAnyone opens writes to every page', async () => {
@@ -75,13 +101,17 @@ test('authorize must be a function', () => {
   assert.throws(() => createSyncServer({ authorize: 'anyone' }), /`authorize` is a function/);
 });
 
-test('a Durable Object without an authorize of its own takes reads only; with one, it decides', async () => {
+test('a Durable Object without an authorize of its own takes no reads or writes from pages; with one, it decides', async () => {
   const bare = syncObject({ storage: durableStorage() }, {});
   const pushed = await post(bare, 'push', { changes: [change('title', 'x')] });
   assert.equal(pushed.status, 403);
   assert.match((await pushed.json()).error, /authorize/);
   await bare.write('tasks', 't1', { title: 'server' });
-  assert.equal((await pull(bare)).changes.length, 1, 'reads and server writes still work');
+  assert.equal((await pull(bare)).changes.length, 0, 'nothing read');
+  assert.equal((await bare.documents()).get('tasks', 't1').title, 'server', "the server's own writes still work");
+  const reading = syncObject({ storage: durableStorage() }, { authorize: allowReads(['tasks']) });
+  await reading.write('tasks', 't1', { title: 'server' });
+  assert.equal((await pull(reading)).changes.length, 1, 'reads opened by options.authorize');
 
   const open = syncObject({ storage: durableStorage() }, { authorize: ({ field }) => field !== 'secret' });
   assert.equal((await post(open, 'push', { changes: [change('title', 'x')] })).status, 200);
@@ -101,10 +131,39 @@ test('the zubra-sync binary takes no writes from pages unless started with --ope
       assert.equal((await send('signal', { ...signal, key: p1.key })).status, status, `signal ${args.join(' ') || '(closed)'}`);
       p1.close();
       const read = await (await fetch(`${base}/_zb/sync/pull?since=0`)).json();
-      assert.equal(read.changes.length, status === 200 ? 1 : 0, 'reads always work');
+      assert.equal(read.changes.length, status === 200 ? 1 : 0, 'what --open took is read with --open; closed, nothing is read');
     } finally {
       close();
     }
+  }
+});
+
+test('the zubra-sync binary lets pages read nothing unless told: --read <collection>, --read-all or --open', { skip: !binaryPath && 'binary not built' }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-sync-reads-'));
+  const path = join(dir, 'reads.db');
+  try {
+    const log = await sqliteLog(path);
+    await log.append([change('title', 'a task'), change('amount', 1, 2, 'salaries')]);
+    log.close();
+    for (const [args, seen] of [[[], []], [['--read', 'tasks'], ['tasks']], [['--read', 'tasks', '--read', 'salaries'], ['tasks', 'salaries']], [['--read-all'], ['tasks', 'salaries']], [['--open'], ['tasks', 'salaries']]]) {
+      const { base, close } = await startBinary([...args, '--db', path]);
+      try {
+        const read = await (await fetch(`${base}/_zb/sync/pull?since=0`)).json();
+        assert.deepEqual(read.changes.map((one) => one.collection), seen, args.join(' ') || '(closed)');
+        // The live stream's backlog too.
+        const reader = (await fetch(`${base}/_zb/sync/live?since=0&peer=p1`)).body.getReader();
+        let text = '';
+        while (!/event: changes\ndata: .*\n\n/.test(text)) text += new TextDecoder().decode((await reader.read()).value);
+        reader.cancel().catch(() => {});
+        assert.deepEqual(JSON.parse(/event: changes\ndata: (.*)\n\n/.exec(text)[1]).changes.map((one) => one.collection), seen, `live ${args.join(' ') || '(closed)'}`);
+        // Reading opens no writes.
+        if (!args.includes('--open')) assert.equal((await fetch(`${base}/_zb/sync/push`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ changes: [change('title', 'x', 3)] }) })).status, 403);
+      } finally {
+        close();
+      }
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

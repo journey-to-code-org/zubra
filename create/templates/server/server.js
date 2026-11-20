@@ -1,9 +1,11 @@
 // The whole server: it renders the page with its components already in the HTML, serves their
 // browser modules, and runs the form's server function. No bundler and no build step.
 //
-//   npm run dev     restarts when this file or anything in src/ changes: an edited component is
-//                   swapped into the open page, keeping its state, and any other change reloads it
-//   npm start       the same server with NODE_ENV=production (compiled once, cached)
+//   npm run dev     development (`--dev`): restarts when this file or anything in src/ changes, an
+//                   edited component is swapped into the open page, keeping its state, any other
+//                   change reloads it, and an error's page says what went wrong
+//   npm start       the same server in production, the default (errors say only that something
+//                   went wrong)
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -11,17 +13,22 @@ import { createZubra } from '@zubra/server';
 import { createActions } from '@zubra/actions';
 import { notes } from './src/notes.js';
 
-const production = process.env.NODE_ENV === 'production';
+// Production unless told otherwise: `npm run dev` passes --dev, which is NODE_ENV=development for
+// @zubra/server and @zubra/actions (on any OS: nothing to set in the shell).
+if (process.argv.includes('--dev')) process.env.NODE_ENV = 'development';
+const production = process.env.NODE_ENV !== 'development';
 const components = 'src/components';
 
-// `cache: false` compiles on each request, so an edit to a .zb file is in the next page.
-// `compress` sends the modules in Brotli or gzip (a third of the bytes); take it out if your
-// host or a proxy in front compresses already.
+// `cache` keeps what was compiled; in development an edit to a .zb file is still in the next
+// page (the folder's files are checked for changes first), without compiling every component
+// on every request.
+// `compress` sends the page and the modules in Brotli or gzip (a fifth to a third of the bytes);
+// take it out (here, and in createActions) if your host or a proxy in front compresses already.
 // `reload`: in development, when this server is back from a restart, the components that changed
 // are swapped into the open page (keeping their state), and any other change reloads it.
-const zubra = createZubra({ components, cache: production, compress: true, reload: !production });
+const zubra = createZubra({ components, cache: true, compress: true, reload: !production });
 // The functions marked 'use server' in the components, served at /_zb/action/<tag>/<name>.
-const actions = await createActions({ components });
+const actions = await createActions({ components, compress: true });
 
 const styles = readFileSync(new URL('./src/style.css', import.meta.url), 'utf8');
 
@@ -40,7 +47,7 @@ export const server = createServer(async (req, res) => {
     const sent = actions.result(req, (name, value) => res.setHeader(name, value));
     // (Rendered before the status is sent: a component that doesn't compile is a 500, not a 200.)
     const html = home(sent?.value);
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(html);
+    zubra.send(req, res, html);
   } catch (error) {
     console.error(error);
     // In development the page says what the terminal says (a component's error comes with its
@@ -73,6 +80,7 @@ function home(sent) {
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
     <title>{{title}}</title>
     <style>${styles}</style>
   </head>

@@ -50,7 +50,7 @@ test('every internal link and anchor resolves', () => {
   let checked = 0;
   for (const page of pages) {
     // Code samples show markup (`<a href="/">`); they aren't links on the page.
-    const links = html(page.path).replace(/<pre>[\s\S]*?<\/pre>/g, '');
+    const links = html(page.path).replace(/<pre\b[^>]*>[\s\S]*?<\/pre>/g, '');
     for (const [, href] of links.matchAll(/\s(?:href|src)="([^"]+)"/g)) {
       const url = href.replace(/&amp;/g, '&');
       if (/^(https?:|mailto:)/.test(url)) continue;
@@ -68,9 +68,37 @@ test('every internal link and anchor resolves', () => {
 
 test('code in the docs is coloured, not plain text', () => {
   const first = html(join(dir, 'docs/guide/01-first-component/index.html'));
-  const block = first.match(/<pre><code class="language-html">[\s\S]*?<\/code><\/pre>/)?.[0];
+  const block = first.match(/<pre\b[^>]*><code class="language-html">[\s\S]*?<\/code><\/pre>/)?.[0];
   assert.ok(block, 'the first component page has an HTML example');
   assert.match(block, /class="token tag"/, 'tags are coloured');
   assert.match(block, /class="token string"/, 'strings are coloured');
   assert.ok(html(join(dir, 'docs/assets/site.css')).includes('.token.tag'), 'the stylesheet has the colours');
+});
+
+test('code blocks and tables that can scroll sideways take focus and are named', () => {
+  const first = html(join(dir, 'docs/guide/01-first-component/index.html'));
+  const pres = [...first.matchAll(/<pre\b[^>]*>/g)].map((match) => match[0]);
+  assert.ok(pres.length >= 3);
+  for (const pre of pres) assert.match(pre, /^<pre tabindex="0" role="group" aria-label="Code(, [^"]+)?" data-scrolls>$/, pre);
+  assert.ok(pres.includes('<pre tabindex="0" role="group" aria-label="Code, HTML" data-scrolls>'));
+  const matrix = html(join(dir, 'docs/framework-matrix/index.html'));
+  const tables = (matrix.match(/<table>/g) ?? []).length;
+  assert.ok(tables > 0);
+  assert.equal((matrix.match(/<div class="table-scroll" tabindex="0" role="region" aria-label="Table" data-scrolls>\s*<table>/g) ?? []).length, tables, 'every table is in a scrolling box');
+  // The layout's script drops the tab stop where nothing scrolls.
+  assert.match(matrix, /box\.tabIndex = box\.scrollWidth > box\.clientWidth \+ 1 \? 0 : -1/);
+});
+
+test('the migration guide is near the top of the sidebar and on the first page; /docs/guide/ goes to the guide', () => {
+  const front = html(join(dir, 'docs/index.html'));
+  const sidebar = front.slice(front.indexOf('<nav class="side"'));
+  const links = [...sidebar.matchAll(/<li><a href="([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(links.indexOf(`${base}docs/migrating-to-6.0/`) >= 0 && links.indexOf(`${base}docs/migrating-to-6.0/`) <= 2, links.slice(0, 4).join());
+  assert.match(front, new RegExp(`</h1>\\s*<p class="moving">Moving from 5\\.x\\? <a href="${base}docs/migrating-to-6\\.0/">Migrating to 6\\.0</a></p>`));
+  // It isn't a step of the guide: the overview's Next is still the starter app.
+  assert.match(front, /<a rel="next" href="[^"]+starter-app\/">/);
+  const guide = join(dir, 'docs/guide/index.html');
+  assert.ok(existsSync(guide), '/docs/guide/ is a page');
+  assert.match(html(guide), new RegExp(`<meta http-equiv="refresh" content="0; url=${base}docs/">`));
+  assert.match(html(join(dir, 'index.html')), new RegExp(`Moving from 5\\.x\\? <a href="${base}docs/migrating-to-6\\.0/">Migrating to 6\\.0</a>`));
 });

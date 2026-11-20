@@ -37,7 +37,8 @@ To start from a working server instead of this fragment, `npm create zubra@lates
 Two things to get right from the start:
 
 - **One `zubra.page()` per request, used for both `render()` and `finish()`.** The page object collects the components it renders, and `finish()` adds the CSS and modules of those. A page rendered by one object and finished by another shows the server's HTML and never comes alive.
-- **Edit and reload.** In development an edit to a `.zb` file (or a file added or removed) shows on the next request; there's nothing to restart. The server keeps what it compiled and lets go of it when something in the components folder changes. With `NODE_ENV=production` it compiles once and never looks again, which is what a deployed server wants. A file a component imports from outside the folder isn't watched: restart for those.
+- **Development is opt-in.** The server is in production unless `NODE_ENV=development` (or `createZubra({ production: false })`), so a deployment that forgets NODE_ENV never shows visitors an error's details. It says so at start when it's in development.
+- **Edit and reload.** In development an edit to a `.zb` file (or a file added or removed) shows on the next request; there's nothing to restart. The server keeps what it compiled and lets go of it when something in the components folder changes. In production it compiles once and never looks again, which is what a deployed server wants. A file a component imports from outside the folder isn't watched: restart for those.
 
 To change a rendered component from a script on the page (a live price, a status), set its props as properties: [Setting a prop from outside](03-props-and-events.md#setting-a-prop-from-outside).
 

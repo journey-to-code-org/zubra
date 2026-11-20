@@ -13,10 +13,11 @@
 // `write` is true for the last two. A 'change' also has the `field` and `value` it sets, so an
 // app can keep fields (or whole collections) for the server alone.
 //
-// Without `authorize`, pages may read but not write: every push, presence and signal is refused
-// with a 403 saying so. Say who may change what, or, for a page everyone may edit (a shared
-// board on a trusted network), `createSyncServer({ authorize: allowAnyone })`. The server's own
-// `write()` is never asked.
+// Without `authorize`, pages may neither read nor write: pull and live send them nothing, and
+// every push, presence and signal is refused with a 403 saying so. Say who may see and change
+// what; `authorize: allowReads(['notes'])` for collections anyone may read and nobody may write
+// (`allowReads()` for every collection), or, for a page everyone may edit (a shared board on a
+// trusted network), `authorize: allowAnyone`. The server's own `write()` is never asked.
 //
 // The server can take part too. `await sync.documents()` is every document as the devices see
 // it (last writer wins, per field), kept current; `sync.write(collection, key, fields)` writes as
@@ -234,23 +235,38 @@ function documentsOf() {
 /** For `createSyncServer({ authorize: allowAnyone })`: every page may read and write everything. */
 export const allowAnyone = () => true;
 
-/** The default: pages may read; writes from pages need an `authorize` that says who may make them. */
-const readsOnly = ({ write }) => !write;
-const NO_AUTHORIZE = 'This sync server takes no writes from pages until it is told who may make them: pass createSyncServer({ authorize }) (or authorize: allowAnyone, for a page anyone may edit). See docs/sync.md, "Who may write".';
+const READS_ONLY = Symbol('allowReads');
+/**
+ * For `createSyncServer({ authorize: allowReads(['notes', 'board']) })`: pages may read those
+ * collections (every collection, with no list), and write nothing.
+ */
+export function allowReads(collections) {
+  if (collections !== undefined && (!Array.isArray(collections) || !collections.every((name) => typeof name === 'string'))) throw new TypeError("allowReads: a list of collection names (['notes', 'board']), or nothing for every collection");
+  const readable = collections && new Set(collections);
+  const reads = ({ write, collection }) => !write && (!readable || readable.has(collection));
+  // (A write it refuses is told why, as with no authorize: nothing here takes writes.)
+  reads[READS_ONLY] = true;
+  return reads;
+}
 
-// Where there is a `process.env` to say so (Node, Bun, Deno) and it doesn't say production. A
-// Worker has none, and is somebody's production: nothing is logged there unless `warn` is given.
+/** The default, since 6.0: pages read nothing and write nothing until `authorize` says who may. */
+const closed = () => false;
+const NO_AUTHORIZE = 'This sync server takes no writes from pages until it is told who may make them: pass createSyncServer({ authorize }) (or authorize: allowAnyone, for a page anyone may edit). See docs/sync.md, "Who may read and write".';
+
 /** How many of a collection's documents `notice` counts, at most. */
 const NOTICE_KEYS = 1000;
 
-const development = () => typeof globalThis.process?.env === 'object' && globalThis.process.env.NODE_ENV !== 'production';
+// Where there is a `process.env` that says development (Node, Bun, Deno), as @zubra/server
+// decides: an unset NODE_ENV is production. A Worker has none: nothing is logged there unless
+// `warn` is given.
+const development = () => typeof globalThis.process?.env === 'object' && globalThis.process.env.NODE_ENV === 'development';
 
 export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: given, scope: serverScope = () => null, origins = [], heartbeat = 15_000, device = 'server', maxSkew = 60_000, maxBytes = 1 << 20, maxChanges = 1000, warn = development() ? (message) => console.warn(message) : false } = {}) {
   if (!/^[\w-]{1,40}$/.test(device)) throw new Error('createSyncServer: `device` names the server in its clocks: letters, digits, - and _');
   if (given !== undefined && typeof given !== 'function') throw new TypeError('createSyncServer: `authorize` is a function ({ request, collection, key, field, value, write, kind }) => boolean');
-  const authorize = given ?? readsOnly;
-  /** What a refused write says: why, when no authorize was given; the app's own refusal otherwise. */
-  const refused = (fallback) => json(403, { error: given ? fallback : NO_AUTHORIZE });
+  const authorize = given ?? closed;
+  /** What a refused write says: why, when nothing given takes writes; the app's own refusal otherwise. */
+  const refused = (fallback) => json(403, { error: given && !given[READS_ONLY] ? fallback : NO_AUTHORIZE });
   const base = mount.replace(/\/$/, '');
   // Appends, one after another, so the log's order is the order they were made in.
   let appending = Promise.resolve();
@@ -380,7 +396,8 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
       noticed.add(collection);
       const documents = keys.size >= NOTICE_KEYS ? `${NOTICE_KEYS} or more documents` : `${keys.size} document${keys.size === 1 ? '' : 's'}`;
       const path = new URL(request.url).pathname;
-      warn(`@zubra/sync: a page read "${collection}" (GET ${path}) and was sent none of its ${documents}: ${!server ? "the server's `scope` for that request leaves them all out" : '`authorize` refused every read'}. To the page that is an empty collection, so its components show their defaults and nothing says why. If this request shouldn't see them, there is nothing to do (said once per collection; \`warn: false\` turns it off).`);
+      const why = !server ? "the server's `scope` for that request leaves them all out" : given ? '`authorize` refused every read' : `this server was given no \`authorize\`, so pages may read nothing: name what they may read, createSyncServer({ authorize: allowReads(['${collection}']) }), or pass an authorize that decides (docs/sync.md, "Who may read and write")`;
+      warn(`@zubra/sync: a page read "${collection}" (GET ${path}) and was sent none of its ${documents}: ${why}. To the page that is an empty collection, so its components show their defaults and nothing says why. If this request shouldn't see them, there is nothing to do (said once per collection; \`warn: false\` turns it off).`);
     }
   }
   /** The server's scope for a request and the page's (`?scope=`), or a Response refusing it. */

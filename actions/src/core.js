@@ -18,12 +18,26 @@ export const MAX_BYTES = 10 * 1024 * 1024;
 /** What a function's caller gets for a post over the limit; the function doesn't run. */
 export const TOO_LARGE = Object.freeze({ error: 'Too large' });
 
+/** Brotli if an `accept-encoding` takes it, else gzip if it takes that, else null (as @zubra/server's `compress`). */
+export function encodingFor(accepts) {
+  if (typeof accepts !== 'string') return null;
+  const taken = new Set();
+  for (const part of accepts.toLowerCase().split(',')) {
+    const [name, ...params] = part.split(';').map((piece) => piece.trim());
+    const q = params.find((param) => param.startsWith('q='));
+    if (!q || Number(q.slice(2)) > 0) taken.add(name);
+  }
+  return taken.has('br') ? 'br' : taken.has('gzip') ? 'gzip' : null;
+}
+
 /**
  * `routes`: a Map of URL → function. `client`: the enhancing script's source, served at
  * SCRIPT_PATH, or null when the host serves it as a static file. `forms`: the same for
- * `@zubra/actions/enhance-forms`, at FORMS_PATH.
+ * `@zubra/actions/enhance-forms`, at FORMS_PATH. `scriptCaching`: their `cache-control`.
+ * `encodings`: `{ [SCRIPT_PATH or FORMS_PATH]: { br, gzip } }`, each script compressed ahead
+ * (the Node entry's `compress`), sent to a request whose `accept-encoding` takes one.
  */
-export function createActionsCore({ routes, client = null, forms = null, origins = [], onError = (error) => console.error(error), context = () => ({}), maxBytes = MAX_BYTES, secure }) {
+export function createActionsCore({ routes, client = null, forms = null, origins = [], onError = (error) => console.error(error), context = () => ({}), maxBytes = MAX_BYTES, secure, scriptCaching = 'no-cache', encodings = null }) {
   // Whether a request is over HTTPS, for the result cookie: what the app says (`secure`, for one
   // behind a proxy that ends TLS, whose requests reach it as http), else the request's own URL.
   const overHttps = (request) => secure ?? (/^https:/i.test(request.url ?? '') || request.socket?.encrypted === true);
@@ -82,11 +96,17 @@ export function createActionsCore({ routes, client = null, forms = null, origins
 
   async function fetch(request, extra = {}) {
     const url = new URL(request.url);
-    if (request.method === 'GET' && url.pathname === SCRIPT_PATH) {
-      return client === null ? null : new Response(client, { headers: { 'content-type': 'text/javascript; charset=utf-8' } });
-    }
-    if (request.method === 'GET' && url.pathname === FORMS_PATH) {
-      return forms === null ? null : new Response(forms, { headers: { 'content-type': 'text/javascript; charset=utf-8' } });
+    if (request.method === 'GET' && (url.pathname === SCRIPT_PATH || url.pathname === FORMS_PATH)) {
+      const source = url.pathname === SCRIPT_PATH ? client : forms;
+      if (source === null) return null;
+      const headers = { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': scriptCaching };
+      const encoded = encodings?.[url.pathname];
+      if (!encoded) return new Response(source, { headers });
+      // `vary` on the plain answer too: a shared cache must not hand it to a browser that asked for Brotli.
+      headers.vary = 'accept-encoding';
+      const encoding = encodingFor(request.headers.get('accept-encoding'));
+      if (!encoding) return new Response(source, { headers });
+      return new Response(encoded[encoding], { headers: { ...headers, 'content-encoding': encoding, 'content-length': String(encoded[encoding].byteLength) } });
     }
     if (!url.pathname.startsWith(MOUNT)) return null;
     if (request.method !== 'POST') return text(405, 'Method Not Allowed', { allow: 'POST' });
@@ -113,8 +133,11 @@ export function createActionsCore({ routes, client = null, forms = null, origins
     if (value instanceof Response) {
       // A redirect after success: the enhanced path is told where to go rather than following it,
       // so the page navigates once, with the location's #fragment kept (fetch drops it).
+      // Only an http(s) location is passed on: a `javascript:` one (a redirect to a visitor's
+      // `next`) would run on the page. Anything else goes out as the plain redirect it was, which
+      // neither fetch nor a browser follows.
       const location = value.headers.get('location');
-      if (wantsJson && location && value.status >= 300 && value.status < 400) {
+      if (wantsJson && location && value.status >= 300 && value.status < 400 && httpUrl(location, url)) {
         const headers = new Headers({ 'zb-location': location });
         for (const cookie of value.headers.getSetCookie()) headers.append('set-cookie', cookie);
         return new Response(null, { status: 204, headers });
@@ -185,6 +208,15 @@ export function routesFrom(...maps) {
     }
   }
   return routes;
+}
+
+/** Whether `location`, read against the request's URL, is an http(s) URL. */
+function httpUrl(location, base) {
+  try {
+    return ['http:', 'https:'].includes(new URL(location, base).protocol);
+  } catch {
+    return false;
+  }
 }
 
 function text(status, body, headers = {}) {

@@ -12,6 +12,21 @@ import { buildApp } from './build.js';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' };
 
+/** In the page: the contrast of an element's text against the first opaque background behind it, with its opacity. */
+function contrast(element) {
+  const rgb = (colour) => colour.match(/[\d.]+/g).map(Number);
+  let back = element;
+  while (back && rgb(getComputedStyle(back).backgroundColor)[3] === 0) back = back.parentElement;
+  const [r, g, b] = rgb(back ? getComputedStyle(back).backgroundColor : 'rgb(255, 255, 255)');
+  const [x, y, z, alpha = 1] = rgb(getComputedStyle(element).color);
+  let fade = alpha;
+  for (let el = element; el; el = el.parentElement) fade *= Number(getComputedStyle(el).opacity);
+  const ink = [x, y, z].map((c, i) => c * fade + [r, g, b][i] * (1 - fade));
+  const luminance = (channels) => channels.map((c) => ((c /= 255) <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+  const [high, low] = [luminance(ink), luminance([r, g, b])].sort((m, n) => n - m);
+  return (high + 0.05) / (low + 0.05);
+}
+
 /** The built app, served, in Chromium: `use(page)` drives it, and nothing may reach the console as an error. */
 async function inBrowser(use) {
   const dist = await buildApp(root);
@@ -69,6 +84,8 @@ test('the examples work: a list, a form control, async data and slots', () => in
   assert.equal(await page.inputValue('todo-list form input'), '');
   await page.check('todo-list li:last-child input');
   assert.equal(await page.textContent('todo-list .tl-left'), '1 left');
+  // A finished item's label is muted, still at least 4.5:1 against what it sits on.
+  assert.ok(await page.$eval('todo-list li:last-child label', contrast) >= 4.5);
   for (let rows = 3; rows > 0; rows--) await page.click('todo-list li:first-child button');
   assert.equal(await page.textContent('todo-list > p:not(.tl-left)'), 'Nothing to do. Add something.');
 

@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch-path=src --watch-path=server.js server.js",
-    "start": "NODE_ENV=production node server.js",
+    "dev": "node --watch-path=src --watch-path=server.js server.js --dev",
+    "start": "node server.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {

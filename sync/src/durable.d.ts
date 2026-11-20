@@ -33,7 +33,7 @@ export class SyncObject<Env = unknown> {
   constructor(ctx: any, env: Env);
   protected ctx: any;
   protected env: Env;
-  /** Refuse a write or hide a change; as `createSyncServer`'s. Without it (and without `options.authorize`), pages may read and not write. */
+  /** Refuse a write or hide a change; as `createSyncServer`'s. Without it (and without `options.authorize`), pages may neither read nor write. */
   authorize?(asked: { request: Request; collection: string; key: string; field?: string; value?: unknown; write: boolean; kind: 'change' | 'presence' | 'read' }): boolean | Promise<boolean>;
   fetch(request: Request): Promise<Response>;
   documents(): Promise<Documents>;

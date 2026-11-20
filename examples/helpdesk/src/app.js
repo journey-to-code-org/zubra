@@ -32,12 +32,13 @@ export function createApp({ store, cache = true, now = () => Date.now() }) {
   app.use(express.static(join(here, '../public')));
   // Components rendered into the views, and their modules and @zubra/runtime served under /_zubra.
   // (Kept, for the error page at the end: `rendering.zubra` is the server it made.)
-  const rendering = zubra({ components: join(here, '../components'), cache });
+  // `compress`: the modules and the pages in Brotli or gzip, for a host with nothing in front that does.
+  const rendering = zubra({ components: join(here, '../components'), cache, compress: true });
   app.use(rendering);
   app.use(auth.middleware(store));
   // The components' 'use server' functions (the reply box's), with the signed-in user and the
   // store. Before the body parser: an action reads its own body.
-  const served = actions({ components: join(here, '../components'), context: ({ req }) => ({ user: req.user, store, now }) });
+  const served = actions({ components: join(here, '../components'), compress: true, context: ({ req }) => ({ user: req.user, store, now }) });
   app.use((req, res, next) => served.then((middleware) => middleware(req, res, next), next));
   app.use(express.urlencoded({ extended: false }));
 
@@ -54,7 +55,8 @@ export function createApp({ store, cache = true, now = () => Date.now() }) {
     // A component given a promise as a prop (the dashboard's recent activity) is pending in the
     // page; the rest streams in as the promise settles.
     if (components.pending) components.stream(html).pipe(res);
-    else res.send(components.finish(html));
+    // (Express's `res.req` is the request: whether it takes Brotli or gzip.)
+    else rendering.zubra.send(res.req, res, components.finish(html));
   }
 
   const requireUser = (req, res, next) => (req.user ? next() : res.redirect(303, `/login?next=${encodeURIComponent(req.originalUrl)}`));

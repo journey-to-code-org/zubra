@@ -16,7 +16,7 @@ test('solid-markets: a live dashboard built from zubra elements', async () => {
   const price = (symbol) => page.$eval(tile(symbol), (el) => el.price);
 
   assert.deepEqual(await texts(page, 'price-tile .symbol'), ['NOVA', 'KELP', 'ARCH', 'VOLT']);
-  assert.equal(await page.getAttribute(`${tile('NOVA')} article`, 'aria-pressed'), 'true');
+  assert.equal(await page.getAttribute(`${tile('NOVA')} article`, 'aria-current'), 'true');
   // Each tick sets new props: the price text, the change and the nested spark line follow.
   const before = await page.$eval(tile('NOVA'), (el) => [el.price, el.points.length, el.querySelector('polyline').getAttribute('points')]);
   await go('button.step');
@@ -32,7 +32,7 @@ test('solid-markets: a live dashboard built from zubra elements', async () => {
   // Selecting another tile (click, then keyboard).
   await go(`${tile('KELP')} article`);
   assert.equal(await page.textContent('.detail h2'), 'KELP');
-  assert.equal(await page.getAttribute(`${tile('NOVA')} article`, 'aria-pressed'), 'false');
+  assert.equal(await page.getAttribute(`${tile('NOVA')} article`, 'aria-current'), 'false');
   await page.focus(`${tile('ARCH')} article`);
   await page.keyboard.press('Enter');
   await settle(page);

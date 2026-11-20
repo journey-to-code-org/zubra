@@ -25,8 +25,11 @@ function starter(name, typescript = false) {
 
 /** The starter's `npm run dev` (or `start`) on a port of its own; `stop()` ends it. */
 async function running(dir, script, port) {
-  const [, ...args] = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).scripts[script].replace(/^NODE_ENV=production /, '').split(' ');
-  const child = spawn(process.execPath, args, { cwd: dir, env: { ...process.env, PORT: String(port), NODE_ENV: script === 'start' ? 'production' : '' }, stdio: 'ignore' });
+  const [, ...args] = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).scripts[script].split(' ');
+  // No NODE_ENV either way: `dev` is development by its own flag, `start` production by default.
+  const env = { ...process.env, PORT: String(port) };
+  delete env.NODE_ENV;
+  const child = spawn(process.execPath, args, { cwd: dir, env, stdio: 'ignore' });
   const origin = `http://127.0.0.1:${port}`;
   const up = async () => {
     for (let waited = 0; waited < 15_000; waited += 100) {

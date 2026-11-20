@@ -12,7 +12,9 @@ try {
 }
 let app;
 try {
-  app = createApp({ store, cache: process.env.NODE_ENV === 'production' });
+  // (Production unless NODE_ENV=development: then an edited component shows on the next request,
+  // and an error's page says what went wrong.)
+  app = createApp({ store });
 } catch (error) {
   console.error(error.message); // no compiler: what to do about it
   process.exit(1);

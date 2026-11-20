@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { findCompiler } from '@zubra/server';
 import { request as forward } from 'node:http';
-import { createSyncServer, allowAnyone } from '../src/server.js';
+import { createSyncServer, allowAnyone, allowReads } from '../src/server.js';
 import { startBinary } from './backends.js';
 
 // ZUBRA_SYNC_BACKEND=binary serves /_zb/sync from the zubra-sync binary instead, behind this
@@ -45,8 +45,9 @@ let server;
 let browser;
 let base;
 const sync = createSyncServer({ authorize: allowAnyone });
-// A server that was never told who may write (security audit K2): pages read, writes are refused.
-const closed = createSyncServer({ mount: '/_zb/closed' });
+// A server that was never told who may write (security audit K2): pages read (allowReads, since
+// 6.0 reads too are closed without authorize), writes are refused.
+const closed = createSyncServer({ mount: '/_zb/closed', authorize: allowReads() });
 // A second server on the same page, for a scope of its own (tasks), to see what each is sent.
 const other = createSyncServer({ mount: '/_zb/other', authorize: allowAnyone });
 // Servers for a page on another site (http://127.0.0.1:<port> is another site to http://localhost):
@@ -899,7 +900,7 @@ test('an edit made while the document is still loading is kept, and saved', asyn
 });
 
 
-test('a server with no authorize: the page still works, its edits stay here, and it says why once', { skip: viaBinary && 'the JavaScript server only' }, async () => {
+test('a server that takes no writes (allowReads): the page still works, its edits stay here, and it says why once', { skip: viaBinary && 'the JavaScript server only' }, async () => {
   await closed.write('tasks', 'shut1', { title: 'From the server' });
   const context = await browser.newContext();
   const tab = await context.newPage();

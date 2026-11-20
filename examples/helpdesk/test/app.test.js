@@ -241,3 +241,18 @@ test('the reply box posts to a server function: it checks the ticket, and its co
   assert.doesNotMatch(module, /replies\.js|addReply|use server/);
   await close();
 });
+
+test('pages go out compressed for a browser that takes Brotli (zubra.send with compress)', async () => {
+  const { request } = await import('node:http');
+  const { brotliDecompressSync } = await import('node:zlib');
+  const answer = await new Promise((done, failed) => request(`${base}/login`, { headers: { 'accept-encoding': 'gzip, br' } }, (response) => {
+    const chunks = [];
+    response.on('data', (chunk) => chunks.push(chunk));
+    response.on('end', () => done({ headers: response.headers, body: Buffer.concat(chunks) }));
+  }).on('error', failed).end());
+  assert.equal(answer.headers['content-encoding'], 'br');
+  assert.match(answer.headers['content-type'], /^text\/html/);
+  const html = brotliDecompressSync(answer.body).toString();
+  assert.match(html, /<!doctype html>/i);
+  assert.ok(answer.body.length < html.length / 2, `${answer.body.length} of ${html.length}`);
+});

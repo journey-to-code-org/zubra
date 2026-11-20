@@ -12,6 +12,10 @@ import { chromium } from 'playwright';
 import { createZubra } from '../src/index.js';
 import { nonceAttribute, resolveImports } from '../src/core.js';
 
+// What these tests call development is NODE_ENV=development (since 6.0 an unset NODE_ENV is
+// production: production-default.test.js); a test of production passes `production: true`.
+process.env.NODE_ENV = 'development';
+
 const here = dirname(fileURLToPath(import.meta.url));
 const components = join(here, 'components');
 // The policy of the site the issue came from, and the same with a nonce.

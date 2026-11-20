@@ -19,10 +19,20 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createActionsCore, routesFrom, MOUNT, SCRIPT_PATH, COOKIE, SECURE_COOKIE } from './core.js';
+import { promisify } from 'node:util';
+import { brotliCompress, gzip as gzipCallback, constants as zlib } from 'node:zlib';
+import { createActionsCore, routesFrom, MOUNT, SCRIPT_PATH, FORMS_PATH, COOKIE, SECURE_COOKIE } from './core.js';
 import { flatName, rewriteImports, serverHalves } from './compile.js';
 
 export { MOUNT, SCRIPT_PATH, COOKIE, SECURE_COOKIE };
+
+/**
+ * Development is opt-in, as in `@zubra/server`: `NODE_ENV=development`, or `production: false`.
+ * Anything else, unset included, is production.
+ */
+const developmentByDefault = () => process.env.NODE_ENV === 'development';
+const brotli = promisify(brotliCompress);
+const gzip = promisify(gzipCallback);
 
 // The two browser scripts: as written (src/) in development, minified (dist/production, built by
 // scripts/build-production.js) in production, where they are about half the bytes.
@@ -42,11 +52,14 @@ const script = (file, production) => readFileSync(new URL(production ? `../dist/
  * request's own protocol.
  * `maxBytes`: the largest post read, files and fields together (10 MB by default; `Infinity`
  * for none). A bigger one gets `{ error: 'Too large' }` (413) and the function doesn't run.
- * `production`: serve the browser scripts minified (by default when `NODE_ENV` is `production`),
- * and refuse to start when a component doesn't compile. In development that component is left
+ * `production`: serve the browser scripts minified and cached for an hour (on by default; off
+ * with `NODE_ENV=development` or `production: false`, as `@zubra/server`), and refuse to start when a component doesn't compile. In development that component is left
  * out with a warning, so a half-written file doesn't take the server down: its page shows the
  * error when it is rendered, and its functions are served again once it compiles and the server
  * restarts.
+ * `compress: true`: the browser scripts go in Brotli or gzip to a request that takes one, each
+ * compressed once at start (as `@zubra/server`'s `compress`); off by default, for a host that
+ * compresses already.
  */
 export async function createActions({
   components = 'components',
@@ -56,7 +69,8 @@ export async function createActions({
   context = () => ({}),
   maxBytes,
   secure,
-  production = process.env.NODE_ENV === 'production',
+  production = !developmentByDefault(),
+  compress = false,
 } = {}) {
   const root = resolve(components);
   if (!existsSync(root)) throw new Error(`@zubra/actions: no components folder at ${root}`);
@@ -77,7 +91,15 @@ export async function createActions({
     renameSync(writing, module);
     maps.push((await import(`${pathToFileURL(module).href}?t=${Date.now()}`)).actions);
   }
-  const core = createActionsCore({ routes: routesFrom(...maps), client: script('client.js', production), forms: script('enhance-forms.js', production), origins, onError, context, maxBytes, secure });
+  const client = script('client.js', production);
+  const forms = script('enhance-forms.js', production);
+  const encodings = compress ? Object.fromEntries(await Promise.all([[SCRIPT_PATH, client], [FORMS_PATH, forms]].map(async ([path, source]) => [path, {
+    br: await brotli(source, { params: { [zlib.BROTLI_PARAM_QUALITY]: 11, [zlib.BROTLI_PARAM_SIZE_HINT]: Buffer.byteLength(source) } }),
+    gzip: await gzip(source, { level: 9 }),
+  }]))) : null;
+  // The scripts don't change while the server runs: cached as @zubra/server caches the runtime.
+  const scriptCaching = production ? 'public, max-age=3600' : 'no-cache';
+  const core = createActionsCore({ routes: routesFrom(...maps), client, forms, origins, onError, context, maxBytes, secure, scriptCaching, encodings });
 
   /** Node's http: answers ours and returns true, or returns false without reading the body. */
   async function handle(req, res) {
