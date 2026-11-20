@@ -10,8 +10,12 @@ homepage = "https://github.com/zubra-js/zubra"
 readme = "README.md"
 keywords = ["web-components", "compiler", "custom-elements", "ssr", "html"]
 categories = ["compilers", "web-programming", "command-line-utilities"]
-# The crate is the compiler; the runtime, plugins, examples and docs ship through npm.
-include = ["/src/**/*", "/tests/**/*", "/Cargo.toml", "/README.md", "/LICENSE"]
+# The integration tests also exercise the repository's component corpus and golden fixtures.
+include = [
+    "/src/**/*", "/tests/**/*", "/Cargo.toml", "/README.md", "/LICENSE",
+    "/examples/header.*", "/**/*.zb", "/registry/components/**/*",
+    "/runtime/test/browser/fixtures/**/*",
+]
 
 [[bin]]
 name = "zubra"

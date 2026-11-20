@@ -1,9 +1,9 @@
 use serde_json::json;
 use zubra::{compile, compile_js, compile_value, compile_with_slots, Diagnostic};
 
-const GREETING: &str = r#"<zb-greeting name url>
+const GREETING: &str = r#"<my-greeting name url>
   <article class="greeting"><h1>Hello, {name}!</h1><a href={url}>Visit</a></article>
-</zb-greeting>"#;
+</my-greeting>"#;
 
 fn error(source: &str, props: &str) -> Diagnostic {
     compile(source, props).expect_err("expected a compile error")
@@ -25,7 +25,7 @@ fn renders_a_component_inside_its_host_element() {
     let html = compile(GREETING, r#"{"name":"Mikey","url":"https://mnix.dev"}"#).unwrap();
     assert_eq!(
         html,
-        "<zb-greeting name=\"Mikey\" url=\"https://mnix.dev\">\n  <article class=\"greeting\"><h1>Hello, Mikey!</h1><a href=\"https://mnix.dev\">Visit</a></article>\n</zb-greeting>"
+        "<my-greeting name=\"Mikey\" url=\"https://mnix.dev\">\n  <article class=\"greeting\"><h1>Hello, Mikey!</h1><a href=\"https://mnix.dev\">Visit</a></article>\n</my-greeting>"
     );
 }
 
@@ -306,7 +306,7 @@ fn script_errors_are_reported_where_they_happen() {
 #[test]
 fn rejects_unknown_references_with_location_and_suggestion() {
     let diagnostic = error(
-        "<zb-greeting name>\n  <p>Hi {nmae}</p>\n</zb-greeting>",
+        "<my-greeting name>\n  <p>Hi {nmae}</p>\n</my-greeting>",
         r#"{"name":"Mikey"}"#,
     );
     assert_eq!(diagnostic.message, "unknown reference `nmae`");
@@ -564,8 +564,8 @@ fn validates_srcset_and_srcdoc() {
 fn rejects_malformed_html_and_unsafe_template_features() {
     for (source, expected) in [
         ("<zb-x><p></section></zb-x>", "does not match"),
-        ("<zb-x><p></zb-x>", "does not match"),
-        ("<zb-x><p>", "missing closing tag"),
+        ("<zb-x><p></zb-x>", "<p> is never closed"),
+        ("<zb-x><p>", "<p> is never closed"),
         ("<zb-x><script>alert(1)</script></zb-x>", "<script>"),
         (
             "<zb-x><button onclick=\"run()\">Go</button></zb-x>",
@@ -803,7 +803,7 @@ fn renders_diagnostics_with_the_source_line() {
     let rendered = error(source, r#"{"title":"t"}"#).render(source, "x.zb");
     assert_eq!(
         rendered,
-        "error: unknown reference `titel`\n --> x.zb:2:7\n  |\n2 |   <h1>{titel}</h1>\n  |       ^\n  = help: did you mean `title`?\n"
+        "error[ZB2001]: unknown reference `titel`\n --> x.zb:2:7\n  |\n2 |   <h1>{titel}</h1>\n  |       ^\n  = help: did you mean `title`?\n"
     );
 }
 
@@ -1122,7 +1122,7 @@ fn props_that_shadow_built_in_element_properties_are_warned_about() {
     assert_eq!(warnings[0].span.column, 7);
     assert!(warnings[0]
         .render_warning("<zb-x title=\"\">", "x.zb")
-        .starts_with("warning: prop `title`"));
+        .starts_with("warning[ZB4019]: prop `title`"));
     assert!(zubra::warnings("<zb-x label=\"\"><p>x</p></zb-x>").is_empty());
 }
 

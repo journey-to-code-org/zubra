@@ -96,7 +96,7 @@ pub fn for_component(path: &str, loader: Loader<'_>) -> Options {
             return options(&found, &compiler_options);
         }
         // Past the root, a relative path stops resolving.
-        if depth > 0 && path.matches('/').count() < depth {
+        if depth > 0 && path.matches(['/', '\\']).count() < depth {
             break;
         }
     }
@@ -132,7 +132,12 @@ fn read(path: &str, source: &str, loader: Loader<'_>, into: &mut Map<String, Val
         for (key, value) in options {
             // `paths` and `baseUrl` are relative to the file that sets them.
             let value = if key == "baseUrl" || key == "paths" {
-                json_with_base(value, directory(path))
+                let path = if cfg!(windows) {
+                    path.replace('\\', "/")
+                } else {
+                    path.to_owned()
+                };
+                json_with_base(value, directory(&path))
             } else {
                 value.clone()
             };
@@ -233,12 +238,16 @@ pub fn map_path(options: &Options, specifier: &str) -> Vec<String> {
 }
 
 fn directory(path: &str) -> &str {
-    path.rfind('/').map_or("", |at| &path[..at])
+    path.rfind(['/', '\\']).map_or("", |at| &path[..at])
 }
 
 /// `base` joined with a relative `path`, with `.` and `..` resolved.
 fn join(base: &str, path: &str) -> String {
-    let mut parts: Vec<&str> = if path.starts_with('/') {
+    let base = base.replace('\\', "/");
+    let path = path.replace('\\', "/");
+    let drive_absolute =
+        |path: &str| path.as_bytes().get(1) == Some(&b':') && path.as_bytes().get(2) == Some(&b'/');
+    let mut parts: Vec<&str> = if path.starts_with('/') || drive_absolute(&path) {
         Vec::new()
     } else {
         base.split('/').collect()
@@ -255,7 +264,7 @@ fn join(base: &str, path: &str) -> String {
         }
     }
     let joined = parts.join("/");
-    if joined.starts_with('/') || base.is_empty() {
+    if joined.starts_with('/') || drive_absolute(&joined) || base.is_empty() {
         joined
     } else {
         format!("/{}", joined.trim_start_matches('/'))
@@ -364,6 +373,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn finds_parent_config_for_windows_paths() {
+        let loader = |specifier: &str, _: &str| {
+            if specifier == "../../tsconfig.json" {
+                Ok((
+                    "/project/tsconfig.json".to_owned(),
+                    r#"{"compilerOptions":{"verbatimModuleSyntax":true}}"#.to_owned(),
+                ))
+            } else {
+                Err("not found".to_owned())
+            }
+        };
+        assert!(for_component(r"C:\project\src\components\x.zb", &loader).verbatim_module_syntax);
+    }
+
+    #[test]
     fn reads_json_with_comments_and_trailing_commas() {
         let value = jsonc(
             "{\n  // a comment\n  \"a\": \"// not a comment\", /* block */\n  \"b\": [1, 2,],\n}",
@@ -389,6 +413,25 @@ mod tests {
             ["/p/shared/enums/size", "/p/src/enums/size"]
         );
         assert!(map_path(&options, "lodash").is_empty());
+    }
+
+    #[test]
+    fn windows_paths_keep_the_drive_letter() {
+        let mut compiler = Map::new();
+        let base = directory(r"C:\project\tsconfig.json");
+        compiler.insert(
+            "baseUrl".into(),
+            json_with_base(&Value::String("src".into()), base),
+        );
+        compiler.insert(
+            "paths".into(),
+            json_with_base(&serde_json::json!({ "@shared/*": ["shared/*"] }), base),
+        );
+        let options = options(r"C:\project\tsconfig.json", &compiler);
+        assert_eq!(
+            map_path(&options, "@shared/sizes"),
+            vec![r"C:/project/src/shared/sizes"]
+        );
     }
 
     #[test]

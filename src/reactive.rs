@@ -134,7 +134,7 @@ pub trait Names {
     fn is_write(&self, identifier: &IdentifierReference<'_>) -> bool;
     /// The text the AST's offsets index.
     fn source(&self) -> &str;
-    fn error(&self, offset: u32, message: String) -> Diagnostic;
+    fn error(&self, code: crate::codes::Code, offset: u32, message: String) -> Diagnostic;
     /// In script code, props are read through `$p`; in templates, the template maps them.
     fn in_script(&self) -> bool;
     /// Whether `name` is `from` from the runtime: `let x = from(prop)` passes the prop as a
@@ -434,9 +434,9 @@ impl<'n, N: Names> Rewriter<'n, N> {
         }
     }
 
-    fn fail(&mut self, offset: u32, message: impl Into<String>) {
+    fn fail(&mut self, code: crate::codes::Code, offset: u32, message: impl Into<String>) {
         if self.error.is_none() {
-            self.error = Some(self.names.error(offset, message.into()));
+            self.error = Some(self.names.error(code, offset, message.into()));
         }
     }
 
@@ -476,6 +476,7 @@ impl<'n, N: Names> Rewriter<'n, N> {
             }
             Kind::Callback(_) => {
                 self.fail(
+                    crate::codes::JSX_EVENT_PROP,
                     identifier.span.start,
                     format!("call `{name}(…)` to fire the event; passing it on isn't supported"),
                 );
@@ -483,6 +484,7 @@ impl<'n, N: Names> Rewriter<'n, N> {
             }
             Kind::Children => {
                 self.fail(
+                    crate::codes::JSX_CHILDREN,
                     identifier.span.start,
                     "`children` can only be rendered: put `{children}` in the JSX",
                 );
@@ -578,18 +580,18 @@ impl<'a, N: Names> Visit<'a> for Rewriter<'_, N> {
     fn visit_identifier_reference(&mut self, identifier: &IdentifierReference<'a>) {
         if self.names.is_write(identifier) {
             match self.names.kind(identifier) {
-                Some(Kind::State) => self.fail(
+                Some(Kind::State) => self.fail(crate::codes::ASSIGN_DESTRUCTURING,
                     identifier.span.start,
                     "assign state with `name = …`, not by destructuring",
                 ),
-                Some(Kind::Derived) => self.fail(
+                Some(Kind::Derived) => self.fail(crate::codes::ASSIGN_DERIVED,
                     identifier.span.start,
                     format!(
                         "`{}` is derived from props or state, so it can't be assigned; make it a `let`",
                         identifier.name
                     ),
                 ),
-                Some(Kind::Callback(_) | Kind::Children) => self.fail(
+                Some(Kind::Callback(_) | Kind::Children) => self.fail(crate::codes::ASSIGN_READONLY,
                     identifier.span.start,
                     format!("`{}` can't be assigned", identifier.name),
                 ),
@@ -828,8 +830,9 @@ impl Names for ScriptNames<'_> {
     fn source(&self) -> &str {
         self.source
     }
-    fn error(&self, offset: u32, message: String) -> Diagnostic {
+    fn error(&self, code: crate::codes::Code, offset: u32, message: String) -> Diagnostic {
         Diagnostic::new(
+            code,
             crate::scanner::span_after(self.start, self.source, offset as usize),
             message,
         )
@@ -910,6 +913,7 @@ pub fn rewrite_script_with(
     }
     if let Some((offset, name)) = unimported.into_iter().min() {
         return Err(Diagnostic::new(
+            crate::codes::HOOK_NOT_IMPORTED,
             crate::scanner::span_after(start, body, offset as usize),
             format!("`{name}` is a hook from @zubra/runtime, but the script doesn't import it"),
         )
@@ -932,6 +936,7 @@ pub fn rewrite_script_with(
                     }
                     _ => {
                         return Err(names.error(
+                            crate::codes::JSX_DECLARATION,
                             declarator.span.start,
                             "state is one name per `let`; destructure when you read it".to_owned(),
                         ))
@@ -1013,8 +1018,8 @@ impl Names for TemplateNames<'_> {
     fn source(&self) -> &str {
         self.source
     }
-    fn error(&self, _offset: u32, message: String) -> Diagnostic {
-        Diagnostic::new(crate::diagnostic::Span::new(1, 1), message)
+    fn error(&self, code: crate::codes::Code, _offset: u32, message: String) -> Diagnostic {
+        Diagnostic::new(code, crate::diagnostic::Span::new(1, 1), message)
     }
     fn in_script(&self) -> bool {
         false

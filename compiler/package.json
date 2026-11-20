@@ -8,6 +8,19 @@
     "url": "git+https://github.com/zubra-js/zubra.git",
     "directory": "compiler"
   },
+  "homepage": "https://github.com/zubra-js/zubra/tree/main/compiler#readme",
+  "bugs": {
+    "url": "https://github.com/zubra-js/zubra/issues"
+  },
+  "keywords": [
+    "zubra",
+    "web components",
+    "custom elements",
+    "compiler",
+    "webassembly",
+    "ssr",
+    "cli"
+  ],
   "type": "module",
   "exports": {
     ".": {

@@ -55,6 +55,8 @@ fn a_one_word_name_needs_a_prefix() {
         error.message
     );
     assert!(error.help.unwrap().contains("--prefix app"));
+    let invalid_prefix = convert(source, "Counter.jsx", Some("../")).unwrap_err();
+    assert_eq!(invalid_prefix.code, zubra::codes::CONVERT_ONE_WORD_NAME);
     let conversion = convert(source, "Counter.jsx", Some("app")).unwrap();
     assert_eq!(conversion.tag, "app-counter");
     assert!(
@@ -74,6 +76,17 @@ fn a_one_word_name_needs_a_prefix() {
         "{:?}",
         conversion.compile_error
     );
+}
+
+#[test]
+fn a_prefix_cannot_make_a_path_or_invalid_element_name() {
+    let source = "export default function Counter() { return <p>Hi</p>; }";
+    for prefix in ["x/../../outside", "x\\outside", "é", "x..y"] {
+        assert!(
+            convert(source, "Counter.jsx", Some(prefix)).is_err(),
+            "{prefix}"
+        );
+    }
 }
 
 #[test]
@@ -470,8 +483,9 @@ fn a_name_that_makes_no_custom_element_name_is_refused() {
     let source = "export default function Card() {\n  return <div />;\n}\n";
     for prefix in ["x/../../evil", "x\\..\\evil", "a.."] {
         let error = convert(source, "Card.jsx", Some(prefix)).unwrap_err();
-        assert!(
-            error.message.contains("isn't a custom element name"),
+        assert_eq!(
+            error.code,
+            zubra::codes::CONVERT_ONE_WORD_NAME,
             "{prefix}: {}",
             error.message
         );

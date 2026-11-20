@@ -114,6 +114,38 @@ fn a_spread_leaves_out_a_style_it_cant_write() {
 }
 
 #[test]
+fn unsafe_spread_styles_are_omitted_without_failing_the_render() {
+    let source = r#"<x-a attrs={{}}><a {...attrs}>go</a></x-a>"#;
+    for (attrs, expected) in [
+        (
+            r#"{"style":{"color":"red; background:url(x)","fontSize":"2px","width":{"x":1}}}"#,
+            r#"<a style="font-size: 2px">"#,
+        ),
+        (
+            r#"{"style":"color:red","title":"kept"}"#,
+            r#"<a title="kept">"#,
+        ),
+    ] {
+        let props = format!(r#"{{"attrs":{attrs}}}"#);
+        let html = compile(source, &props).unwrap();
+        assert!(html.contains(expected), "{html}");
+        let request = serde_json::json!({
+            "command": "compile", "emit": "html", "path": "x.zb",
+            "files": { "x.zb": source },
+            "props": serde_json::from_str::<serde_json::Value>(&props).unwrap()
+        });
+        let reply: serde_json::Value =
+            serde_json::from_str(&zubra::handle_request(&request.to_string())).unwrap();
+        assert!(
+            reply["omitted"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty()),
+            "{reply}"
+        );
+    }
+}
+
+#[test]
 fn a_spread_leaves_out_an_unsafe_url_as_the_browser_does() {
     let source = "<script>\n  const attrs = { href: \"javascript:alert(1)\", title: \"t\" }\n</script>\n<x-a><a {...attrs}>go</a></x-a>";
     let html = compile(source, "{}").unwrap();
@@ -188,9 +220,9 @@ fn jsx_spreads_onto_elements_and_components() {
 
 // ---- a spread onto a zubra component ------------------------------------------------------
 
-const BADGE: &str = r#"<zb-badge label="new" count={0}>
+const BADGE: &str = r#"<my-badge label="new" count={0}>
   <b>{label}</b> <i>{count}</i>
-</zb-badge>"#;
+</my-badge>"#;
 
 fn loader(specifier: &str, _from: &str) -> Result<(String, String), String> {
     match specifier {
@@ -201,7 +233,7 @@ fn loader(specifier: &str, _from: &str) -> Result<(String, String), String> {
 
 fn parent(spread: &str, extra: &str) -> String {
     format!(
-        "<script>\n  import './badge.zb'\n  const rest = {spread}\n</script>\n<zb-page><zb-badge {extra} {{...rest}}></zb-badge></zb-page>"
+        "<script>\n  import './badge.zb'\n  const rest = {spread}\n</script>\n<my-page><my-badge {extra} {{...rest}}></my-badge></my-page>"
     )
 }
 
@@ -221,7 +253,7 @@ fn a_known_spread_onto_a_component_passes_its_props_and_the_rest_to_the_host() {
     assert!(output.contains(r#"title="hi""#), "{output}");
     assert!(output.contains(r#"data-x="1""#), "{output}");
     // The same page as the props written out, with the other entries as attributes.
-    let written = "<script>\n  import './badge.zb'\n</script>\n<zb-page><zb-badge label=\"sale\" count={3} title=\"hi\" data-x=\"1\"></zb-badge></zb-page>";
+    let written = "<script>\n  import './badge.zb'\n</script>\n<my-page><my-badge label=\"sale\" count={3} title=\"hi\" data-x=\"1\"></my-badge></my-page>";
     let written = html(written).unwrap();
     for part in [
         "<b>sale</b> <i>3</i>",
@@ -252,13 +284,13 @@ fn an_explicit_prop_wins_over_the_spread_in_either_order() {
     .unwrap();
     assert!(output.contains("<b>own</b>"), "{output}");
     assert!(output.contains("<i>3</i>"), "{output}");
-    let before = "<script>\n  import './badge.zb'\n  const rest = { label: \"from spread\" }\n</script>\n<zb-page><zb-badge {...rest} label=\"own\"></zb-badge></zb-page>";
+    let before = "<script>\n  import './badge.zb'\n  const rest = { label: \"from spread\" }\n</script>\n<my-page><my-badge {...rest} label=\"own\"></my-badge></my-page>";
     assert!(html(before).unwrap().contains("<b>own</b>"));
 }
 
 #[test]
 fn an_explicit_prop_only_known_in_the_browser_still_wins_over_a_known_spread() {
-    let source = "<script>\n  import './badge.zb'\n  const rest = { label: \"from spread\" }\n  function later() { return document.title }\n</script>\n<zb-page><zb-badge label={later()} {...rest}></zb-badge></zb-page>";
+    let source = "<script>\n  import './badge.zb'\n  const rest = { label: \"from spread\" }\n  function later() { return document.title }\n</script>\n<my-page><my-badge label={later()} {...rest}></my-badge></my-page>";
     let output = compile_html_with_options(
         source,
         "page.zb",
@@ -289,8 +321,8 @@ fn a_spread_prop_is_type_checked_like_a_written_one() {
 
 #[test]
 fn kebab_case_keys_name_props_too_and_null_is_the_default() {
-    let source = "<script>\n  import './chip.zb'\n  const rest = { \"is-open\": true, count: null }\n</script>\n<zb-page><zb-chip {...rest}></zb-chip></zb-page>";
-    let chip = "<zb-chip is-open={false} count={7}><p>{isOpen} {count}</p></zb-chip>";
+    let source = "<script>\n  import './chip.zb'\n  const rest = { \"is-open\": true, count: null }\n</script>\n<my-page><my-chip {...rest}></my-chip></my-page>";
+    let chip = "<my-chip is-open={false} count={7}><p>{isOpen} {count}</p></my-chip>";
     let output = compile_html_with(source, "page.zb", "{}", "{}", &|_: &str, _: &str| {
         Ok(("chip.zb".to_owned(), chip.to_owned()))
     })
@@ -300,7 +332,7 @@ fn kebab_case_keys_name_props_too_and_null_is_the_default() {
 
 #[test]
 fn a_spread_known_only_in_the_browser_names_the_props_for_the_binder() {
-    let source = "<script>\n  import './badge.zb'\n  function rest() { return { label: document.title } }\n</script>\n<zb-page><zb-badge class=\"a\" {...rest()}></zb-badge></zb-page>";
+    let source = "<script>\n  import './badge.zb'\n  function rest() { return { label: document.title } }\n</script>\n<my-page><my-badge class=\"a\" {...rest()}></my-badge></my-page>";
     let output = compile_js_with(source, "page.zb", "@zubra/runtime", None, &loader).unwrap();
     assert!(
         output.contains(
@@ -329,9 +361,9 @@ fn a_spread_known_only_in_the_browser_names_the_props_for_the_binder() {
 // ---- required props, two spreads, and the JavaScript output's checks ----------------------
 
 /// `name` has no default, so it's required (as a JSX component's parameter without one is).
-const TAG: &str = r#"<zb-tag name count={0}>
+const TAG: &str = r#"<my-tag name count={0}>
   <b>{name}</b> <i>{count}</i>
-</zb-tag>"#;
+</my-tag>"#;
 
 fn tag_loader(specifier: &str, _from: &str) -> Result<(String, String), String> {
     match specifier {
@@ -341,7 +373,7 @@ fn tag_loader(specifier: &str, _from: &str) -> Result<(String, String), String> 
 }
 
 fn tag_page(script: &str, attributes: &str) -> String {
-    format!("<script>\n  import './tag.zb'\n{script}\n</script>\n<zb-page rest={{{{}}}}><zb-tag {attributes}></zb-tag></zb-page>")
+    format!("<script>\n  import './tag.zb'\n{script}\n</script>\n<my-page rest={{{{}}}}><my-tag {attributes}></my-tag></my-page>")
 }
 
 #[test]

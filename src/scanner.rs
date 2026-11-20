@@ -67,8 +67,8 @@ impl<'a> Cursor<'a> {
         Span::new(self.line, self.column)
     }
 
-    pub fn error(&self, message: impl Into<String>) -> Diagnostic {
-        Diagnostic::new(self.span(), message)
+    pub fn error(&self, code: crate::codes::Code, message: impl Into<String>) -> Diagnostic {
+        Diagnostic::new(code, self.span(), message)
     }
 
     pub fn peek_byte(&self) -> Option<u8> {
@@ -147,7 +147,7 @@ impl<'a> Cursor<'a> {
     pub fn scan_braced(&mut self) -> Result<Braced<'a>, Diagnostic> {
         let open_span = self.span();
         if !self.consume("{") {
-            return Err(self.error("expected {"));
+            return Err(self.error(crate::codes::EXPRESSION_SYNTAX, "expected {"));
         }
         let inner_span = self.span();
         let inner_start = self.position;
@@ -159,10 +159,10 @@ impl<'a> Cursor<'a> {
                     depth -= 1;
                     if depth == 0 {
                         if byte != b'}' {
-                            return Err(self.error(format!(
-                                "unbalanced `{}` inside {{ }} expression",
-                                byte as char
-                            )));
+                            return Err(self.error(
+                                crate::codes::EXPRESSION_SYNTAX,
+                                format!("unbalanced `{}` inside {{ }} expression", byte as char),
+                            ));
                         }
                         let inner = &self.source[inner_start..self.position];
                         self.advance(1);
@@ -182,6 +182,7 @@ impl<'a> Cursor<'a> {
             self.advance_char();
         }
         Err(Diagnostic::new(
+            crate::codes::EXPRESSION_UNTERMINATED,
             open_span,
             "unterminated { expression; expected a matching }",
         ))
@@ -203,7 +204,11 @@ impl<'a> Cursor<'a> {
             }
             self.advance_char();
         }
-        Err(Diagnostic::new(start, "unterminated string literal"))
+        Err(Diagnostic::new(
+            crate::codes::EXPRESSION_UNTERMINATED,
+            start,
+            "unterminated string literal",
+        ))
     }
 }
 

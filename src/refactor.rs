@@ -137,7 +137,13 @@ fn extract_lf(
     path: &str,
     loader: crate::Loader,
 ) -> Result<Extraction, Diagnostic> {
-    let refuse = |offset: usize, message: String| Diagnostic::new(span_at(source, offset), message);
+    let refuse = |offset: usize, message: String| {
+        Diagnostic::new(
+            crate::codes::REFACTOR_REFUSED,
+            span_at(source, offset),
+            message,
+        )
+    };
     if crate::jsx::looks_like_jsx(source) {
         return Err(refuse(
             0,

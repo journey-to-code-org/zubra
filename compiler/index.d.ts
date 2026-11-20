@@ -31,7 +31,7 @@ export interface Options {
   noImports?: boolean;
   cssImport?: string;
   cssImportInline?: string;
-  framework?: 'react' | 'vue' | 'svelte' | 'solid' | 'solid2' | 'none';
+  framework?: 'react' | 'vue' | 'svelte' | 'solid' | 'solid2' | 'vanilla' | 'none';
   modulePath?: string;
   props?: Record<string, unknown>;
   slots?: Record<string, string>;

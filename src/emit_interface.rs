@@ -368,6 +368,22 @@ pub enum Framework {
     Solid2,
 }
 
+impl Framework {
+    /// A `--framework` value: `react`, `vue`, `svelte`, `solid`, `solid2`, or `vanilla` (no
+    /// framework: the element), which is also accepted as `element`, `none` and `plain`.
+    pub fn named(name: &str) -> Option<Self> {
+        match crate::cli::canonical("--framework", name) {
+            "react" => Some(Self::React),
+            "vue" => Some(Self::Vue),
+            "svelte" => Some(Self::Svelte),
+            "solid" => Some(Self::Solid),
+            "solid2" => Some(Self::Solid2),
+            "vanilla" => Some(Self::None),
+            _ => None,
+        }
+    }
+}
+
 /// `<prop>` + `<prop>change` pairs: the component's two-way bindings (as the adapters find them).
 fn models(interface: &validate::Interface) -> Vec<(&PropInterface, &EventInterface)> {
     interface

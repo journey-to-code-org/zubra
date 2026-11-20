@@ -13,7 +13,7 @@ import { solidOf } from '../solid.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const component = join(here, '..', '..', 'registry', 'components', 'choice-cards.zb');
-const tsc = join(here, '..', 'node_modules', '.bin', 'tsc');
+const tsc = join(here, '..', 'node_modules', 'typescript', 'bin', 'tsc');
 
 // A Solid 2 app's use of <choice-cards>: what must type-check, and what must not.
 const APP = `import type ChoiceCards from './choice-cards.zb';
@@ -49,7 +49,7 @@ function check(framework) {
       compilerOptions: { strict: true, jsx: 'preserve', jsxImportSource: '@solidjs/web', module: 'esnext', moduleResolution: 'bundler', target: 'es2022', noEmit: true, skipLibCheck: true, allowArbitraryExtensions: true, types: [] },
       files: ['app.tsx', 'choice-cards.d.zb.ts'],
     }));
-    const run = spawnSync(tsc, ['-p', dir], { encoding: 'utf8' });
+    const run = spawnSync(process.execPath, [tsc, '-p', dir], { encoding: 'utf8' });
     return { status: run.status, output: run.stdout + run.stderr, dts: output.output };
   } finally {
     rmSync(dir, { recursive: true, force: true });

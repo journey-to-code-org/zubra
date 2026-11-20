@@ -85,6 +85,7 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
     for name in &interface.script_names {
         if name.starts_with('$') {
             return Err(Diagnostic::new(
+                crate::codes::RESERVED_NAME,
                 component.tag_span,
                 format!("`{name}`: names starting with $ are reserved for compiled code"),
             ));
@@ -246,7 +247,7 @@ pub fn emit(component: &ComponentAst, options: &Options<'_>) -> Result<String, D
             }
             None => {
                 if let Some(lang) = &style.lang {
-                    return Err(Diagnostic::new(
+                    return Err(Diagnostic::new(crate::codes::STYLE_LANG_NEEDS_BUNDLER,
                         style.span,
                         format!("`<style lang=\"{lang}\">` needs a bundler to compile it: use @zubra/unplugin (Vite)"),
                     ));
@@ -1322,6 +1323,7 @@ impl<'a> Emitter<'a> {
                 }
                 Node::Else { span, .. } => {
                     return Err(Diagnostic::new(
+                        crate::codes::DIRECTIVE_PLACEMENT,
                         *span,
                         "zb-else is only valid as a direct child of zb-if",
                     ));
@@ -1370,6 +1372,7 @@ impl<'a> Emitter<'a> {
                 }
                 Node::Settled { caught, branch } => {
                     return Err(Diagnostic::new(
+                        crate::codes::DIRECTIVE_PLACEMENT,
                         branch.span,
                         format!(
                             "zb-{} is only valid as a direct child of zb-await",
@@ -1579,6 +1582,7 @@ impl<'a> Emitter<'a> {
                         };
                         let Some((slot, position)) = units.get(*first) else {
                             return Err(Diagnostic::new(
+                                crate::codes::INTERNAL,
                                 element.span,
                                 "internal error: slot content position out of range",
                             ));
@@ -1595,6 +1599,7 @@ impl<'a> Emitter<'a> {
                         }
                         if places.is_empty() {
                             return Err(Diagnostic::new(
+                                crate::codes::UNKNOWN_SLOT,
                                 element.span,
                                 format!("<{}> has no slot named `{slot}`", element.name),
                             ));
@@ -1684,6 +1689,7 @@ impl<'a> Emitter<'a> {
                     };
                     let Some((slot, position)) = units.get(*first) else {
                         return Err(Diagnostic::new(
+                            crate::codes::INTERNAL,
                             element.span,
                             "internal error: slot content position out of range",
                         ));
@@ -1718,6 +1724,7 @@ impl<'a> Emitter<'a> {
                     }
                     if !found {
                         return Err(Diagnostic::new(
+                            crate::codes::UNKNOWN_SLOT,
                             element.span,
                             format!("<{}> has no slot named `{slot}`", element.name),
                         ));

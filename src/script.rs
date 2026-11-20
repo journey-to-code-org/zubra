@@ -61,7 +61,7 @@ pub fn elide_type_only_imports(
             .iter()
             .find(|import| &import.local == name)
             .map_or(Span::new(1, 1), |import| import.span);
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::TYPE_IMPORT_VERBATIM,
             span,
             format!("`{name}` is a type, and with `verbatimModuleSyntax` it must be imported with `type` (TypeScript's TS1484)"),
         )
@@ -128,6 +128,7 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
     if let Some(error) = parsed.diagnostics.first() {
         let offset = error.labels.first().map_or(0, |label| label.offset());
         return Err(Diagnostic::new(
+            crate::codes::SCRIPT_SYNTAX,
             at(offset),
             format!("invalid <script>: {}", error.message),
         ));
@@ -202,6 +203,7 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
                     VariableDeclarationKind::Let => true,
                     VariableDeclarationKind::Var => {
                         return Err(Diagnostic::new(
+                            crate::codes::VAR_DECLARATION,
                             at(declaration.span.start),
                             "use `const` or `let` instead of `var` in a component script",
                         ));
@@ -402,14 +404,14 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
             Statement::ExportDeclaration(export) if exported_load(export).is_some() => {
                 let function = exported_load(export).expect("checked by the guard");
                 if script.route.is_none() {
-                    return Err(Diagnostic::new(
+                    return Err(Diagnostic::new(crate::codes::LOAD_EXPORT,
                         at(function.span.start),
                         "only a route or a layout can export `load`",
                     )
                     .with_help("start the script with 'use route <path>' (or 'use layout <prefix>'): `load` runs on the server before it renders, and @zubra/router serves it"));
                 }
                 if server_function(export).is_some() {
-                    return Err(Diagnostic::new(
+                    return Err(Diagnostic::new(crate::codes::LOAD_EXPORT,
                         at(function.span.start),
                         "`load` already runs on the server only; 'use server' would also make it an action anyone can post to",
                     )
@@ -417,6 +419,7 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
                 }
                 if script.load.is_some() {
                     return Err(Diagnostic::new(
+                        crate::codes::DUPLICATE_EXPORT,
                         at(function.span.start),
                         "`load` is exported twice",
                     ));
@@ -447,6 +450,7 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
                     .any(|existing: &ServerExport| existing.name == name)
                 {
                     return Err(Diagnostic::new(
+                        crate::codes::DUPLICATE_EXPORT,
                         at(function.span.start),
                         format!("`{name}` is exported twice"),
                     ));
@@ -503,14 +507,14 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
             | Statement::ExportDeclaration(_)
             | Statement::ExportAllDeclaration(_)
             | Statement::ExportFromDeclaration(_) => {
-                return Err(Diagnostic::new(
+                return Err(Diagnostic::new(crate::codes::SCRIPT_EXPORT,
                     at(statement.span().start),
                     "a component script can't export; declare a prop on the host tag instead, or move shared code to a module and import it",
                 )
                 .with_help("only a function marked 'use server' can be exported: `export async function save(formData) { 'use server'; … }`"));
             }
             Statement::ExportDefaultDeclaration(export) => {
-                return Err(Diagnostic::new(
+                return Err(Diagnostic::new(crate::codes::SCRIPT_EXPORT,
                     at(export.span.start),
                     "a component script can't have a default export; the host tag defines the component",
                 ));
@@ -548,6 +552,7 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
         if let Some(load) = &script.load {
             if elsewhere.names.contains("load") {
                 return Err(Diagnostic::new(
+                    crate::codes::LOAD_CALLED,
                     load.span,
                     "`load` runs on the server only, so the rest of the script can't call it",
                 )
@@ -590,7 +595,7 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
             if let Some(at_read) = server {
                 if !flags.contains(oxc_syntax::symbol::SymbolFlags::Import) && !on_server(declared)
                 {
-                    return Err(Diagnostic::new(
+                    return Err(Diagnostic::new(crate::codes::SERVER_READS_BROWSER,
                         at(at_read),
                         format!("`{name}` is the script's, which runs in the browser, so the server code here can't read it"),
                     )
@@ -751,6 +756,7 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
         let binding = &mut script.bindings[*index];
         if script.peers.is_some() {
             return Err(Diagnostic::new(
+                crate::codes::PEERS_TWICE,
                 binding.span,
                 "`peers()` once per component is enough",
             ));
@@ -764,7 +770,7 @@ pub fn parse(source: &str, start: Span, typescript: bool) -> Result<Script, Diag
             continue;
         }
         if !mutable {
-            return Err(Diagnostic::new(
+            return Err(Diagnostic::new(crate::codes::FOLLOW_NEEDS_LET,
                 at(offset),
                 format!("`{callee}()` makes state that follows a prop until it's assigned; declare it with `let`"),
             )
@@ -842,7 +848,7 @@ impl<'a, F: Fn(u32) -> Span> Visit<'a> for EmitFinder<'_, F> {
 
     fn visit_identifier_reference(&mut self, identifier: &IdentifierReference<'a>) {
         if identifier.name.as_str() == self.emit && self.error.is_none() {
-            self.error = Some(Diagnostic::new(
+            self.error = Some(Diagnostic::new(crate::codes::EMIT_FORM,
                 (self.at)(identifier.span.start),
                 format!("call `{}(\"name\", detail)` directly, so the compiler can see which events the component fires", self.emit),
             ));
@@ -861,6 +867,7 @@ fn emitted(call: &CallExpression<'_>, at: &impl Fn(u32) -> Span) -> Result<Emit,
                 template.quasis[0].value.raw.to_string()
             }
             _ => return Err(Diagnostic::new(
+                crate::codes::EMIT_FORM,
                 span,
                 "the event name must be a string literal, so the compiler can declare the event",
             )),
@@ -871,7 +878,7 @@ fn emitted(call: &CallExpression<'_>, at: &impl Fn(u32) -> Span) -> Result<Emit,
             .filter(char::is_ascii_alphanumeric)
             .collect::<String>()
             .to_ascii_lowercase();
-        let error = Diagnostic::new(
+        let error = Diagnostic::new(crate::codes::EVENT_NAME,
             span,
             format!("event names are lowercase letters and digits, like the DOM's own (`input`, `selectionchange`); got `{name}`"),
         );
@@ -883,6 +890,7 @@ fn emitted(call: &CallExpression<'_>, at: &impl Fn(u32) -> Span) -> Result<Emit,
     }
     if call.arguments.len() > 2 {
         return Err(Diagnostic::new(
+            crate::codes::EMIT_FORM,
             span,
             "emit takes an event name and one detail value",
         ));
@@ -1042,7 +1050,12 @@ fn unknown_directive(text: &str, span: Span) -> Diagnostic {
         }
         _ => KNOWN.to_owned(),
     };
-    Diagnostic::new(span, format!("unknown directive '{text}'")).with_help(help)
+    Diagnostic::new(
+        crate::codes::UNKNOWN_SCRIPT_DIRECTIVE,
+        span,
+        format!("unknown directive '{text}'"),
+    )
+    .with_help(help)
 }
 
 /// A typo away (at most two edits, for words of four letters or more).
@@ -1101,6 +1114,7 @@ fn directive(
         if let Some(kind) = kind {
             if let Some(existing) = &route {
                 return Err(Diagnostic::new(
+                    crate::codes::SCRIPT_DIRECTIVE_CONFLICT,
                     span,
                     format!(
                         "a component is one route or one layout; this one already has 'use {}{}'",
@@ -1122,6 +1136,7 @@ fn directive(
         };
         if found.is_some() {
             return Err(Diagnostic::new(
+                crate::codes::SCRIPT_DIRECTIVE_CONFLICT,
                 span,
                 "a component belongs to one collection",
             ));
@@ -1144,12 +1159,14 @@ fn directive(
         };
         if !identifier(name) || name.contains(char::is_whitespace) {
             return Err(Diagnostic::new(
+                crate::codes::COLLECTION_FORM,
                 span,
                 "name the collection: 'use collection tasks' (letters, digits, - and _)",
             ));
         }
         if keys.iter().any(|key| !identifier(key) || key.contains('-')) {
             return Err(Diagnostic::new(
+                crate::codes::COLLECTION_FORM,
                 span,
                 "`by` lists the props that key a document: 'use collection tasks by projectId, id'",
             ));
@@ -1202,6 +1219,7 @@ fn route_directive(
     }
     if !pattern.starts_with('/') {
         return Err(Diagnostic::new(
+            crate::codes::ROUTE_PATTERN,
             span,
             format!("a {word}'s path starts with `/`: {example}"),
         ));
@@ -1210,19 +1228,21 @@ fn route_directive(
         (_, None, _) => false,
         (crate::ast::RouteKind::Layout, Some("root"), None) => true,
         (crate::ast::RouteKind::Layout, Some(_), _) => {
-            return Err(Diagnostic::new(
+            return Err(Diagnostic::new(crate::codes::ROUTE_PATTERN,
                 span,
                 "after a layout's prefix, only `root` can follow: 'use layout /farm root' replaces app.zb for /farm",
             ));
         }
         (crate::ast::RouteKind::Page, Some(_), _) => {
             return Err(Diagnostic::new(
+                crate::codes::ROUTE_PATTERN,
                 span,
                 "a route is one path with no spaces: 'use route /farms/:id'",
             ));
         }
     };
-    let params = route_params(pattern).map_err(|message| Diagnostic::new(span, message))?;
+    let params = route_params(pattern)
+        .map_err(|message| Diagnostic::new(crate::codes::ROUTE_PATTERN, span, message))?;
     Ok(crate::ast::Route {
         kind,
         pattern: Some(pattern.to_owned()),

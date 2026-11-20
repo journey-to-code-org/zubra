@@ -35,7 +35,7 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
     let mut parser = TemplateParser::new(Cursor::new(&normalized));
     let leading_comment = parser.skip_whitespace_and_comments()?;
     if normalized.trim_start().starts_with("component:") {
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::OBSOLETE_SYNTAX,
             Span::new(1, 1),
             "the `component:`/`prop`/`---` header is v0.2 syntax; declare the component with its host tag instead",
         )
@@ -49,12 +49,18 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
     loop {
         if parser.cursor.starts_with_ignore_ascii_case("<script") {
             if script.is_some() {
-                return Err(parser.error("a component has one <script>"));
+                return Err(parser.error(
+                    crate::codes::COMPONENT_STRUCTURE,
+                    "a component has one <script>",
+                ));
             }
             script = Some(parser.parse_script_block()?);
         } else if parser.cursor.starts_with_ignore_ascii_case("<style") {
             if style.is_some() {
-                return Err(parser.error("a component has one <style>"));
+                return Err(parser.error(
+                    crate::codes::COMPONENT_STRUCTURE,
+                    "a component has one <style>",
+                ));
             }
             style = Some(parser.parse_style_block()?);
         } else {
@@ -65,14 +71,15 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
     let mut script = script.unwrap_or_default();
 
     if !parser.starts_with("<") || parser.starts_with("</") {
-        return Err(
-            parser.error("expected the component's host element, e.g. <my-element>…</my-element>")
-        );
+        return Err(parser.error(
+            crate::codes::COMPONENT_STRUCTURE,
+            "expected the component's host element, e.g. <my-element>…</my-element>",
+        ));
     }
     let host = parser.parse_raw_element()?;
     parser.skip_whitespace_and_comments()?;
     if !parser.cursor.is_at_end() {
-        return Err(parser.error(
+        return Err(parser.error(crate::codes::COMPONENT_STRUCTURE,
             "unexpected content after the host element; a component file has a <script>, a <style> and then its host element",
         ));
     }
@@ -84,6 +91,7 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
     for attribute in host.attributes {
         if attribute.name.to_ascii_lowercase().starts_with("zb-") {
             return Err(Diagnostic::new(
+                crate::codes::HOST_ATTRIBUTE,
                 attribute.span,
                 if CONDITIONS
                     .iter()
@@ -127,6 +135,7 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
                 [Part::Literal(text)] => PropDefault::Text(text.clone()),
                 _ => {
                     return Err(Diagnostic::new(
+                        crate::codes::PROP_DEFAULT_INTERPOLATES,
                         attribute.span,
                         "a prop default can't interpolate; write the whole default as {…}",
                     ));
@@ -155,7 +164,7 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
                     .then_some(prop.span)
             });
         if let Some(span) = declared {
-            return Err(Diagnostic::new(
+            return Err(Diagnostic::new(crate::codes::SCRIPT_REDECLARES_PROP,
                 span,
                 format!(
                     "the script declares `{}`, which is also a prop: a prop's name is the prop in the script too",
@@ -173,7 +182,7 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
     if let Some(collection) = &script.collection {
         for key in &collection.keys {
             if !props.iter().any(|prop| &prop.name == key) {
-                return Err(Diagnostic::new(
+                return Err(Diagnostic::new(crate::codes::COLLECTION_KEY_NOT_PROP,
                     collection.span,
                     format!("'use collection {}' keys documents by the prop `{key}`, which the host doesn't declare", collection.name),
                 )
@@ -196,7 +205,7 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
             };
             if !prop && !read {
                 let word = route.kind.word();
-                return Err(Diagnostic::new(
+                return Err(Diagnostic::new(crate::codes::ROUTE_PARAM_UNUSED,
                     route.span,
                     format!(
                         "'use {word} {}' has the parameter `{param}`, which neither `load` nor a prop reads",
@@ -231,7 +240,7 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
         .map(|text| dedent(&text))
         .filter(|text| !text.is_empty());
     if let (Some(span), false) = (host_reset, shadow) {
-        return Err(Diagnostic::new(span, "`host-reset` protects a shadow-DOM component's host from the page's styles; add `shadow` too")
+        return Err(Diagnostic::new(crate::codes::HOST_RESET_NEEDS_SHADOW, span, "`host-reset` protects a shadow-DOM component's host from the page's styles; add `shadow` too")
             .with_help("in light DOM there's no boundary to protect: the page's styles apply by design"));
     }
     let mut nodes = host.children;
@@ -241,6 +250,7 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
         for (name, _) in &members {
             if !props.iter().any(|prop: &PropDecl| &prop.name == name) {
                 return Err(Diagnostic::new(
+                    crate::codes::PROPS_INTERFACE_EXTRA,
                     span,
                     format!("`Props` has `{name}`, but the host tag has no prop `{name}`"),
                 )
@@ -262,6 +272,7 @@ pub fn parse(source: &str) -> Result<ComponentAst, Diagnostic> {
                 None if script.props_open => &open,
                 None => {
                     return Err(Diagnostic::new(
+                        crate::codes::PROP_NOT_IN_INTERFACE,
                         prop.span,
                         format!("prop `{}` isn't in `interface Props`", prop.name),
                     )
@@ -324,7 +335,10 @@ pub(crate) fn parse_slot(source: &str, html: bool) -> Result<Vec<Node>, Diagnost
     parser.html = html;
     let mut nodes = parser.parse_nodes(None)?;
     if !parser.cursor.is_at_end() {
-        return Err(parser.error("unexpected content after slot template"));
+        return Err(parser.error(
+            crate::codes::MARKUP_SYNTAX,
+            "unexpected content after slot template",
+        ));
     }
     if html {
         // A component's own hydration markers sit inside its host element. One at the top of
@@ -400,6 +414,7 @@ fn prop_name(attribute: &Attribute) -> Result<String, Diagnostic> {
     let name = &attribute.name;
     if name == SPREAD {
         return Err(Diagnostic::new(
+            crate::codes::HOST_SPREAD,
             attribute.span,
             "the host tag declares the component's props, so it can't take a {...} spread",
         )
@@ -417,6 +432,7 @@ fn prop_name(attribute: &Attribute) -> Result<String, Diagnostic> {
             })
             .collect();
         return Err(Diagnostic::new(
+            crate::codes::PROP_NAME_CASE,
             attribute.span,
             format!("HTML lowercases attribute names, so `{name}` can't be a prop name"),
         )
@@ -431,7 +447,7 @@ fn prop_name(attribute: &Attribute) -> Result<String, Diagnostic> {
         && !name.ends_with('-')
         && !name.contains("--");
     if !valid {
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::PROP_NAME_INVALID,
             attribute.span,
             format!("`{name}` is not a valid prop name; use lowercase letters, digits and single hyphens"),
         ));
@@ -468,6 +484,9 @@ struct TemplateParser<'a> {
     html: bool,
     /// How many elements deep the parser is (see [`MAX_DEPTH`]).
     depth: usize,
+    /// Where each element whose content is being parsed opened, innermost last: an unclosed
+    /// one is reported there, not where its parent's closing tag shows it.
+    open: Vec<(String, Span)>,
 }
 
 /// How deep elements may nest, in a template or in slot content. The parser and every pass
@@ -483,6 +502,7 @@ impl<'a> TemplateParser<'a> {
             cursor,
             html: false,
             depth: 0,
+            open: Vec::new(),
         }
     }
 
@@ -502,6 +522,7 @@ impl<'a> TemplateParser<'a> {
                 .filter(|end| rest[..*end].chars().all(|c| c.is_ascii_alphabetic()));
             let Some(name_end) = name_end else {
                 return Err(Diagnostic::new(
+                    crate::codes::STYLE_TAG_ATTRIBUTES,
                     at,
                     "<style> takes `layer=\"…\"` and `lang=\"…\"` attributes",
                 ));
@@ -513,13 +534,18 @@ impl<'a> TemplateParser<'a> {
                 .filter(|quote| *quote == '"' || *quote == '\'');
             let Some(quote) = quote else {
                 return Err(Diagnostic::new(
+                    crate::codes::STYLE_TAG_ATTRIBUTES,
                     at,
                     format!("`{name}` on <style> needs a quoted value"),
                 ));
             };
             let value_start = name_end + 2;
             let Some(length) = rest[value_start..].find(quote) else {
-                return Err(Diagnostic::new(at, "unterminated attribute value"));
+                return Err(Diagnostic::new(
+                    crate::codes::MARKUP_SYNTAX,
+                    at,
+                    "unterminated attribute value",
+                ));
             };
             let value = rest[value_start..value_start + length].trim().to_owned();
             match name.as_str() {
@@ -534,6 +560,7 @@ impl<'a> TemplateParser<'a> {
                 }
                 "layer" => {
                     return Err(Diagnostic::new(
+                        crate::codes::STYLE_TAG_ATTRIBUTES,
                         at,
                         format!("`{value}` isn't a cascade layer name"),
                     ))
@@ -543,12 +570,14 @@ impl<'a> TemplateParser<'a> {
                 }
                 "lang" => {
                     return Err(Diagnostic::new(
+                        crate::codes::STYLE_TAG_ATTRIBUTES,
                         at,
                         format!("`{value}` isn't a stylesheet language"),
                     ))
                 }
                 other => {
                     return Err(Diagnostic::new(
+                        crate::codes::STYLE_TAG_ATTRIBUTES,
                         at,
                         format!("<style> takes `layer` and `lang`, not `{other}`"),
                     ))
@@ -561,13 +590,17 @@ impl<'a> TemplateParser<'a> {
         let css_span = self.current_span();
         let rest = self.cursor.rest();
         let Some(end) = rest.to_ascii_lowercase().find("</style") else {
-            return Err(Diagnostic::new(span, "missing </style>"));
+            return Err(Diagnostic::new(
+                crate::codes::UNCLOSED_ELEMENT,
+                span,
+                "missing </style>",
+            ));
         };
         let css = rest[..end].to_owned();
         self.advance(end + "</style".len());
         self.skip_whitespace();
         if !self.starts_with(">") {
-            return Err(self.error("expected > after </style"));
+            return Err(self.error(crate::codes::MARKUP_SYNTAX, "expected > after </style"));
         }
         self.advance(1);
         Ok(Style {
@@ -593,7 +626,7 @@ impl<'a> TemplateParser<'a> {
             }
         }
         if !self.starts_with(">") {
-            return Err(Diagnostic::new(
+            return Err(Diagnostic::new(crate::codes::SCRIPT_TAG_ATTRIBUTES,
                 span,
                 "<script> in a component takes no attributes except lang=\"ts\" (it is always a module)",
             ));
@@ -602,13 +635,17 @@ impl<'a> TemplateParser<'a> {
         let body_span = self.current_span();
         let rest = self.cursor.rest();
         let Some(end) = rest.to_ascii_lowercase().find("</script") else {
-            return Err(Diagnostic::new(span, "missing </script>"));
+            return Err(Diagnostic::new(
+                crate::codes::UNCLOSED_ELEMENT,
+                span,
+                "missing </script>",
+            ));
         };
         let body = &rest[..end];
         self.advance(end + "</script".len());
         self.skip_whitespace();
         if !self.starts_with(">") {
-            return Err(self.error("expected > after </script"));
+            return Err(self.error(crate::codes::MARKUP_SYNTAX, "expected > after </script"));
         }
         self.advance(1);
         script::parse(body, body_span, typescript)
@@ -632,6 +669,7 @@ impl<'a> TemplateParser<'a> {
         let span = self.current_span();
         let Some(end) = self.cursor.rest().find("-->") else {
             return Err(Diagnostic::new(
+                crate::codes::MARKUP_SYNTAX,
                 span,
                 "unterminated HTML comment; expected -->",
             ));
@@ -652,17 +690,26 @@ impl<'a> TemplateParser<'a> {
                 let name = self.parse_name()?;
                 self.skip_whitespace();
                 if !self.starts_with(">") {
-                    return Err(self.error("expected > after closing tag"));
+                    return Err(
+                        self.error(crate::codes::MARKUP_SYNTAX, "expected > after closing tag")
+                    );
                 }
                 self.advance(1);
                 let Some(expected) = closing else {
-                    return Err(Diagnostic::new(span, "unexpected closing tag"));
+                    return Err(Diagnostic::new(
+                        crate::codes::MISMATCHED_CLOSING_TAG,
+                        span,
+                        "unexpected closing tag",
+                    ));
                 };
                 if !name.eq_ignore_ascii_case(expected) {
-                    return Err(Diagnostic::new(
-                        span,
-                        format!("closing tag </{name}> does not match <{expected}>"),
-                    ));
+                    return Err(self.unclosed(expected, &name, span).unwrap_or_else(|| {
+                        Diagnostic::new(
+                            crate::codes::MISMATCHED_CLOSING_TAG,
+                            span,
+                            format!("closing tag </{name}> does not match <{expected}>"),
+                        )
+                    }));
                 }
                 return Ok(nodes);
             }
@@ -678,14 +725,20 @@ impl<'a> TemplateParser<'a> {
                 continue;
             }
             if self.html && self.cursor.starts_with_ignore_ascii_case("<!doctype") {
-                return Err(self.error("a doctype can't be slot content"));
+                return Err(self.error(
+                    crate::codes::UNSUPPORTED_MARKUP,
+                    "a doctype can't be slot content",
+                ));
             }
             if self.html && self.starts_with("<?") {
                 // A server's processing instructions are kept, like its comments: since 5.0
                 // they're the hydration markers of components it already rendered (`<?zb [?>`).
                 // HTML ends one at the first `>`.
                 let Some(end) = self.cursor.rest().find('>') else {
-                    return Err(self.error("unclosed processing instruction in slot content"));
+                    return Err(self.error(
+                        crate::codes::UNSUPPORTED_MARKUP,
+                        "unclosed processing instruction in slot content",
+                    ));
                 };
                 let instruction = self.cursor.rest()[..=end].to_owned();
                 self.cursor.advance(end + 1);
@@ -693,8 +746,10 @@ impl<'a> TemplateParser<'a> {
                 continue;
             }
             if self.starts_with("<!") || self.starts_with("<?") {
-                return Err(self
-                    .error("doctype and processing instructions are not supported in templates"));
+                return Err(self.error(
+                    crate::codes::UNSUPPORTED_MARKUP,
+                    "doctype and processing instructions are not supported in templates",
+                ));
             }
             if self.starts_with("<") {
                 let mut element = self.parse_raw_element()?;
@@ -754,9 +809,47 @@ impl<'a> TemplateParser<'a> {
             }
         }
         if let Some(name) = closing {
-            return Err(self.error(&format!("missing closing tag </{name}>")));
+            let end = self.current_span();
+            return Err(match self.open.last() {
+                Some((_, opened)) => Diagnostic::new(
+                    crate::codes::UNCLOSED_ELEMENT,
+                    *opened,
+                    format!("<{name}> is never closed"),
+                )
+                .with_help(format!(
+                    "the file ends at {}:{} with <{name}> still open; close it with </{name}>",
+                    end.line, end.column
+                )),
+                None => self.error(
+                    crate::codes::UNCLOSED_ELEMENT,
+                    &format!("missing closing tag </{name}>"),
+                ),
+            });
         }
         Ok(nodes)
+    }
+
+    /// `</parent>` while `<expected>` is open, where `parent` is an element around it: `<expected>`
+    /// was never closed. Reported where it opened (that's the line to fix), with where the parser
+    /// noticed in the help.
+    fn unclosed(&self, expected: &str, found: &str, at: Span) -> Option<Diagnostic> {
+        let (_, opened) = self.open.last()?;
+        let found_lower = found.to_ascii_lowercase();
+        let outer = &self.open[..self.open.len() - 1];
+        if !outer.iter().any(|(name, _)| *name == found_lower) {
+            return None;
+        }
+        Some(
+            Diagnostic::new(
+                crate::codes::UNCLOSED_ELEMENT,
+                *opened,
+                format!("<{expected}> is never closed"),
+            )
+                .with_help(format!(
+                    "</{found}> at {}:{} closes the element around it first; close <{expected}> before it",
+                    at.line, at.column
+                )),
+        )
     }
 
     /// An element with its attributes and (directive-lowered) children, before the element
@@ -779,7 +872,7 @@ impl<'a> TemplateParser<'a> {
                 break true;
             }
             if self.cursor.is_at_end() {
-                return Err(self.error("unterminated start tag"));
+                return Err(self.error(crate::codes::MARKUP_SYNTAX, "unterminated start tag"));
             }
             let attribute_span = self.current_span();
             if !self.html
@@ -791,6 +884,7 @@ impl<'a> TemplateParser<'a> {
                 let (expression, span) = self.parse_braced_expression()?;
                 if !seen.insert("value".to_owned()) {
                     return Err(Diagnostic::new(
+                        crate::codes::DUPLICATE_ATTRIBUTE,
                         attribute_span,
                         "duplicate attribute `value`",
                     ));
@@ -811,9 +905,33 @@ impl<'a> TemplateParser<'a> {
                 });
                 continue;
             }
+            if !self.html && self.starts_with("@") {
+                // Vue's and Lit's `@click`: Zubra writes the platform's own `onclick`.
+                let event = self.cursor.rest()[1..]
+                    .bytes()
+                    .take_while(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.')
+                    })
+                    .map(char::from)
+                    .collect::<String>();
+                let event = if event.is_empty() {
+                    "click".to_owned()
+                } else {
+                    event
+                };
+                return Err(self
+                    .error(
+                        crate::codes::MARKUP_SYNTAX,
+                        "expected an HTML tag or attribute name",
+                    )
+                    .with_help(format!(
+                        "Zubra uses the platform's attribute names: write `on{event}={{…}}`"
+                    )));
+            }
             let attribute_name = self.parse_name()?;
             if !seen.insert(attribute_name.to_ascii_lowercase()) {
                 return Err(Diagnostic::new(
+                    crate::codes::DUPLICATE_ATTRIBUTE,
                     attribute_span,
                     format!("duplicate attribute `{attribute_name}`"),
                 ));
@@ -842,7 +960,9 @@ impl<'a> TemplateParser<'a> {
                     self.advance(1);
                     let raw = self.cursor.take_while(|byte| byte != quote);
                     if self.cursor.is_at_end() {
-                        return Err(self.error("unterminated attribute value"));
+                        return Err(
+                            self.error(crate::codes::MARKUP_SYNTAX, "unterminated attribute value")
+                        );
                     }
                     self.advance(1);
                     AttributeValue::Text(vec![Part::Literal(raw.to_owned())])
@@ -851,14 +971,17 @@ impl<'a> TemplateParser<'a> {
                     self.advance(1);
                     let parts = self.parse_parts(Some(quote))?;
                     if self.cursor.is_at_end() {
-                        return Err(self.error("unterminated attribute value"));
+                        return Err(
+                            self.error(crate::codes::MARKUP_SYNTAX, "unterminated attribute value")
+                        );
                     }
                     self.advance(1);
                     AttributeValue::Text(parts)
                 } else {
-                    return Err(
-                        self.error("attribute values must be quoted text or a {…} expression")
-                    );
+                    return Err(self.error(
+                        crate::codes::ATTRIBUTE_VALUE_FORM,
+                        "attribute values must be quoted text or a {…} expression",
+                    ));
                 }
             } else {
                 AttributeValue::None
@@ -898,6 +1021,7 @@ impl<'a> TemplateParser<'a> {
             let lower = self.cursor.rest().to_ascii_lowercase();
             let Some(end) = lower.find(&format!("</{}", name.to_ascii_lowercase())) else {
                 return Err(Diagnostic::new(
+                    crate::codes::UNCLOSED_ELEMENT,
                     span,
                     format!("missing closing tag </{name}>"),
                 ));
@@ -906,7 +1030,7 @@ impl<'a> TemplateParser<'a> {
             self.advance(end + 2 + name.len());
             self.skip_whitespace();
             if !self.starts_with(">") {
-                return Err(self.error("expected > after closing tag"));
+                return Err(self.error(crate::codes::MARKUP_SYNTAX, "expected > after closing tag"));
             }
             self.advance(1);
             return Ok(Element {
@@ -918,6 +1042,7 @@ impl<'a> TemplateParser<'a> {
         }
         if name.eq_ignore_ascii_case("script") || name.eq_ignore_ascii_case("style") {
             return Err(Diagnostic::new(
+                crate::codes::FORBIDDEN_ELEMENT,
                 span,
                 format!("<{name}> elements are not supported inside a template"),
             ));
@@ -928,7 +1053,7 @@ impl<'a> TemplateParser<'a> {
             Vec::new()
         } else {
             if self.depth >= MAX_DEPTH {
-                return Err(Diagnostic::new(
+                return Err(Diagnostic::new(crate::codes::TOO_DEEP,
                         span,
                         format!("markup is nested more than {MAX_DEPTH} elements deep"),
                     )
@@ -939,7 +1064,9 @@ impl<'a> TemplateParser<'a> {
                     }));
             }
             self.depth += 1;
+            self.open.push((name.to_ascii_lowercase(), span));
             let mut children = self.parse_nodes(Some(&name))?;
+            self.open.pop();
             self.depth -= 1;
             if !self.html && TABLE_SECTIONS.contains(&name.to_ascii_lowercase().as_str()) {
                 drop_blank_text(&mut children);
@@ -959,7 +1086,10 @@ impl<'a> TemplateParser<'a> {
             byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.')
         });
         if name.is_empty() {
-            return Err(self.error("expected an HTML tag or attribute name"));
+            return Err(self.error(
+                crate::codes::MARKUP_SYNTAX,
+                "expected an HTML tag or attribute name",
+            ));
         }
         Ok(name.to_owned())
     }
@@ -970,6 +1100,7 @@ impl<'a> TemplateParser<'a> {
             let mut cursor = self.cursor.clone();
             cursor.advance(at - self.cursor.position());
             return Err(Diagnostic::new(
+                crate::codes::MARKUP_IN_ATTRIBUTE,
                 cursor.span(),
                 "markup can't go in an attribute's {…}; it works in text, as {cond && <p>…</p>}",
             )
@@ -977,7 +1108,11 @@ impl<'a> TemplateParser<'a> {
         }
         let braced = self.cursor.scan_braced()?;
         if braced.inner.trim().is_empty() {
-            return Err(Diagnostic::new(braced.open_span, "empty {} expression"));
+            return Err(Diagnostic::new(
+                crate::codes::EMPTY_EXPRESSION,
+                braced.open_span,
+                "empty {} expression",
+            ));
         }
         expression_text(braced.inner, braced.open_span, braced.inner_span)
     }
@@ -989,13 +1124,18 @@ impl<'a> TemplateParser<'a> {
         let lead = braced.inner.len() - braced.inner.trim_start().len();
         let Some(rest) = braced.inner.trim_start().strip_prefix("...") else {
             return Err(Diagnostic::new(
+                crate::codes::START_TAG_BRACES,
                 braced.open_span,
                 "a {…} in a start tag must spread an object: {...attributes}",
             )
             .with_help("give an attribute a name to bind one value: name={…}"));
         };
         if rest.trim().is_empty() {
-            return Err(Diagnostic::new(braced.open_span, "empty {...} spread"));
+            return Err(Diagnostic::new(
+                crate::codes::EMPTY_EXPRESSION,
+                braced.open_span,
+                "empty {...} spread",
+            ));
         }
         let rest_span = span_after(braced.inner_span, braced.inner, lead + 3);
         let (expression, _) = expression_text(rest, braced.open_span, rest_span)?;
@@ -1027,6 +1167,7 @@ impl<'a> TemplateParser<'a> {
                     if let [(key, Expression::Identifier(value))] = entries.as_slice() {
                         if key == value {
                             return Err(Diagnostic::new(
+                                crate::codes::OBSOLETE_SYNTAX,
                                 span,
                                 "`{{ … }}` is v0.2 syntax; v0.3 uses single braces",
                             )
@@ -1073,6 +1214,7 @@ impl<'a> TemplateParser<'a> {
             let inner = &source[from..to];
             if inner.trim().is_empty() {
                 return Err(Diagnostic::new(
+                    crate::codes::EXPRESSION_SYNTAX,
                     span_of(from),
                     "expected an expression here",
                 ));
@@ -1091,7 +1233,10 @@ impl<'a> TemplateParser<'a> {
             self.cursor.advance(question + 1 - open);
             let consequent = self.braced_branch(b':')?;
             if !self.starts_with(":") {
-                return Err(self.error("expected : and the other branch of the ? :"));
+                return Err(self.error(
+                    crate::codes::EXPRESSION_SYNTAX,
+                    "expected : and the other branch of the ? :",
+                ));
             }
             self.advance(1);
             let alternate = self.braced_branch(b'}')?;
@@ -1115,7 +1260,11 @@ impl<'a> TemplateParser<'a> {
         if before.ends_with("&&") {
             let and = open + 1 + before.len() - 2;
             if tops.ands.last() != Some(&and) {
-                return Err(Diagnostic::new(span_of(at), forms));
+                return Err(Diagnostic::new(
+                    crate::codes::BRACED_MARKUP_FORM,
+                    span_of(at),
+                    forms,
+                ));
             }
             let (test, test_span) = expression(open + 1, and)?;
             self.cursor = start.clone();
@@ -1154,7 +1303,7 @@ impl<'a> TemplateParser<'a> {
                         (item.to_string(), Some(index.to_string()))
                     }
                     _ => {
-                        return Err(Diagnostic::new(
+                        return Err(Diagnostic::new(crate::codes::BRACED_MARKUP_FORM,
                             span_of(call),
                             "the .map() callback takes the item (a name or a { … } / [ … ] pattern), and optionally its index: (item) or (item, i); for anything else use <zb-each>",
                         ))
@@ -1168,9 +1317,10 @@ impl<'a> TemplateParser<'a> {
                 self.close_parenthesis(parenthesized)?;
                 self.skip_whitespace();
                 if !self.starts_with(")") {
-                    return Err(
-                        self.error("expected ) to close .map(…); the callback returns one element")
-                    );
+                    return Err(self.error(
+                        crate::codes::BRACED_MARKUP_FORM,
+                        "expected ) to close .map(…); the callback returns one element",
+                    ));
                 }
                 self.advance(1);
                 self.close_brace()?;
@@ -1187,7 +1337,7 @@ impl<'a> TemplateParser<'a> {
                 });
             }
         }
-        Err(Diagnostic::new(span_of(at), forms)
+        Err(Diagnostic::new(crate::codes::BRACED_MARKUP_FORM, span_of(at), forms)
             .with_help("for anything else, use <zb-if test={…}> or <zb-each items={…} as=\"…\"> around the markup"))
     }
 
@@ -1199,6 +1349,7 @@ impl<'a> TemplateParser<'a> {
         let mut element = self.parse_raw_element()?;
         if take_condition(&mut element)?.is_some() {
             return Err(Diagnostic::new(
+                crate::codes::BRACES_AND_CONDITION,
                 element.span,
                 "the braces already decide whether this element renders; drop its zb-if/zb-else",
             ));
@@ -1214,6 +1365,7 @@ impl<'a> TemplateParser<'a> {
                     AttributeValue::Expression(expression, span) => *key = Some((expression, span)),
                     _ => {
                         return Err(Diagnostic::new(
+                            crate::codes::KEY_NEEDS_EXPRESSION,
                             attribute.span,
                             "key is an expression: key={item.id}",
                         ))
@@ -1244,11 +1396,14 @@ impl<'a> TemplateParser<'a> {
         let source = self.cursor.source();
         let from = self.cursor.position();
         let Some(to) = TopLevel::find(source, from, stop) else {
-            return Err(self.error(if stop == b':' {
-                "expected : in the ? :"
-            } else {
-                "expected } to close the expression"
-            }));
+            return Err(self.error(
+                crate::codes::EXPRESSION_SYNTAX,
+                if stop == b':' {
+                    "expected : in the ? :"
+                } else {
+                    "expected } to close the expression"
+                },
+            ));
         };
         let inner = source[from..to].trim_end();
         let span = self.current_span();
@@ -1267,7 +1422,10 @@ impl<'a> TemplateParser<'a> {
         if open {
             self.skip_whitespace();
             if !self.starts_with(")") {
-                return Err(self.error("expected ) after the markup"));
+                return Err(self.error(
+                    crate::codes::BRACED_MARKUP_FORM,
+                    "expected ) after the markup",
+                ));
             }
             self.advance(1);
         }
@@ -1277,7 +1435,10 @@ impl<'a> TemplateParser<'a> {
     fn close_brace(&mut self) -> Result<(), Diagnostic> {
         self.skip_whitespace();
         if !self.starts_with("}") {
-            return Err(self.error("expected } after the markup: the braces hold one element"));
+            return Err(self.error(
+                crate::codes::BRACED_MARKUP_FORM,
+                "expected } after the markup: the braces hold one element",
+            ));
         }
         self.advance(1);
         Ok(())
@@ -1291,8 +1452,8 @@ impl<'a> TemplateParser<'a> {
         self.cursor.span()
     }
 
-    fn error(&self, message: &str) -> Diagnostic {
-        self.cursor.error(message)
+    fn error(&self, code: crate::codes::Code, message: &str) -> Diagnostic {
+        self.cursor.error(code, message)
     }
 
     fn advance(&mut self, byte_count: usize) {
@@ -1309,7 +1470,7 @@ fn check_attribute(name: &str, value: &AttributeValue, span: Span) -> Result<(),
                     .iter()
                     .any(|part| matches!(part, Part::Expression { .. })) =>
             {
-                return Err(Diagnostic::new(span, "a style attribute can't interpolate values")
+                return Err(Diagnostic::new(crate::codes::STYLE_ATTRIBUTE_FORM, span, "a style attribute can't interpolate values")
                     .with_help("set each property with style:name={…} (e.g. style:width={`${percent}%`}), or pass an object: style={{ … }}"));
             }
             AttributeValue::Expression(Expression::Object(_), _)
@@ -1317,6 +1478,7 @@ fn check_attribute(name: &str, value: &AttributeValue, span: Span) -> Result<(),
             | AttributeValue::None => {}
             AttributeValue::Expression(..) => {
                 return Err(Diagnostic::new(
+                    crate::codes::STYLE_ATTRIBUTE_FORM,
                     span,
                     "style={…} takes an object literal of properties",
                 )
@@ -1328,12 +1490,14 @@ fn check_attribute(name: &str, value: &AttributeValue, span: Span) -> Result<(),
         if rest.contains('.') || is_event_attribute(&lower) {
             if !matches!(value, AttributeValue::Expression(..)) {
                 return Err(Diagnostic::new(
+                    crate::codes::INLINE_HANDLER,
                     span,
                     "inline event-handler attributes are not allowed",
                 )
                 .with_help(format!("pass a function from <script>: {name}={{handler}}")));
             }
-            event_parts(&lower).map_err(|message| Diagnostic::new(span, message))?;
+            event_parts(&lower)
+                .map_err(|message| Diagnostic::new(crate::codes::EVENT_ATTRIBUTE, span, message))?;
         }
     }
     Ok(())
@@ -1495,6 +1659,7 @@ fn expand_directives(
             // `valuechange` event assigning back.
             if !element.contains('-') {
                 return Err(Diagnostic::new(
+                    crate::codes::TWO_WAY_BINDING,
                     attribute.span,
                     format!(
                         "`{}` binds a custom element's two-way prop; a native <{element}> has none",
@@ -1508,6 +1673,7 @@ fn expand_directives(
             let AttributeValue::Expression(Expression::Identifier(target), span) = &attribute.value
             else {
                 return Err(Diagnostic::new(
+                    crate::codes::TWO_WAY_BINDING,
                     attribute.span,
                     format!(
                         "`{}` takes a `let` or a prop to keep in step: {}={{color}}",
@@ -1516,8 +1682,9 @@ fn expand_directives(
                 ));
             };
             let source = format!("(event) => ({target} = event.detail)");
-            let names = crate::runtime_expression::parse(&source)
-                .map_err(|(_, message)| Diagnostic::new(*span, message))?;
+            let names = crate::runtime_expression::parse(&source).map_err(|(_, message)| {
+                Diagnostic::new(crate::codes::EXPRESSION_SYNTAX, *span, message)
+            })?;
             out.push(Attribute {
                 name: prop.to_owned(),
                 value: AttributeValue::Expression(Expression::Identifier(target.clone()), *span),
@@ -1553,15 +1720,17 @@ fn expand_directives(
             let value = match &attribute.value {
                 AttributeValue::Expression(Expression::Identifier(name), span) => {
                     let source = format!("($el) => ({name} = $el)");
-                    let names = crate::runtime_expression::parse(&source)
-                        .map_err(|(_, message)| Diagnostic::new(*span, message))?;
+                    let names =
+                        crate::runtime_expression::parse(&source).map_err(|(_, message)| {
+                            Diagnostic::new(crate::codes::EXPRESSION_SYNTAX, *span, message)
+                        })?;
                     AttributeValue::Expression(Expression::Runtime { source, names }, *span)
                 }
                 AttributeValue::Expression(expression @ Expression::Runtime { .. }, span) => {
                     AttributeValue::Expression(expression.clone(), *span)
                 }
                 _ => {
-                    return Err(Diagnostic::new(
+                    return Err(Diagnostic::new(crate::codes::REF_FORM,
                         attribute.span,
                         "ref takes a `let` to assign the element to (ref={dialog}), or a function that receives it",
                     ));
@@ -1594,6 +1763,7 @@ fn expand_directives(
             };
             if !valid {
                 return Err(Diagnostic::new(
+                    crate::codes::CLASS_STYLE_NAME,
                     attribute.span,
                     format!(
                         "`{}` doesn't name a {}",
@@ -1617,7 +1787,7 @@ fn expand_directives(
                         crate::validate::camel(name)
                     };
                     if !is_identifier(&variable) {
-                        return Err(Diagnostic::new(
+                        return Err(Diagnostic::new(crate::codes::ATTRIBUTE_NEEDS_EXPRESSION,
                             attribute.span,
                             format!("bare `{}` reads a variable named `{variable}`, which isn't a valid name: give it a value, {}={{…}}", attribute.name, attribute.name),
                         ));
@@ -1626,6 +1796,7 @@ fn expand_directives(
                 }
                 AttributeValue::Text(_) => {
                     return Err(Diagnostic::new(
+                        crate::codes::ATTRIBUTE_NEEDS_EXPRESSION,
                         attribute.span,
                         format!(
                             "`{}` takes an expression: {}={{…}}",
@@ -1803,14 +1974,19 @@ fn split_top_level(text: &str) -> Vec<&str> {
 /// An `as`: a name, or a destructuring pattern (4.2).
 fn check_binding(text: &str, span: Span, what: &str) -> Result<(), Diagnostic> {
     if crate::ast::is_pattern(text) {
-        return crate::ast::bindings(text)
-            .map(|_| ())
-            .map_err(|message| Diagnostic::new(span, format!("{what}: {message}")));
+        return crate::ast::bindings(text).map(|_| ()).map_err(|message| {
+            Diagnostic::new(
+                crate::codes::BINDING_PATTERN,
+                span,
+                format!("{what}: {message}"),
+            )
+        });
     }
     if is_identifier(text.trim()) {
         Ok(())
     } else {
         Err(Diagnostic::new(
+            crate::codes::BINDING_PATTERN,
             span,
             format!("{what} must be a valid identifier, or a {{ … }} or [ … ] pattern"),
         ))
@@ -1880,6 +2056,7 @@ fn take_condition(element: &mut Element) -> Result<Option<Condition>, Diagnostic
     };
     if let Some(second) = found.next() {
         return Err(Diagnostic::new(
+            crate::codes::CONDITION_CONFLICT,
             second.span,
             format!(
                 "an element takes one of zb-if, zb-else-if and zb-else, not both `{}` and `{}`",
@@ -1898,6 +2075,7 @@ fn take_condition(element: &mut Element) -> Result<Option<Condition>, Diagnostic
             format!("use the element form, <{name}>, around it")
         };
         return Err(Diagnostic::new(
+            crate::codes::DIRECTIVE_ATTRIBUTE,
             first.span,
             format!(
                 "`{name}` can't go on <{}>, which is a directive; {wrap}",
@@ -1915,6 +2093,7 @@ fn take_condition(element: &mut Element) -> Result<Option<Condition>, Diagnostic
     match (name.as_str(), attribute.value) {
         ("zb-else", AttributeValue::None) => Ok(Some(Condition::Else(span))),
         ("zb-else", _) => Err(Diagnostic::new(
+            crate::codes::ATTRIBUTE_TAKES_NO_VALUE,
             attribute.span,
             "`zb-else` takes no value; the condition is the branches before it",
         )),
@@ -1924,10 +2103,12 @@ fn take_condition(element: &mut Element) -> Result<Option<Condition>, Diagnostic
             Condition::ElseIf(test, test_span, span)
         })),
         (_, AttributeValue::Text(_)) => Err(Diagnostic::new(
+            crate::codes::ATTRIBUTE_NEEDS_EXPRESSION,
             attribute.span,
             format!("`{name}` is an expression: write {name}={{…}}"),
         )),
         (_, AttributeValue::None) => Err(Diagnostic::new(
+            crate::codes::ATTRIBUTE_NEEDS_EXPRESSION,
             attribute.span,
             format!("`{name}` needs a condition: {name}={{…}}"),
         )),
@@ -1943,6 +2124,7 @@ fn flag(element: &Element, name: &str, example: &str) -> Result<bool, Diagnostic
             ..
         }) => Ok(true),
         Some(attribute) => Err(Diagnostic::new(
+            crate::codes::ATTRIBUTE_TAKES_NO_VALUE,
             attribute.span,
             format!("`{name}` takes no value: {example}"),
         )),
@@ -1961,17 +2143,18 @@ fn take_animate(element: &mut Element, condition: Option<&Condition>) -> Result<
     let attribute = element.attributes.remove(at);
     if !matches!(attribute.value, AttributeValue::None) {
         return Err(Diagnostic::new(
+            crate::codes::ATTRIBUTE_TAKES_NO_VALUE,
             attribute.span,
             "`zb-animate` takes no value: <p zb-if={…} zb-animate>",
         ));
     }
     match condition {
         Some(Condition::If(..)) => Ok(true),
-        Some(_) => Err(Diagnostic::new(
+        Some(_) => Err(Diagnostic::new(crate::codes::ANIMATE_PLACEMENT,
             attribute.span,
             "`zb-animate` goes on the element with `zb-if`; the whole chain animates",
         )),
-        None => Err(Diagnostic::new(
+        None => Err(Diagnostic::new(crate::codes::ANIMATE_PLACEMENT,
             attribute.span,
             "`zb-animate` goes beside `zb-if`: <p zb-if={…} zb-animate>; for a list, write <zb-each … key={…} animate>",
         )),
@@ -1991,13 +2174,14 @@ fn attach_branch(
         Condition::If(..) => unreachable!("an zb-if starts a chain"),
     };
     let Some((at, closed)) = *chain else {
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::IF_CHAIN_ORDER,
             span,
             format!("`{name}` needs an element with `zb-if` or `zb-else-if` just before it (whitespace may come between); inside a <zb-if>, write <{name}> instead"),
         ));
     };
     if closed {
         return Err(Diagnostic::new(
+            crate::codes::IF_CHAIN_ORDER,
             span,
             if name == "zb-else" {
                 "a zb-if chain takes only one `zb-else`, and it comes last"
@@ -2054,6 +2238,7 @@ fn reserved_attributes(element: &Element) -> Result<(), Diagnostic> {
         let lower = attribute.name.to_ascii_lowercase();
         if lower.starts_with("zb-") {
             let error = Diagnostic::new(
+                crate::codes::UNKNOWN_ZB_ATTRIBUTE,
                 attribute.span,
                 format!(
                     "unknown attribute `{}`: the zb- prefix is reserved for the format",
@@ -2077,19 +2262,21 @@ fn take_lets(element: &mut Element, allowed: bool) -> Result<Vec<crate::ast::Let
             continue;
         };
         if !allowed {
-            return Err(Diagnostic::new(
+            return Err(Diagnostic::new(crate::codes::LET_PLACEMENT,
                 attribute.span,
                 format!("`let:` goes on <zb-each> or <zb-then>, where it names a value per row or result; not on <{}>", element.name),
             ));
         }
         if !is_identifier(name) {
             return Err(Diagnostic::new(
+                crate::codes::BINDING_PATTERN,
                 attribute.span,
                 format!("`let:{name}`: the name must be a valid identifier"),
             ));
         }
         let AttributeValue::Expression(value, span) = attribute.value else {
             return Err(Diagnostic::new(
+                crate::codes::ATTRIBUTE_NEEDS_EXPRESSION,
                 attribute.span,
                 format!("`let:{name}` is an expression: write let:{name}={{…}}"),
             ));
@@ -2099,6 +2286,7 @@ fn take_lets(element: &mut Element, allowed: bool) -> Result<Vec<crate::ast::Let
             .any(|binding: &crate::ast::Let| binding.name == name)
         {
             return Err(Diagnostic::new(
+                crate::codes::DUPLICATE_ATTRIBUTE,
                 attribute.span,
                 format!("`let:{name}` is given twice"),
             ));
@@ -2120,7 +2308,11 @@ fn case_test(value: &Expression, is: &Expression, span: Span) -> Result<Expressi
     if let Expression::Array(items) = is {
         let mut tests = items.iter().map(|item| case_test(value, item, span));
         let first = tests.next().ok_or_else(|| {
-            Diagnostic::new(span, "`is={[]}` never matches; give it at least one value")
+            Diagnostic::new(
+                crate::codes::EMPTY_IS,
+                span,
+                "`is={[]}` never matches; give it at least one value",
+            )
         })??;
         return tests.try_fold(first, |left, right| {
             Ok(Expression::Logical {
@@ -2151,6 +2343,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
             "if" | "else" | "each" | "slot" | "await" | "then" | "catch"
         ) {
             return Err(Diagnostic::new(
+                crate::codes::OBSOLETE_SYNTAX,
                 element.span,
                 format!("<{}> was renamed to <zb-{rest}> in v0.3", element.name),
             ));
@@ -2169,7 +2362,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                 match child {
                     Node::Else { test, children, span } => {
                         if closed {
-                            return Err(Diagnostic::new(
+                            return Err(Diagnostic::new(crate::codes::IF_CHAIN_ORDER,
                                 span,
                                 if test.is_some() {
                                     "zb-else-if must come before zb-else"
@@ -2186,7 +2379,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                             && parts.iter().all(|part| matches!(part, Part::Literal(text) if text.trim().is_empty())) => {}
                     child => {
                         if branches.len() > 1 {
-                            return Err(Diagnostic::new(
+                            return Err(Diagnostic::new(crate::codes::IF_CHAIN_ORDER,
                                 element.span,
                                 "zb-else-if and zb-else must be the final children of zb-if",
                             ));
@@ -2234,7 +2427,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                     || crate::ast::bindings(&item)
                         .is_ok_and(|names| names.iter().any(|(name, _)| name == index))
             }) {
-                return Err(Diagnostic::new(
+                return Err(Diagnostic::new(crate::codes::BINDING_PATTERN,
                     element.span,
                     "zb-each index must be a valid identifier different from `as` and the names it binds",
                 ));
@@ -2243,7 +2436,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                 .map(|_| required_expression(&element, "key"))
                 .transpose()?;
             if animate && key.is_none() {
-                return Err(Diagnostic::new(
+                return Err(Diagnostic::new(crate::codes::ANIMATE_PLACEMENT,
                     element.span,
                     "`animate` follows rows by their key: give the zb-each a key, <zb-each items={…} as=\"item\" key={item.id} animate>",
                 ));
@@ -2267,6 +2460,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                 Some(name) if name == "default" || is_identifier(&name) => name,
                 Some(_) => {
                     return Err(Diagnostic::new(
+                        crate::codes::SLOT_NAME_INVALID,
                         element.span,
                         "zb-slot name must be `default` or a valid identifier",
                     ));
@@ -2292,6 +2486,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                     Node::Element(case) if case.name.eq_ignore_ascii_case("zb-case") => {
                         if otherwise.is_some() {
                             return Err(Diagnostic::new(
+                                crate::codes::SWITCH_STRUCTURE,
                                 case.span,
                                 "a zb-case can't come after the zb-switch's zb-else",
                             ));
@@ -2301,7 +2496,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                         let (is, is_span) = match find(&case, "is").map(|attribute| (&attribute.value, attribute.span)) {
                             Some((AttributeValue::Text(parts), span)) => match parts.as_slice() {
                                 [Part::Literal(text)] => (Expression::String(html_escape::decode_html_entities(text).into_owned()), span),
-                                _ => return Err(Diagnostic::new(span, "`is` is a string (is=\"paid\") or an expression (is={…}), not both")),
+                                _ => return Err(Diagnostic::new(crate::codes::SWITCH_STRUCTURE, span, "`is` is a string (is=\"paid\") or an expression (is={…}), not both")),
                             },
                             _ => required_expression(&case, "is")?,
                         };
@@ -2315,6 +2510,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                     } => {
                         if otherwise.is_some() {
                             return Err(Diagnostic::new(
+                                crate::codes::SWITCH_STRUCTURE,
                                 span,
                                 "a zb-switch takes only one zb-else",
                             ));
@@ -2327,6 +2523,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                         ..
                     } => {
                         return Err(Diagnostic::new(
+                            crate::codes::SWITCH_STRUCTURE,
                             span,
                             "inside zb-switch, write <zb-case is={…}> instead of zb-else-if",
                         ));
@@ -2336,12 +2533,13 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                             Node::Element(e) => e.span,
                             _ => element.span,
                         };
-                        return Err(Diagnostic::new(span, "a zb-switch contains <zb-case is={…}> elements and an optional final <zb-else>"));
+                        return Err(Diagnostic::new(crate::codes::SWITCH_STRUCTURE, span, "a zb-switch contains <zb-case is={…}> elements and an optional final <zb-else>"));
                     }
                 }
             }
             if cases.is_empty() {
                 return Err(Diagnostic::new(
+                    crate::codes::SWITCH_STRUCTURE,
                     element.span,
                     "a zb-switch needs at least one <zb-case is={…}>",
                 ));
@@ -2371,6 +2569,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                 Some(attribute) if attribute.value == AttributeValue::None => true,
                 Some(attribute) => {
                     return Err(Diagnostic::new(
+                        crate::codes::ATTRIBUTE_TAKES_NO_VALUE,
                         attribute.span,
                         "`keep` takes no value: <zb-await value={…} keep>",
                     ))
@@ -2387,7 +2586,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                     Node::Element(pending_element) if pending_element.name.eq_ignore_ascii_case("zb-pending") => {
                         allow_attributes(&pending_element, &[])?;
                         if named_pending || then.is_some() || catch.is_some() || pending.iter().any(|node| !matches!(node, Node::Text(parts) if is_blank(parts))) {
-                            return Err(Diagnostic::new(
+                            return Err(Diagnostic::new(crate::codes::AWAIT_STRUCTURE,
                                 pending_element.span,
                                 "zb-await takes one <zb-pending>, first, instead of pending content written straight inside it",
                             ));
@@ -2398,7 +2597,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                     Node::Settled { caught, branch } => {
                         let slot = if caught { &mut catch } else { &mut then };
                         if slot.is_some() {
-                            return Err(Diagnostic::new(
+                            return Err(Diagnostic::new(crate::codes::AWAIT_STRUCTURE,
                                 branch.span,
                                 format!("zb-await may contain only one zb-{}", if caught { "catch" } else { "then" }),
                             ));
@@ -2411,13 +2610,13 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                     Node::Text(parts) if named_pending && is_blank(&parts) => {}
                     child => {
                         if then.is_some() || catch.is_some() {
-                            return Err(Diagnostic::new(
+                            return Err(Diagnostic::new(crate::codes::AWAIT_STRUCTURE,
                                 element.span,
                                 "zb-await's pending content comes first, then zb-then and zb-catch",
                             ));
                         }
                         if named_pending {
-                            return Err(Diagnostic::new(
+                            return Err(Diagnostic::new(crate::codes::AWAIT_STRUCTURE,
                                 element.span,
                                 "with a <zb-pending>, the pending content goes inside it",
                             ));
@@ -2456,6 +2655,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
         "zb-else" => {
             if !element.attributes.is_empty() {
                 return Err(Diagnostic::new(
+                    crate::codes::DIRECTIVE_ATTRIBUTE,
                     element.span,
                     "zb-else does not accept attributes",
                 ));
@@ -2470,6 +2670,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
             for attribute in &element.attributes {
                 if !is_event_attribute(&attribute.name.to_ascii_lowercase()) {
                     return Err(Diagnostic::new(
+                        crate::codes::DIRECTIVE_ATTRIBUTE,
                         attribute.span,
                         format!(
                             "<{}> takes event listeners only (on<event>={{…}})",
@@ -2479,7 +2680,7 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                 }
             }
             if element.children.iter().any(|child| !matches!(child, Node::Text(parts) if parts.iter().all(|part| matches!(part, Part::Literal(text) if text.trim().is_empty())))) {
-                return Err(Diagnostic::new(element.span, format!("<{}> can't have content", element.name)));
+                return Err(Diagnostic::new(crate::codes::ELEMENT_CANT_HAVE_CONTENT, element.span, format!("<{}> can't have content", element.name)));
             }
             Ok(Node::Element(Element {
                 children: Vec::new(),
@@ -2495,7 +2696,60 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                 span: element.span,
             })
         }
+        // (`zb-unresolved-…` is the JSX lowering's own stand-in for a component it can't load.)
+        _ if lower.starts_with("zb-")
+            && !ZB_ELEMENTS.contains(&lower.as_str())
+            && !lower.starts_with("zb-unresolved-") =>
+        {
+            Err(unknown_zb_element(&element.name, element.span))
+        }
         _ => Ok(Node::Element(element)),
+    }
+}
+
+/// Every `zb-` element a template can name: the compiler's directives, and the elements
+/// @zubra/runtime defines (`<zb-outlet>`, `<zb-context>`). The prefix is reserved for these.
+const ZB_ELEMENTS: [&str; 15] = [
+    "zb-if",
+    "zb-else-if",
+    "zb-else",
+    "zb-each",
+    "zb-slot",
+    "zb-switch",
+    "zb-case",
+    "zb-await",
+    "zb-pending",
+    "zb-then",
+    "zb-catch",
+    "zb-window",
+    "zb-document",
+    "zb-outlet",
+    "zb-context",
+];
+
+/// `<zb-iff>`: an unknown element under the reserved prefix is a typo of a directive, or a
+/// component that has to be named with another prefix.
+fn unknown_zb_element(name: &str, span: Span) -> Diagnostic {
+    let lower = name.to_ascii_lowercase();
+    let error = Diagnostic::new(
+        crate::codes::UNKNOWN_ZB_ELEMENT,
+        span,
+        format!("unknown element <{name}>: the zb- prefix is reserved for Zubra's own elements"),
+    );
+    // Compared without the shared prefix, so `zb-card` isn't taken for `zb-case`.
+    let own = &lower["zb-".len()..];
+    let best = ZB_ELEMENTS
+        .iter()
+        .map(|candidate| (&candidate["zb-".len()..], *candidate))
+        .map(|(rest, candidate)| (crate::validate::edit_distance(own, rest), rest, candidate))
+        .filter(|(distance, rest, _)| *distance <= (rest.len().max(own.len()) / 3).max(1))
+        .map(|(distance, _, candidate)| (distance, candidate))
+        .min();
+    match best {
+        Some((_, candidate)) => error.with_help(format!("did you mean `<{candidate}>`?")),
+        None => error.with_help(format!(
+            "a component of your own needs another prefix: `<app-{own}>`"
+        )),
     }
 }
 
@@ -2503,6 +2757,7 @@ fn allow_attributes(element: &Element, allowed: &[&str]) -> Result<(), Diagnosti
     for attribute in &element.attributes {
         if attribute.name == SPREAD {
             return Err(Diagnostic::new(
+                crate::codes::DIRECTIVE_ATTRIBUTE,
                 attribute.span,
                 format!(
                     "<{}> is a directive, so it can't take a {{...}} spread",
@@ -2515,6 +2770,7 @@ fn allow_attributes(element: &Element, allowed: &[&str]) -> Result<(), Diagnosti
             .any(|name| attribute.name.eq_ignore_ascii_case(name))
         {
             return Err(Diagnostic::new(
+                crate::codes::DIRECTIVE_ATTRIBUTE,
                 attribute.span,
                 format!(
                     "unexpected attribute `{}` on <{}>",
@@ -2537,6 +2793,7 @@ fn required_expression(element: &Element, name: &str) -> Result<(Expression, Spa
     match find(element, name).map(|attribute| (&attribute.value, attribute.span)) {
         Some((AttributeValue::Expression(expression, span), _)) => Ok((expression.clone(), *span)),
         Some((AttributeValue::Text(_), span)) => Err(Diagnostic::new(
+            crate::codes::ATTRIBUTE_NEEDS_EXPRESSION,
             span,
             format!(
                 "`{name}` on <{}> is an expression: write {name}={{…}}",
@@ -2544,10 +2801,12 @@ fn required_expression(element: &Element, name: &str) -> Result<(Expression, Spa
             ),
         )),
         Some((AttributeValue::None, span)) => Err(Diagnostic::new(
+            crate::codes::ATTRIBUTE_NEEDS_EXPRESSION,
             span,
             format!("`{name}` on <{}> needs a value: {name}={{…}}", element.name),
         )),
         None => Err(Diagnostic::new(
+            crate::codes::DIRECTIVE_MISSING_ATTRIBUTE,
             element.span,
             format!("<{}> requires a `{name}={{…}}` attribute", element.name),
         )),
@@ -2557,6 +2816,7 @@ fn required_expression(element: &Element, name: &str) -> Result<(Expression, Spa
 fn required_text(element: &Element, name: &str) -> Result<String, Diagnostic> {
     optional_text(element, name)?.ok_or_else(|| {
         Diagnostic::new(
+            crate::codes::DIRECTIVE_MISSING_ATTRIBUTE,
             element.span,
             format!("<{}> requires a `{name}` attribute", element.name),
         )
@@ -2571,11 +2831,13 @@ fn optional_text(element: &Element, name: &str) -> Result<Option<String>, Diagno
         AttributeValue::Text(parts) => match parts.as_slice() {
             [Part::Literal(text)] => Ok(Some(text.clone())),
             _ => Err(Diagnostic::new(
+                crate::codes::STATIC_ATTRIBUTE,
                 attribute.span,
                 format!("attribute `{name}` must be static text"),
             )),
         },
         _ => Err(Diagnostic::new(
+            crate::codes::STATIC_ATTRIBUTE,
             attribute.span,
             format!("attribute `{name}` must be quoted text, e.g. {name}=\"item\""),
         )),
@@ -2632,13 +2894,18 @@ fn expression_text(
             let name = name.trim();
             if is_identifier(name) {
                 return Diagnostic::new(
+                    crate::codes::OBSOLETE_SYNTAX,
                     open_span,
                     "`{{ … }}` is v0.2 syntax; v0.3 uses single braces",
                 )
                 .with_help(format!("write {{{name}}} instead of {{{{ {name} }}}}"));
             }
         }
-        Diagnostic::new(span_after(inner_span, inner, error.offset), error.message)
+        Diagnostic::new(
+            crate::codes::EXPRESSION_SYNTAX,
+            span_after(inner_span, inner, error.offset),
+            error.message,
+        )
     })?;
     Ok((expression, open_span))
 }

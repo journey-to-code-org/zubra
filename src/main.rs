@@ -6,187 +6,364 @@ use std::{
     process::ExitCode,
 };
 
-/// What `--framework` takes (`--emit dts`).
-const FRAMEWORKS: &str = "react, vue, svelte, solid, solid2 or none";
+use zubra::cli::{self, Command};
+
+/// Why the command stopped. The exit code is the contract (docs/reference.md, "The CLI"):
+/// 0 success (warnings included), 1 errors in the input, 2 a usage error.
+enum Failure {
+    /// Errors in the input (a component that doesn't compile, a missing file): exit 1. The
+    /// message may be empty, when what went wrong is already written (`--format json`).
+    Input(String),
+    /// The command line itself is wrong (an unknown command or flag, a missing argument): exit 2.
+    Usage(String),
+}
+
+impl From<String> for Failure {
+    fn from(message: String) -> Self {
+        Self::Input(message)
+    }
+}
+
+type Outcome = Result<(), Failure>;
 
 fn main() -> ExitCode {
-    match run() {
+    match run(env::args().skip(1).collect()) {
         Ok(()) => ExitCode::SUCCESS,
-        Err(message) => {
+        Err(Failure::Input(message)) => {
             if !message.is_empty() {
-                eprintln!("{message}");
+                eprintln!("{}", message.trim_end());
             }
-            ExitCode::FAILURE
+            ExitCode::from(1)
+        }
+        Err(Failure::Usage(message)) => {
+            eprintln!("{}", message.trim_end());
+            ExitCode::from(2)
         }
     }
 }
 
-fn run() -> Result<(), String> {
-    let mut arguments = env::args().skip(1);
-    let command = arguments.next();
-    if command.as_deref() == Some("check") {
-        return check(arguments.collect());
-    }
-    if command.as_deref() == Some("convert") {
-        return convert(arguments.collect());
-    }
-    if command.as_deref() == Some("fmt") {
-        return fmt(arguments.collect());
-    }
-    // `zubra request`: one JSON request on stdin, the JSON response on stdout (what the
-    // WebAssembly build exposes, for anything embedding the native compiler instead).
-    if command.as_deref() == Some("request") {
-        if let Some(argument) = arguments.next() {
-            return Err(format!("unexpected argument `{argument}`"));
+fn usage(message: impl Into<String>) -> Failure {
+    Failure::Usage(message.into())
+}
+
+/// A missing file says so plainly; anything else with the reason.
+fn read(path: &str) -> Result<String, Failure> {
+    fs::read_to_string(path).map_err(|error| {
+        Failure::Input(if error.kind() == std::io::ErrorKind::NotFound {
+            format!("no such file: {path}")
+        } else {
+            format!("{path}: unable to read source: {error}")
+        })
+    })
+}
+
+fn run(arguments: Vec<String>) -> Outcome {
+    let Some(first) = arguments.first() else {
+        return Err(usage(cli::help()));
+    };
+    let help_flag = |argument: &String| argument == "-h" || argument == "--help";
+    match first.as_str() {
+        "-h" | "--help" | "help" => {
+            let topic = arguments.get(1).filter(|topic| !help_flag(topic));
+            return match cli::help_for(topic.map(String::as_str)) {
+                Some(help) => {
+                    print!("{help}");
+                    Ok(())
+                }
+                None => Err(usage(unknown_command(topic.map_or("", String::as_str)))),
+            };
         }
-        let request = std::io::read_to_string(std::io::stdin())
-            .map_err(|error| format!("unable to read standard input: {error}"))?;
-        println!("{}", zubra::handle_request(&request));
+        "-V" | "--version" => {
+            println!("zubra {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        flag if flag.starts_with('-') => {
+            return Err(usage(format!(
+                "{}\nrun `zubra --help` for the options",
+                cli::unknown("flag", flag, &["--help", "--version"])
+            )))
+        }
+        _ => {}
+    }
+    let Some(command) = cli::command(first) else {
+        return Err(usage(unknown_command(first)));
+    };
+    let rest = &arguments[1..];
+    // Help and the version come before anything else the command would do.
+    if rest.iter().any(help_flag) {
+        print!("{}", command.help());
         return Ok(());
     }
-    // `zubra serve`: one JSON request (or batch) per line on stdin, one JSON response per line on
-    // stdout, until stdin closes. For servers in other languages: one process, no start-up cost
-    // per render.
-    if command.as_deref() == Some("serve") {
-        if let Some(argument) = arguments.next() {
-            return Err(format!("unexpected argument `{argument}`"));
+    if rest.iter().any(|argument| {
+        argument == "-V" || (argument == "--version" && command.flag("--version").is_none())
+    }) {
+        println!("zubra {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    if let Some(elsewhere) = command.elsewhere(false) {
+        return Err(usage(elsewhere));
+    }
+    let parsed = Parsed::new(command, rest)?;
+    match command.name {
+        "check" => check(&parsed),
+        "compile" => compile(&parsed),
+        "convert" => convert(&parsed),
+        "fmt" => fmt(&parsed),
+        "request" => {
+            parsed.no_arguments()?;
+            // One JSON request on stdin, the JSON response on stdout (what the WebAssembly build
+            // exposes, for anything embedding the native compiler instead).
+            let request = std::io::read_to_string(std::io::stdin())
+                .map_err(|error| format!("unable to read standard input: {error}"))?;
+            println!("{}", zubra::handle_request(&request));
+            Ok(())
         }
-        use std::io::{BufRead, Write};
-        let stdout = std::io::stdout();
-        for line in std::io::stdin().lock().lines() {
-            let line = line.map_err(|error| format!("unable to read standard input: {error}"))?;
-            if line.trim().is_empty() {
+        "serve" => {
+            parsed.no_arguments()?;
+            serve()
+        }
+        _ => unreachable!("every command the table has is handled here"),
+    }
+}
+
+fn unknown_command(name: &str) -> String {
+    let names: Vec<&str> = cli::COMMANDS.iter().map(|command| command.name).collect();
+    format!(
+        "{}\nrun `zubra --help` for the commands",
+        cli::unknown("command", name, &names)
+    )
+}
+
+/// A command's arguments, checked against its row in `cli::COMMANDS`: known flags only, each
+/// valued flag with a value it takes (an alias given as its canonical name).
+struct Parsed {
+    command: &'static Command,
+    flags: Vec<(&'static str, Option<String>)>,
+    positionals: Vec<String>,
+}
+
+impl Parsed {
+    fn new(command: &'static Command, arguments: &[String]) -> Result<Self, Failure> {
+        let mut parsed = Self {
+            command,
+            flags: Vec::new(),
+            positionals: Vec::new(),
+        };
+        let mut arguments = arguments.iter();
+        while let Some(argument) = arguments.next() {
+            if !argument.starts_with('-') || argument == "-" {
+                parsed.positionals.push(argument.clone());
                 continue;
             }
-            let mut out = stdout.lock();
-            writeln!(out, "{}", zubra::handle_request(&line))
-                .and_then(|()| out.flush())
-                .map_err(|error| format!("unable to write the response: {error}"))?;
-        }
-        return Ok(());
-    }
-    if command.as_deref() != Some("compile") {
-        return Err(
-            "usage: zubra check <component.zb>... [--format human|json] [--server] [--client]\n       zubra fmt <file.zb | folder>... [--check] [--stdin] [--indent <n> | --tabs] [--width <n>]\n       zubra convert <Component.jsx | my-element.js> [--prefix <word>] [--component <Name>] [--as jsx|zubra] [--out <file> | --stdout]\n       zubra request < request.json\n       zubra serve   (JSON lines: a request per line in, a response per line out)\n       zubra compile <component.zb> [--emit html|js|css|dts|manifest|html-data|interface|server|tsx] [--props <props.json>] [--slots <slots.json> [--slots-html]] [--partial] [--runtime <module>] [--keep-imports] [--no-imports] [--devtools] [--binder-entries] [--css-import <specifier> --css-import-inline <specifier>] [--framework react|vue] [--module-path <path>] [--output <file>]".into(),
-        );
-    }
-    let source_path = arguments
-        .next()
-        .ok_or_else(|| "missing component source path".to_owned())?;
-    let mut props_path = None;
-    let mut slots_path = None;
-    let mut slots_html = false;
-    let mut partial = false;
-    let mut output_path = None;
-    let mut emit = "html".to_owned();
-    let mut runtime = "@zubra/runtime".to_owned();
-    let mut module_path = None;
-    let mut keep_imports = false;
-    let mut devtools = false;
-    let mut binder_entries = false;
-    let mut client_only = false;
-    let mut no_imports = false;
-    let mut css_import = None;
-    let mut css_import_inline = None;
-    let mut framework = zubra::Framework::None;
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--emit" => emit = arguments.next().unwrap_or_default(),
-            "--runtime" => runtime = arguments.next().unwrap_or_default(),
-            "--module-path" => module_path = arguments.next(),
-            // For bundler plugins: leave `./x.zb` imports for the bundler to resolve.
-            "--keep-imports" => keep_imports = true,
-            // For development builds: what the browser DevTools panel reads (--emit js).
-            "--devtools" => devtools = true,
-            "--binder-entries" => binder_entries = true,
-            // For apps that never render on a server: compiled output without hydration.
-            "--client-only" => client_only = true,
-            // For --emit css: this component's stylesheet only (a bundler loads the others).
-            "--no-imports" => no_imports = true,
-            // For bundler plugins: import the <style> through the bundler instead of inlining it.
-            "--css-import" => css_import = arguments.next(),
-            "--css-import-inline" => css_import_inline = arguments.next(),
-            // For --emit dts: type the default export as that framework's wrapper.
-            "--framework" => {
-                framework = match arguments.next().as_deref() {
-                    Some("react") => zubra::Framework::React,
-                    Some("vue") => zubra::Framework::Vue,
-                    Some("svelte") => zubra::Framework::Svelte,
-                    Some("solid") => zubra::Framework::Solid,
-                    Some("solid2") => zubra::Framework::Solid2,
-                    Some("none") => zubra::Framework::None,
-                    other => {
-                        return Err(format!(
-                            "unknown --framework `{}`; expected {FRAMEWORKS}",
-                            other.unwrap_or_default()
-                        ))
-                    }
+            let (name, inline) = match argument.split_once('=') {
+                Some((name, value)) if name.starts_with("--") => (name, Some(value.to_owned())),
+                _ => (argument.as_str(), None),
+            };
+            let Some(flag) = command.flag(name) else {
+                let names: Vec<&str> = command.flags.iter().map(|flag| flag.name).collect();
+                return Err(usage(format!(
+                    "{}\nrun `zubra {} --help` for its options",
+                    cli::unknown("flag", name, &names),
+                    command.name
+                )));
+            };
+            let value = match (flag.value, inline) {
+                (None, None) => None,
+                (None, Some(_)) => return Err(usage(format!("`{name}` takes no value"))),
+                (Some(_), Some(value)) => Some(value),
+                (Some(_), None) => match arguments.next() {
+                    Some(value) => Some(value.clone()),
+                    None => return Err(usage(format!("`{name}` needs a value: {}", flag.usage()))),
+                },
+            };
+            if let Some(value) = &value {
+                if !flag.accepts(value) {
+                    return Err(usage(format!(
+                        "{}; expected {}",
+                        cli::unknown(&format!("{name} value"), value, flag.values),
+                        flag.values.join(", ")
+                    )));
                 }
             }
-            "--props" => props_path = arguments.next(),
-            "--slots" => slots_path = arguments.next(),
-            // The --slots content is HTML a server already rendered, kept as written.
-            "--slots-html" => slots_html = true,
-            // Leave what only the browser can compute for the element, instead of an error.
-            "--partial" => partial = true,
-            "--output" => output_path = arguments.next(),
-            _ => return Err(format!("unexpected argument `{argument}`")),
+            parsed.flags.push((
+                flag.name,
+                value.map(|value| cli::canonical(flag.name, &value).to_owned()),
+            ));
+        }
+        Ok(parsed)
+    }
+
+    fn has(&self, name: &str) -> bool {
+        self.flags.iter().any(|(flag, _)| *flag == name)
+    }
+
+    /// The flag's value (the last one given).
+    fn value(&self, name: &str) -> Option<&str> {
+        self.flags
+            .iter()
+            .rev()
+            .find(|(flag, _)| *flag == name)
+            .and_then(|(_, value)| value.as_deref())
+    }
+
+    fn no_arguments(&self) -> Outcome {
+        match self.positionals.first() {
+            Some(argument) => Err(usage(format!(
+                "`zubra {}` takes no arguments, and was given `{argument}`",
+                self.command.name
+            ))),
+            None => Ok(()),
         }
     }
-    let source = fs::read_to_string(&source_path)
-        .map_err(|error| format!("{source_path}: unable to read source: {error}"))?;
+
+    /// The usage line, for a usage error.
+    fn usage(&self, problem: &str) -> Failure {
+        usage(format!("{problem}\nusage: {}", self.command.synopsis()))
+    }
+}
+
+/// `zubra serve`: one JSON request (or batch) per line on stdin, one JSON response per line on
+/// stdout, until stdin closes. For servers in other languages: one process, no start-up cost
+/// per render.
+fn serve() -> Outcome {
+    use std::io::BufRead;
+    let stdout = std::io::stdout();
+    for line in std::io::stdin().lock().lines() {
+        let line = line.map_err(|error| format!("unable to read standard input: {error}"))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut out = stdout.lock();
+        writeln!(out, "{}", zubra::handle_request(&line))
+            .and_then(|()| out.flush())
+            .map_err(|error| format!("unable to write the response: {error}"))?;
+    }
+    Ok(())
+}
+
+/// `zubra compile`: server HTML, or what `--emit` names.
+fn compile(parsed: &Parsed) -> Outcome {
+    let source_path = match parsed.positionals.as_slice() {
+        [path] => path.clone(),
+        [] => return Err(parsed.usage("missing the component to compile")),
+        [_, extra, ..] => {
+            return Err(parsed.usage(&format!(
+                "`zubra compile` takes one component; `{extra}` is a second"
+            )))
+        }
+    };
+    let emit = parsed.value("--emit").unwrap_or("html").to_owned();
+    let runtime = parsed.value("--runtime").unwrap_or("@zubra/runtime");
+    let props_path = parsed.value("--props");
+    let slots_path = parsed.value("--slots");
+    let slots_html = parsed.has("--slots-html");
+    let partial = parsed.has("--partial");
+    let output_path = parsed.value("--output");
+    let css_import = parsed.value("--css-import");
+    let css_import_inline = parsed.value("--css-import-inline");
+    let framework = zubra::Framework::named(parsed.value("--framework").unwrap_or("vanilla"))
+        .expect("the parser takes only --framework values the table has");
+    if emit != "html" && (props_path.is_some() || slots_path.is_some() || slots_html || partial) {
+        return Err(parsed.usage(&format!(
+            "--props, --slots, --slots-html and --partial apply to --emit html, not --emit {emit}"
+        )));
+    }
+    if parsed.has("--devtools") && emit != "js" {
+        return Err(parsed.usage(&format!(
+            "--devtools applies to --emit js, not --emit {emit}"
+        )));
+    }
+    if css_import.is_some() != css_import_inline.is_some() {
+        return Err(parsed.usage("--css-import and --css-import-inline go together"));
+    }
+    let source = read(&source_path)?;
     for warning in zubra::warnings_with(&source, &source_path, &zubra::filesystem) {
         eprint!("{}", warning.render_warning(&source, &source_path));
     }
-    if emit != "html" {
-        if props_path.is_some() || slots_path.is_some() || slots_html || partial {
-            return Err(format!(
-                "--props, --slots, --slots-html and --partial apply to --emit html, not --emit {emit}"
-            ));
+    let render = |diagnostic: zubra::Diagnostic| diagnostic.render_in(&source, &source_path);
+    let output = if emit == "html" {
+        // Props are optional: defaults come from the component's <script> and host tag.
+        let props = match props_path {
+            Some(props_path) => fs::read_to_string(props_path)
+                .map_err(|error| format!("{props_path}: unable to read props: {error}"))?,
+            None => "{}".to_owned(),
+        };
+        let slots = match slots_path {
+            Some(slots_path) => fs::read_to_string(slots_path)
+                .map_err(|error| format!("{slots_path}: unable to read slots: {error}"))?,
+            None => "{}".to_owned(),
+        };
+        let slot_source = if slots_html {
+            zubra::SlotSource::Html
+        } else {
+            zubra::SlotSource::Template
+        };
+        let html = zubra::compile_html_with_options(
+            &source,
+            &source_path,
+            &props,
+            &slots,
+            zubra::HtmlOptions {
+                slot_source,
+                partial,
+                pending: Vec::new(),
+            },
+            &zubra::filesystem,
+        )
+        .map_err(render)?;
+        // Printed with a newline at the end, as it always was.
+        if output_path.is_none() {
+            println!("{html}");
+            return Ok(());
         }
+        html
+    } else {
         let name = Path::new(&source_path)
             .file_name()
             .map_or(source_path.clone(), |name| {
                 name.to_string_lossy().into_owned()
             });
         // The JavaScript module the manifest describes: header.zb → header.js by default.
-        let module_path = module_path.unwrap_or_else(|| {
-            let stem = zubra::component_extension(&name).map_or(name.as_str(), |extension| {
-                &name[..name.len() - extension.len()]
-            });
-            format!("{stem}.js")
-        });
-        if devtools && emit != "js" {
-            return Err(format!(
-                "--devtools applies to --emit js, not --emit {emit}"
-            ));
-        }
-        let output = match emit.as_str() {
+        let module_path = parsed.value("--module-path").map_or_else(
+            || {
+                let stem = zubra::component_extension(&name).map_or(name.as_str(), |extension| {
+                    &name[..name.len() - extension.len()]
+                });
+                format!("{stem}.js")
+            },
+            str::to_owned,
+        );
+        let keep_imports = parsed.has("--keep-imports");
+        match emit.as_str() {
             "js" => {
-                let style_imports = match (&css_import, &css_import_inline) {
-                    (Some(stylesheet), Some(inline)) => Some(zubra::StyleImports { stylesheet, inline }),
-                    (None, None) => None,
-                    _ => return Err("--css-import and --css-import-inline go together".into()),
-                };
+                let style_imports = css_import
+                    .zip(css_import_inline)
+                    .map(|(stylesheet, inline)| zubra::StyleImports { stylesheet, inline });
                 zubra::compile_js_options(
                     &source,
                     &source_path,
                     &zubra::JsOptions {
-                        runtime: &runtime,
+                        runtime,
                         // A bundler resolves `.zb` imports itself.
-                        component_extension: (!keep_imports && style_imports.is_none()).then_some(".js"),
+                        component_extension: (!keep_imports && style_imports.is_none())
+                            .then_some(".js"),
                         style_imports,
                         styles_href: None,
-                        devtools,
-                        binder_entries,
-                        client_only,
+                        devtools: parsed.has("--devtools"),
+                        binder_entries: parsed.has("--binder-entries"),
+                        client_only: parsed.has("--client-only"),
                     },
                     &zubra::filesystem,
                 )
             }
-            "css" if no_imports => zubra::compile_css(&source),
+            "css" if parsed.has("--no-imports") => zubra::compile_css(&source),
             "css" => zubra::compile_css_file(&source_path),
-            "element" => zubra::compile_element_file(&source_path),
+            "element" => zubra::compile_element_with(
+                &source,
+                &source_path,
+                (!keep_imports).then_some(".js"),
+                &zubra::filesystem,
+            ),
             "dts" => zubra::compile_declarations_for(&source, &name, framework),
             "manifest" => zubra::compile_manifest(&source, &module_path),
             "html-data" => zubra::compile_html_data(&source),
@@ -195,57 +372,17 @@ fn run() -> Result<(), String> {
             // The TypeScript file `zubra check --types` has tsc check (its map is in `zubra request`).
             "tsx" => zubra::virtual_typescript_with(&source, &source_path, &zubra::filesystem)
                 .map(|(code, _)| code),
-            _ => {
-                return Err(format!(
-                    "unknown --emit `{emit}`; expected html, js, element, css, dts, manifest, html-data, interface, server or tsx"
-                ))
-            }
+            _ => unreachable!("the parser takes only --emit values the table has"),
         }
-        .map_err(|diagnostic| diagnostic.render_in(&source, &source_path))?;
-        return match output_path {
-            Some(output_path) => write_atomically(&output_path, output.as_bytes()),
-            None => {
-                print!("{output}");
-                Ok(())
-            }
-        };
+        .map_err(render)?
+    };
+    match output_path {
+        Some(output_path) => Ok(write_atomically(output_path, output.as_bytes())?),
+        None => {
+            print!("{output}");
+            Ok(())
+        }
     }
-
-    // Props are optional: defaults come from the component's <script> and host tag.
-    let props = match &props_path {
-        Some(props_path) => fs::read_to_string(props_path)
-            .map_err(|error| format!("{props_path}: unable to read props: {error}"))?,
-        None => "{}".to_owned(),
-    };
-    let slots = match &slots_path {
-        Some(slots_path) => fs::read_to_string(slots_path)
-            .map_err(|error| format!("{slots_path}: unable to read slots: {error}"))?,
-        None => "{}".to_owned(),
-    };
-    let slot_source = if slots_html {
-        zubra::SlotSource::Html
-    } else {
-        zubra::SlotSource::Template
-    };
-    let html = zubra::compile_html_with_options(
-        &source,
-        &source_path,
-        &props,
-        &slots,
-        zubra::HtmlOptions {
-            slot_source,
-            partial,
-            pending: Vec::new(),
-        },
-        &zubra::filesystem,
-    )
-    .map_err(|diagnostic| diagnostic.render_in(&source, &source_path))?;
-    if let Some(output_path) = output_path {
-        write_atomically(&output_path, html.as_bytes())?;
-    } else {
-        println!("{html}");
-    }
-    Ok(())
 }
 
 fn write_atomically(output_path: &str, contents: &[u8]) -> Result<(), String> {
@@ -294,99 +431,6 @@ fn write_atomically(output_path: &str, contents: &[u8]) -> Result<(), String> {
         let _ = fs::remove_file(&temporary);
     }
     result
-}
-
-/// `zubra check`: every error and warning, for CI and editors; exits non-zero on errors.
-const FMT_USAGE: &str = "usage: zubra fmt <file.zb | folder>... [--check] [--indent <n> | --tabs] [--width <n>]\n       zubra fmt --stdin [<path, for messages>] (source in, formatted source out)";
-
-/// `zubra fmt`: format `.zb` files in place (folders: every `.zb` in them, skipping
-/// `node_modules`, `dist`, `target` and dot-folders). `--check` changes nothing and fails if a
-/// file would change, for CI. `--stdin` formats standard input to standard output, for editors.
-fn fmt(arguments: Vec<String>) -> Result<(), String> {
-    let mut paths = Vec::new();
-    let mut check = false;
-    let mut stdin = false;
-    let mut options = zubra::FormatOptions::default();
-    let number = |value: Option<String>, flag: &str| -> Result<usize, String> {
-        value
-            .as_deref()
-            .and_then(|value| value.parse().ok())
-            .filter(|&value: &usize| value > 0)
-            .ok_or_else(|| format!("{flag} takes a positive number"))
-    };
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--check" => check = true,
-            "--stdin" => stdin = true,
-            "--tabs" => options.use_tabs = true,
-            "--indent" => options.indent_width = number(arguments.next(), "--indent")?,
-            "--width" => options.print_width = number(arguments.next(), "--width")?,
-            _ if argument.starts_with("--") => {
-                return Err(format!("unexpected argument `{argument}`\n{FMT_USAGE}"))
-            }
-            _ => paths.push(argument),
-        }
-    }
-    if stdin {
-        if check || paths.len() > 1 {
-            return Err(FMT_USAGE.into());
-        }
-        let name = paths.first().map_or("<stdin>", String::as_str);
-        let source = std::io::read_to_string(std::io::stdin())
-            .map_err(|error| format!("unable to read standard input: {error}"))?;
-        let formatted =
-            zubra::format(&source, &options).map_err(|error| error.render_in(&source, name))?;
-        print!("{formatted}");
-        return Ok(());
-    }
-    if paths.is_empty() {
-        return Err(FMT_USAGE.into());
-    }
-    let mut files = Vec::new();
-    for path in &paths {
-        collect_zb(Path::new(path), &mut files).map_err(|error| format!("{path}: {error}"))?;
-    }
-    let (mut changed, mut failed) = (Vec::new(), 0);
-    for file in &files {
-        let name = file.display().to_string();
-        let source = fs::read_to_string(file)
-            .map_err(|error| format!("{name}: unable to read source: {error}"))?;
-        match zubra::format(&source, &options) {
-            Ok(formatted) if formatted == source => {}
-            Ok(formatted) => {
-                if !check {
-                    fs::write(file, &formatted)
-                        .map_err(|error| format!("{name}: unable to write: {error}"))?;
-                }
-                changed.push(name);
-            }
-            Err(error) => {
-                failed += 1;
-                eprint!("{}", error.render_in(&source, &name));
-            }
-        }
-    }
-    for name in &changed {
-        println!(
-            "{}{name}",
-            if check { "would format " } else { "formatted " }
-        );
-    }
-    if failed > 0 {
-        return Err(format!(
-            "{failed} file{} couldn't be formatted",
-            if failed == 1 { "" } else { "s" }
-        ));
-    }
-    if check && !changed.is_empty() {
-        return Err(format!(
-            "{} file{} not formatted; run zubra fmt",
-            changed.len(),
-            if changed.len() == 1 { " is" } else { "s are" }
-        ));
-    }
-    Ok(())
 }
 
 /// `path` if it's a `.zb` file (or named outright), else every `.zb` under it.
@@ -439,43 +483,128 @@ fn collect_components(path: &Path, files: &mut Vec<String>) -> std::io::Result<(
     Ok(())
 }
 
-fn check(arguments: Vec<String>) -> Result<(), String> {
+/// `zubra fmt`: format `.zb` files in place (folders: every `.zb` in them, skipping
+/// `node_modules`, `dist`, `target` and dot-folders). `--check` changes nothing and fails if a
+/// file would change, for CI. `--stdin` formats standard input to standard output, for editors.
+fn fmt(parsed: &Parsed) -> Outcome {
+    let paths = &parsed.positionals;
+    let check = parsed.has("--check");
+    let mut options = zubra::FormatOptions::default();
+    let number = |flag: &str| -> Result<Option<usize>, Failure> {
+        parsed
+            .value(flag)
+            .map(|value| {
+                value
+                    .parse()
+                    .ok()
+                    .filter(|&value: &usize| value > 0)
+                    .ok_or_else(|| usage(format!("{flag} takes a positive number")))
+            })
+            .transpose()
+    };
+    options.use_tabs = parsed.has("--tabs");
+    if let Some(indent) = number("--indent")? {
+        options.indent_width = indent;
+    }
+    if let Some(width) = number("--width")? {
+        options.print_width = width;
+    }
+    if parsed.has("--stdin") {
+        if check || paths.len() > 1 {
+            return Err(
+                parsed.usage("--stdin takes at most one path (for messages), and not --check")
+            );
+        }
+        let name = paths.first().map_or("<stdin>", String::as_str);
+        let source = std::io::read_to_string(std::io::stdin())
+            .map_err(|error| format!("unable to read standard input: {error}"))?;
+        let formatted =
+            zubra::format(&source, &options).map_err(|error| error.render_in(&source, name))?;
+        print!("{formatted}");
+        return Ok(());
+    }
+    if paths.is_empty() {
+        return Err(parsed.usage("missing the files or folders to format"));
+    }
     let mut files = Vec::new();
-    let mut json = false;
-    let mut stdin = false;
-    let mut server = false;
-    let mut client = false;
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--format" => match arguments.next().as_deref() {
-                Some("json") => json = true,
-                Some("human") => json = false,
-                other => {
-                    return Err(format!(
-                        "unknown --format `{}`; expected human or json",
-                        other.unwrap_or_default()
-                    ))
+    for path in paths {
+        collect_zb(Path::new(path), &mut files).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                format!("no such file: {path}")
+            } else {
+                format!("{path}: {error}")
+            }
+        })?;
+    }
+    let (mut changed, mut failed) = (Vec::new(), 0);
+    for file in &files {
+        let name = file.display().to_string();
+        let source = read(&name)?;
+        match zubra::format(&source, &options) {
+            Ok(formatted) if formatted == source => {}
+            Ok(formatted) => {
+                if !check {
+                    fs::write(file, &formatted)
+                        .map_err(|error| format!("{name}: unable to write: {error}"))?;
                 }
-            },
-            // An editor's unsaved text, checked as if it were at the one path given.
-            "--stdin" => stdin = true,
-            // What a server without JavaScript leaves out (rendered with the defaults).
-            "--server" => server = true,
-            // Whether each component needs its module in the browser, and why.
-            "--client" => client = true,
-            // Type checking runs the project's own TypeScript, from Node.
-            "--types" => {
-                return Err("`--types` runs the project's TypeScript, from npm: `npx zubra check --types <file | folder>...` (@zubra/compiler)".into())
+                changed.push(name);
             }
-            _ if argument.starts_with("--") => {
-                return Err(format!("unexpected argument `{argument}`"))
+            Err(error) => {
+                failed += 1;
+                eprint!("{}", error.render_in(&source, &name));
             }
-            _ => files.push(argument),
         }
     }
-    if files.is_empty() || (stdin && files.len() != 1) {
-        return Err("usage: zubra check <component.zb | folder>... [--format human|json] [--server] [--client] [--stdin (one path; source from standard input)]".into());
+    for name in &changed {
+        println!(
+            "{}{name}",
+            if check { "would format " } else { "formatted " }
+        );
+    }
+    if failed > 0 {
+        return Err(Failure::Input(format!(
+            "{failed} file{} couldn't be formatted",
+            if failed == 1 { "" } else { "s" }
+        )));
+    }
+    if check && !changed.is_empty() {
+        return Err(Failure::Input(format!(
+            "{} file{} not formatted; run zubra fmt",
+            changed.len(),
+            if changed.len() == 1 { " is" } else { "s are" }
+        )));
+    }
+    Ok(())
+}
+
+/// Whether a component is TypeScript (`<script lang="ts">`, or `.zb.tsx`), whose types only
+/// `npx zubra check --types` checks.
+fn is_typescript(path: &str, source: &str) -> bool {
+    path.ends_with(".zb.tsx")
+        || source.match_indices("<script").any(|(at, _)| {
+            let tag = &source[at..source[at..].find('>').map_or(source.len(), |end| at + end)];
+            tag.contains("lang=\"ts\"") || tag.contains("lang='ts'") || tag.contains("lang=ts")
+        })
+}
+
+/// `zubra check`: every error and warning, for CI and editors. Exit 1 on an error, and on a
+/// warning with `--deny-warnings`.
+fn check(parsed: &Parsed) -> Outcome {
+    let mut files = parsed.positionals.clone();
+    let json = parsed.value("--format") == Some("json");
+    let stdin = parsed.has("--stdin");
+    let server = parsed.has("--server");
+    let client = parsed.has("--client");
+    let deny_warnings = parsed.has("--deny-warnings");
+    // Type checking runs the project's own TypeScript, from Node.
+    if parsed.has("--types") || parsed.has("--keep") {
+        return Err(usage("`zubra check --types` is in the npm package, since it runs the project's TypeScript: npx zubra check --types <file | folder>... (@zubra/compiler)"));
+    }
+    if files.is_empty() {
+        return Err(parsed.usage("missing the files or folders to check"));
+    }
+    if stdin && files.len() != 1 {
+        return Err(parsed.usage("--stdin takes one path: where the text on standard input is"));
     }
     // A folder is every component under it. (With --stdin the one path names the text, and is
     // never read.)
@@ -487,9 +616,9 @@ fn check(arguments: Vec<String>) -> Result<(), String> {
                 collect_components(Path::new(&path), &mut found)
                     .map_err(|error| format!("{path}: unable to read the folder: {error}"))?;
                 if found.len() == before {
-                    return Err(format!(
+                    return Err(Failure::Input(format!(
                         "{path}: no components (.zb, .zb.jsx, .zb.tsx) in this folder"
-                    ));
+                    )));
                 }
             } else {
                 found.push(path);
@@ -499,16 +628,19 @@ fn check(arguments: Vec<String>) -> Result<(), String> {
     }
     let mut report = Vec::new();
     let mut errors = 0;
+    let mut warnings = 0;
+    let mut typescript = false;
     let mut human = String::new();
     for path in &files {
         let source = if stdin {
             std::io::read_to_string(std::io::stdin())
                 .map_err(|error| format!("unable to read standard input: {error}"))?
         } else {
-            fs::read_to_string(path)
-                .map_err(|error| format!("{path}: unable to read source: {error}"))?
+            read(path)?
         };
+        typescript |= is_typescript(path, &source);
         for warning in zubra::warnings_with(&source, path, &zubra::filesystem) {
+            warnings += 1;
             human.push_str(&warning.render_warning(&source, path));
             report.push(entry(path, &source, &warning, "warning"));
         }
@@ -531,6 +663,7 @@ fn check(arguments: Vec<String>) -> Result<(), String> {
                             errors += 1;
                             human.push_str(&gap.render_in(&source, path));
                         } else {
+                            warnings += 1;
                             human.push_str(&gap.render_warning(&source, path));
                         }
                         report.push(entry(
@@ -577,17 +710,30 @@ fn check(arguments: Vec<String>) -> Result<(), String> {
                 files.len(),
                 if files.len() == 1 { "" } else { "s" }
             );
+            if typescript {
+                eprintln!("TypeScript types weren't checked: run npx zubra check --types (@zubra/compiler)");
+            }
         }
     }
     if errors > 0 {
-        return Err(if json {
+        return Err(Failure::Input(if json {
             String::new()
         } else {
             format!(
                 "{errors} file{} with errors",
                 if errors == 1 { "" } else { "s" }
             )
-        });
+        }));
+    }
+    if deny_warnings && warnings > 0 {
+        return Err(Failure::Input(if json {
+            String::new()
+        } else {
+            format!(
+                "{warnings} warning{} (--deny-warnings)",
+                if warnings == 1 { "" } else { "s" }
+            )
+        }));
     }
     Ok(())
 }
@@ -604,6 +750,7 @@ fn entry(
         .map_or(path, |(file, _)| file.as_str());
     serde_json::json!({
         "file": file,
+        "code": diagnostic.code.as_str(),
         "line": diagnostic.span.line,
         "column": diagnostic.span.column,
         "severity": severity,
@@ -613,43 +760,24 @@ fn entry(
 }
 
 /// `zubra convert`: a React function component, written out as a zubra JSX component next to it
-/// (`--out` elsewhere, `--stdout` to print it). What wasn't converted is reported, and the exit
-/// status is 1 then, so a script can tell.
-fn convert(arguments: Vec<String>) -> Result<(), String> {
-    let usage = "usage: zubra convert <Component.jsx | my-element.js> [--prefix <word>] [--component <Name>] [--as jsx|zubra] [--out <file> | --stdout]";
-    let mut path = None;
-    let mut prefix = None;
-    let mut out = None;
-    let mut stdout = false;
-    let mut as_zb = false;
-    let mut component = None;
-    let mut iterator = arguments.into_iter();
-    while let Some(argument) = iterator.next() {
-        match argument.as_str() {
-            "--prefix" => prefix = Some(iterator.next().ok_or(usage)?),
-            "--component" => component = Some(iterator.next().ok_or(usage)?),
-            "--as" => match iterator.next().as_deref() {
-                Some("zubra") => as_zb = true,
-                Some("jsx") => as_zb = false,
-                other => {
-                    return Err(format!(
-                        "unknown --as `{}`; expected jsx or zubra",
-                        other.unwrap_or_default()
-                    ))
-                }
-            },
-            "--out" => out = Some(iterator.next().ok_or(usage)?),
-            "--stdout" => stdout = true,
-            other if other.starts_with("--") => {
-                return Err(format!("unexpected argument `{other}`"))
-            }
-            _ if path.is_some() => return Err(usage.into()),
-            _ => path = Some(argument),
+/// (`--out` elsewhere, `--stdout` to print it), or a class in `--emit element`'s shape back to
+/// `.zb`. What wasn't converted is reported, and the exit status is 1 then, so a script can tell.
+fn convert(parsed: &Parsed) -> Outcome {
+    let path = match parsed.positionals.as_slice() {
+        [path] => path.clone(),
+        [] => return Err(parsed.usage("missing the file to convert")),
+        [_, extra, ..] => {
+            return Err(parsed.usage(&format!(
+                "`zubra convert` takes one file; `{extra}` is a second"
+            )))
         }
-    }
-    let path = path.ok_or(usage)?;
-    let source = fs::read_to_string(&path)
-        .map_err(|error| format!("{path}: unable to read source: {error}"))?;
+    };
+    let prefix = parsed.value("--prefix");
+    let component = parsed.value("--component");
+    let as_zb = parsed.value("--as") == Some("zubra");
+    let out = parsed.value("--out").map(str::to_owned);
+    let stdout = parsed.has("--stdout");
+    let source = read(&path)?;
     // A custom element class (`--emit element` output, or one written the same way): back to `.zb`.
     let element = !path.ends_with(".jsx")
         && !path.ends_with(".tsx")
@@ -658,7 +786,7 @@ fn convert(arguments: Vec<String>) -> Result<(), String> {
         zubra::convert_element(&source, &path)
             .map_err(|diagnostic| diagnostic.render_in(&source, &path))?
     } else {
-        zubra::convert_component(&source, &path, prefix.as_deref(), component.as_deref())
+        zubra::convert_component(&source, &path, prefix, component)
             .map_err(|diagnostic| diagnostic.render_in(&source, &path))?
     };
     let mut lowering_error = None;
@@ -718,10 +846,10 @@ fn convert(arguments: Vec<String>) -> Result<(), String> {
     if left == 0 {
         return Ok(());
     }
-    Err(format!(
+    Err(Failure::Input(format!(
         "{left} thing{} to finish by hand (above)",
         if left == 1 { "" } else { "s" }
-    ))
+    )))
 }
 
 /// Rewrite `from './x'` / `import './x'` specifiers written relative to `from` to be relative

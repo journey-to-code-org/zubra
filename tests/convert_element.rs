@@ -221,6 +221,43 @@ customElements.define("x-a", XA);
 }
 
 #[test]
+fn an_element_tag_cannot_escape_the_output_directory() {
+    for tag in [
+        "x-../../outside",
+        "x-..",
+        "x-/outside",
+        "X-upper",
+        "x-\\outside",
+    ] {
+        let source = format!(
+            "export class XA extends HTMLElement {{ #setup() {{ const content = clone(`<p></p>`); return content; }} }}\ncustomElements.define({tag:?}, XA);"
+        );
+        let error = zubra::convert_element(&source, "input.js").unwrap_err();
+        assert!(error.message.contains(tag), "{tag}: {}", error.message);
+    }
+}
+
+#[test]
+fn the_command_line_refuses_an_unsafe_output_tag() {
+    let dir = temp_dir("unsafe-tag");
+    let source = dir.join("input.js");
+    fs::write(
+        &source,
+        "export class XA extends HTMLElement { #setup() { const content = clone(`<p></p>`); return content; } }\ncustomElements.define(\"x-../../outside\", XA);",
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_zubra"))
+        .arg("convert")
+        .arg(&source)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("tag"));
+    assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn the_command_line_converts_an_element() {
     let dir = temp_dir("cli");
     let component = dir.join("x-greeting.zb");

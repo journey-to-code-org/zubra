@@ -1395,17 +1395,43 @@ impl Evaluator<'_, '_> {
         let arg = |index: usize| arguments.get(index).cloned().unwrap_or(Val::Undefined);
         match object {
             Val::Json(Value::Array(items)) => match name {
-                "includes" => Ok(bool(
-                    items.iter().any(|item| same_value_zero(item, &arg(0))),
-                )),
-                "indexOf" => Ok(int(items
-                    .iter()
-                    .position(|item| strict_equal_json(item, &arg(0)))
-                    .map_or(-1, |at| at as i64))),
-                "lastIndexOf" => Ok(int(items
-                    .iter()
-                    .rposition(|item| strict_equal_json(item, &arg(0)))
-                    .map_or(-1, |at| at as i64))),
+                "includes" | "indexOf" => {
+                    let (start, _) = range(items.len(), &arg(1), &Val::Undefined)?;
+                    let needle = arg(0);
+                    let at = items[start..].iter().position(|item| {
+                        if name == "includes" {
+                            same_value_zero(item, &needle)
+                        } else {
+                            strict_equal_json(item, &needle)
+                        }
+                    });
+                    if name == "includes" {
+                        Ok(bool(at.is_some()))
+                    } else {
+                        Ok(int(at.map_or(-1, |at| (start + at) as i64)))
+                    }
+                }
+                "lastIndexOf" => {
+                    let start = if arguments.len() < 2 {
+                        items.len() as i64 - 1
+                    } else {
+                        let at = to_integer(&arg(1))?;
+                        if at < 0 {
+                            items.len() as i64 + at
+                        } else {
+                            at.min(items.len() as i64 - 1)
+                        }
+                    };
+                    let needle = arg(0);
+                    Ok(int(if start < 0 {
+                        -1
+                    } else {
+                        items[..=start as usize]
+                            .iter()
+                            .rposition(|item| strict_equal_json(item, &needle))
+                            .map_or(-1, |at| at as i64)
+                    }))
+                }
                 "join" => {
                     let separator = match arg(0) {
                         Val::Undefined => ",".to_owned(),
@@ -1631,12 +1657,30 @@ impl Evaluator<'_, '_> {
                     return self.string_regexp(units(), name, &regexp, arg(1));
                 }
                 match name {
-                    "includes" => Ok(bool(text.contains(js_string(&arg(0))?.as_str()))),
-                    "startsWith" => Ok(bool(text.starts_with(js_string(&arg(0))?.as_str()))),
-                    "endsWith" => Ok(bool(text.ends_with(js_string(&arg(0))?.as_str()))),
-                    "indexOf" => {
+                    "includes" | "startsWith" | "endsWith" if arguments.len() < 2 => {
+                        let needle = js_string(&arg(0))?;
+                        Ok(bool(match name {
+                            "includes" => text.contains(&needle),
+                            "startsWith" => text.starts_with(&needle),
+                            _ => text.ends_with(&needle),
+                        }))
+                    }
+                    "includes" | "startsWith" | "endsWith" | "indexOf" => {
                         let needle: Vec<u16> = js_string(&arg(0))?.encode_utf16().collect();
-                        Ok(int(find_units(units(), &needle).map_or(-1, |at| at as i64)))
+                        let units = units();
+                        let position = match arg(1) {
+                            Val::Undefined if name == "endsWith" => units.len(),
+                            value => to_integer(&value)?.clamp(0, units.len() as i64) as usize,
+                        };
+                        match name {
+                            "startsWith" => Ok(bool(units[position..].starts_with(&needle))),
+                            "endsWith" => Ok(bool(units[..position].ends_with(&needle))),
+                            "includes" => {
+                                Ok(bool(find_units(&units[position..], &needle).is_some()))
+                            }
+                            _ => Ok(int(find_units(&units[position..], &needle)
+                                .map_or(-1, |at| (position + at) as i64))),
+                        }
                     }
                     "slice" => {
                         let (start, end) = range(length(), &arg(0), &arg(1))?;
@@ -1704,8 +1748,14 @@ impl Evaluator<'_, '_> {
                     }
                     "split" => match arg(0) {
                         Val::Json(Value::String(separator)) if !separator.is_empty() => {
+                            let limit = match arg(1) {
+                                Val::Undefined => u32::MAX as usize,
+                                value => to_number(&value)?.trunc().rem_euclid(4_294_967_296.0)
+                                    as u32 as usize,
+                            };
                             Ok(Val::json(Value::Array(
                                 text.split(separator.as_str())
+                                    .take(limit)
                                     .map(|part| Value::String(part.to_owned()))
                                     .collect(),
                             )))
@@ -2593,12 +2643,40 @@ mod tests {
             let answer = evaluate(source, &lookup).map(|value| value.into_json().unwrap());
             assert_eq!(answer, Ok(expected), "{source}");
         }
+
         // Adding an object is left for the browser, on either side.
         for source in ["'a' + {}", "({}) + 'a'", "'a' + { b: 1 }"] {
             assert!(evaluate(source, &|_| None).is_err(), "{source}");
         }
     }
 
+    #[test]
+    fn search_offsets_and_split_limits_match_javascript() {
+        use serde_json::json;
+        for (source, expected) in [
+            ("'abc'.includes('a', 1)", json!(false)),
+            ("'abc'.startsWith('b', 1)", json!(true)),
+            ("'abc'.endsWith('a', 1)", json!(true)),
+            ("'aba'.indexOf('a', 1)", json!(2)),
+            ("'😀a😀'.indexOf('😀', 1)", json!(3)),
+            ("'😀a'.startsWith('a', 2)", json!(true)),
+            ("'abc'.indexOf('', 99)", json!(3)),
+            ("'abc'.endsWith('', -1)", json!(true)),
+            ("[1, 2].includes(1, 1)", json!(false)),
+            ("[1, 2, 1].indexOf(1, 1)", json!(2)),
+            ("[1, 2, 1].indexOf(1, -2)", json!(2)),
+            ("[1, 2, 1].lastIndexOf(1, 1)", json!(0)),
+            ("[1, 2, 1].lastIndexOf(1, -2)", json!(0)),
+            ("[1, 2, 1].lastIndexOf(1, undefined)", json!(0)),
+            ("[1, 2, 1].lastIndexOf(1, -4)", json!(-1)),
+            ("'a,b,c'.split(',', 1).length", json!(1)),
+            ("'a,b,c'.split(',', 0).length", json!(0)),
+            ("'a,b,c'.split(',', -1).length", json!(3)),
+            ("'a,b,c'.split(',', 4294967297).length", json!(1)),
+        ] {
+            assert_eq!(run(source), Some(expected), "{source}");
+        }
+    }
     #[test]
     fn a_lent_value_answers_as_itself_through_the_branch_that_picks_it() {
         // `const sorted = sortKey ? [...rows].sort(…) : rows` while there's no sort key is the

@@ -17,7 +17,7 @@ test('renders a component with props, slot HTML and the styles it needs', () => 
   });
   assert.match(html, /^<zb-styled-page/);
   assert.match(css, /@scope \(zb-styled-page\)/);
-  assert.match(css, /@scope \(zb-styled-card\)/, "the child component's stylesheet too");
+  assert.match(css, /@scope \(my-styled-card\)/, "the child component's stylesheet too");
   assert.deepEqual(warnings, []);
 
   const card = renderToString(join(fixtures, 'card.zb'), {

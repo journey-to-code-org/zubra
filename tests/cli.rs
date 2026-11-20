@@ -26,19 +26,22 @@ fn check_reports_errors_and_warnings_across_files() {
     let good = dir.join("good.zb");
     let warned = dir.join("warned.zb");
     let bad = dir.join("bad.zb");
-    fs::write(&good, "<zb-good label=\"x\"><p>{label}</p></zb-good>").unwrap();
-    fs::write(&warned, "<zb-warned hidden={false}><p>x</p></zb-warned>").unwrap();
-    fs::write(&bad, "<zb-bad label=\"x\">\n  <p>{lable}</p>\n</zb-bad>").unwrap();
+    fs::write(&good, "<my-good label=\"x\"><p>{label}</p></my-good>").unwrap();
+    fs::write(&warned, "<my-warned hidden={false}><p>x</p></my-warned>").unwrap();
+    fs::write(&bad, "<my-bad label=\"x\">\n  <p>{lable}</p>\n</my-bad>").unwrap();
 
     let (ok, _, stderr) = zubra(&["check", good.to_str().unwrap(), warned.to_str().unwrap()]);
     assert!(ok, "warnings don't fail the check: {stderr}");
-    assert!(stderr.contains("warning: prop `hidden`"), "{stderr}");
+    assert!(
+        stderr.contains("warning[ZB4019]: prop `hidden`"),
+        "{stderr}"
+    );
     assert!(stderr.contains("checked 2 files: no errors"), "{stderr}");
 
     let (ok, _, stderr) = zubra(&["check", good.to_str().unwrap(), bad.to_str().unwrap()]);
     assert!(!ok);
     assert!(
-        stderr.contains("error: unknown reference `lable`"),
+        stderr.contains("error[ZB2001]: unknown reference `lable`"),
         "{stderr}"
     );
     assert!(stderr.contains("= help: did you mean `label`?"), "{stderr}");
@@ -74,15 +77,15 @@ fn emit_css_collects_imported_components_unless_asked_not_to() {
     let dir = temp_dir("css");
     fs::write(
         dir.join("card.zb"),
-        "<style>p { margin: 0 }</style>\n<zb-card><p>x</p></zb-card>",
+        "<style>p { margin: 0 }</style>\n<my-card><p>x</p></my-card>",
     )
     .unwrap();
-    fs::write(dir.join("page.zb"), "<script>import './card.zb'</script>\n<style>.a { color: red }</style>\n<zb-page><zb-card></zb-card></zb-page>").unwrap();
+    fs::write(dir.join("page.zb"), "<script>import './card.zb'</script>\n<style>.a { color: red }</style>\n<my-page><my-card></my-card></my-page>").unwrap();
     let page = dir.join("page.zb");
     let (ok, all, stderr) = zubra(&["compile", page.to_str().unwrap(), "--emit", "css"]);
     assert!(ok, "{stderr}");
     assert!(
-        all.find("/* zb-card */").unwrap() < all.find("/* zb-page */").unwrap(),
+        all.find("/* my-card */").unwrap() < all.find("/* my-page */").unwrap(),
         "{all}"
     );
     let (_, own, _) = zubra(&[
@@ -93,7 +96,7 @@ fn emit_css_collects_imported_components_unless_asked_not_to() {
         "--no-imports",
     ]);
     assert!(
-        own.contains("/* zb-page */") && !own.contains("zb-card"),
+        own.contains("/* my-page */") && !own.contains("my-card"),
         "{own}"
     );
 }
@@ -104,11 +107,11 @@ fn check_reads_unsaved_text_from_standard_input() {
     let dir = temp_dir("stdin");
     fs::write(
         dir.join("badge.zb"),
-        "<zb-badge label=\"x\"><b>{label}</b></zb-badge>",
+        "<my-badge label=\"x\"><b>{label}</b></my-badge>",
     )
     .unwrap();
     let page = dir.join("page.zb");
-    fs::write(&page, "<zb-page><p>saved, fine</p></zb-page>").unwrap();
+    fs::write(&page, "<my-page><p>saved, fine</p></my-page>").unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_zubra"))
         .args([
             "check",
@@ -122,11 +125,11 @@ fn check_reads_unsaved_text_from_standard_input() {
         .spawn()
         .unwrap();
     // Unsaved: imports a sibling (resolved from the file's real directory) with a typo'd prop.
-    child.stdin.take().unwrap().write_all(b"<script>import './badge.zb'</script>\n<zb-page><zb-badge lable={1}></zb-badge></zb-page>").unwrap();
+    child.stdin.take().unwrap().write_all(b"<script>import './badge.zb'</script>\n<my-page><my-badge lable={1}></my-badge></my-page>").unwrap();
     let output = child.wait_with_output().unwrap();
     assert!(!output.status.success());
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report[0]["message"], "<zb-badge> has no prop `lable`");
+    assert_eq!(report[0]["message"], "<my-badge> has no prop `lable`");
     assert_eq!(report[0]["line"], 2);
     let (ok, _, stderr) = zubra(&["check", "a.zb", "b.zb", "--stdin"]);
     assert!(!ok && stderr.contains("one path"), "{stderr}");
@@ -146,7 +149,7 @@ fn request_answers_one_json_request_on_stdin() {
         .take()
         .unwrap()
         .write_all(
-            br#"{"path":"/a.zb","files":{"/a.zb":"<zb-a x=\"1\"><zb-slot></zb-slot><b>{x}</b></zb-a>"},"props":{"x":"2"},"slots":{"default":"<i>{y}</i>"},"slotSource":"html"}"#,
+            br#"{"path":"/a.zb","files":{"/a.zb":"<my-a x=\"1\"><zb-slot></zb-slot><b>{x}</b></my-a>"},"props":{"x":"2"},"slots":{"default":"<i>{y}</i>"},"slotSource":"html"}"#,
         )
         .unwrap();
     let output = child.wait_with_output().unwrap();
@@ -155,11 +158,14 @@ fn request_answers_one_json_request_on_stdin() {
     assert_eq!(response["ok"], true);
     assert_eq!(
         response["output"],
-        "<zb-a x=\"2\" data-zb-filled=\"default\"><?zb [!?><i>{y}</i><?zb ]?><b>2</b></zb-a>"
+        "<my-a x=\"2\" data-zb-filled=\"default\"><?zb [!?><i>{y}</i><?zb ]?><b>2</b></my-a>"
     );
     let (ok, _, stderr) = zubra(&["request", "extra"]);
     assert!(!ok);
-    assert!(stderr.contains("unexpected argument `extra`"), "{stderr}");
+    assert!(
+        stderr.contains("takes no arguments, and was given `extra`"),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -167,7 +173,7 @@ fn slots_html_takes_server_rendered_content() {
     let dir = temp_dir("slots-html");
     let source = dir.join("panel.zb");
     let slots = dir.join("slots.json");
-    fs::write(&source, "<zb-panel><zb-slot></zb-slot></zb-panel>").unwrap();
+    fs::write(&source, "<my-panel><zb-slot></zb-slot></my-panel>").unwrap();
     fs::write(&slots, r#"{"default":"<p>{kept}</p>"}"#).unwrap();
     let (ok, stdout, stderr) = zubra(&[
         "compile",
@@ -179,7 +185,7 @@ fn slots_html_takes_server_rendered_content() {
     assert!(ok, "{stderr}");
     assert_eq!(
         stdout,
-        "<zb-panel data-zb-filled=\"default\"><?zb [!?><p>{kept}</p><?zb ]?></zb-panel>\n"
+        "<my-panel data-zb-filled=\"default\"><?zb [!?><p>{kept}</p><?zb ]?></my-panel>\n"
     );
     let (ok, _, stderr) = zubra(&[
         "compile",
@@ -205,7 +211,7 @@ fn serve_answers_a_request_per_line_and_batches() {
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
     let request = serde_json::json!({
         "emit": "html", "path": "/c/hi.zb", "props": { "name": "Ada" },
-        "files": { "/c/hi.zb": "<zb-hi name=\"\"><p>Hi {name}</p></zb-hi>" },
+        "files": { "/c/hi.zb": "<my-hi name=\"\"><p>Hi {name}</p></my-hi>" },
     });
     // One at a time: each answer comes back before the next question (a long-lived process).
     for name in ["Ada", "Grace"] {
@@ -245,7 +251,7 @@ fn check_server_reports_what_the_servers_html_leaves_out() {
     let picker = dir.join("picker.zb");
     fs::write(
         &picker,
-        "<script>\n  const picked = new Set(value)\n</script>\n<zb-picker value={[\"kale\"]} options={[\"kale\", \"beans\"]}>\n  <zb-each items={options} as=\"option\" key={option}>\n    <label><input type=\"checkbox\" name=\"crops\" checked={picked.has(option)}> {option.toLocaleUpperCase()} {`${option}!`}</label>\n  </zb-each>\n</zb-picker>\n",
+        "<script>\n  const picked = new Set(value)\n</script>\n<my-picker value={[\"kale\"]} options={[\"kale\", \"beans\"]}>\n  <zb-each items={options} as=\"option\" key={option}>\n    <label><input type=\"checkbox\" name=\"crops\" checked={picked.has(option)}> {option.toLocaleUpperCase()} {`${option}!`}</label>\n  </zb-each>\n</my-picker>\n",
     )
     .unwrap();
     let path = picker.to_str().unwrap();
@@ -261,7 +267,7 @@ fn check_server_reports_what_the_servers_html_leaves_out() {
     );
     // toLocaleUpperCase() is left for the browser; the template literal renders on the server.
     assert_eq!(
-        text.matches("warning: this is computed in the browser")
+        text.matches("warning[ZB5001]: this is computed in the browser")
             .count(),
         1,
         "{text}"
@@ -270,20 +276,20 @@ fn check_server_reports_what_the_servers_html_leaves_out() {
     // in the child it is (not at the child's line and column, as if they were this file's).
     fs::write(
         dir.join("badge.zb"),
-        "<script>\n  const at = Date.now()\n</script>\n<style>\n  span { color: red; }\n</style>\n<zb-badge>\n  <span>{at}</span>\n</zb-badge>\n",
+        "<script>\n  const at = Date.now()\n</script>\n<style>\n  span { color: red; }\n</style>\n<my-badge>\n  <span>{at}</span>\n</my-badge>\n",
     )
     .unwrap();
     let card = dir.join("card.zb");
     fs::write(
         &card,
-        "<script>\n  import './badge.zb'\n</script>\n<zb-card>\n  <zb-badge></zb-badge>\n</zb-card>\n",
+        "<script>\n  import './badge.zb'\n</script>\n<my-card>\n  <my-badge></my-badge>\n</my-card>\n",
     )
     .unwrap();
     let (ok, stdout, stderr) = zubra(&["check", "--server", card.to_str().unwrap()]);
     assert!(ok, "a warning, not an error");
     let text = format!("{stdout}{stderr}");
     assert!(
-        text.contains("inside <zb-badge> (badge.zb:8:")
+        text.contains("inside <my-badge> (badge.zb:8:")
             && text.contains("card.zb:5:")
             && !text.contains("card.zb:8:"),
         "{text}"
@@ -479,10 +485,10 @@ fn check_takes_a_folder_and_checks_every_component_under_it() {
     fs::create_dir_all(app.join(".hidden")).unwrap();
     fs::write(
         app.join("good.zb"),
-        "<zb-good label=\"x\"><p>{label}</p></zb-good>",
+        "<my-good label=\"x\"><p>{label}</p></my-good>",
     )
     .unwrap();
-    fs::write(app.join("ui/deep.zb"), "<zb-deep><p>deep</p></zb-deep>").unwrap();
+    fs::write(app.join("ui/deep.zb"), "<my-deep><p>deep</p></my-deep>").unwrap();
     fs::write(
         app.join("ui/framed.zb.jsx"),
         "export default function ZbFramed({ label = 'x' }) {\n  return <p>{label}</p>;\n}\n",
@@ -492,12 +498,12 @@ fn check_takes_a_folder_and_checks_every_component_under_it() {
     fs::write(app.join("notes.js"), "export const notes = [];").unwrap();
     fs::write(
         app.join("node_modules/pkg/theirs.zb"),
-        "<zb-theirs><p>{nope</p></zb-theirs>",
+        "<my-theirs><p>{nope</p></my-theirs>",
     )
     .unwrap();
     fs::write(
         app.join(".hidden/draft.zb"),
-        "<zb-draft><p>{nope</p></zb-draft>",
+        "<my-draft><p>{nope</p></my-draft>",
     )
     .unwrap();
 
@@ -507,20 +513,17 @@ fn check_takes_a_folder_and_checks_every_component_under_it() {
 
     // A folder beside a file, and an error in the folder: named with its own path.
     let lone = dir.join("lone.zb");
-    fs::write(&lone, "<zb-lone><p>x</p></zb-lone>").unwrap();
-    fs::write(
-        app.join("ui/bad.zb"),
-        "<zb-bad label=\"x\">\n  <p>{lable}</p>\n</zb-bad>",
-    )
-    .unwrap();
+    fs::write(&lone, "<my-lone><p>x</p></my-lone>").unwrap();
+    let bad = app.join("ui").join("bad.zb");
+    fs::write(&bad, "<my-bad label=\"x\">\n  <p>{lable}</p>\n</my-bad>").unwrap();
     let (ok, _, stderr) = zubra(&["check", lone.to_str().unwrap(), app.to_str().unwrap()]);
     assert!(!ok);
     assert!(
-        stderr.contains("error: unknown reference `lable`"),
+        stderr.contains("error[ZB2001]: unknown reference `lable`"),
         "{stderr}"
     );
     assert!(
-        stderr.contains(&format!("{}:2:", app.join("ui/bad.zb").display())),
+        stderr.contains(&format!("{}:2:", bad.display())),
         "{stderr}"
     );
     assert!(stderr.contains("1 file with errors"), "{stderr}");
@@ -535,10 +538,7 @@ fn check_takes_a_folder_and_checks_every_component_under_it() {
         .iter()
         .map(|entry| entry["file"].as_str().unwrap().to_string())
         .collect();
-    assert_eq!(
-        files,
-        vec![app.join("ui/bad.zb").to_string_lossy().into_owned()]
-    );
+    assert_eq!(files, vec![bad.to_string_lossy().into_owned()]);
 
     // A folder with no component in it is said, not passed as "checked 0 files".
     let empty = dir.join("empty");
@@ -548,5 +548,197 @@ fn check_takes_a_folder_and_checks_every_component_under_it() {
     assert!(
         stderr.contains("no components (.zb, .zb.jsx, .zb.tsx) in this folder"),
         "{stderr}"
+    );
+}
+
+/// The exit code, standard output and standard error.
+fn exit(arguments: &[&str]) -> (i32, String, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_zubra"))
+        .args(arguments)
+        .output()
+        .expect("zubra runs");
+    (
+        output.status.code().expect("an exit code"),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn help_and_version_come_first_and_exit_0() {
+    let (code, help, _) = exit(&["--help"]);
+    assert_eq!(code, 0);
+    assert_eq!(exit(&["-h"]).1, help);
+    assert_eq!(exit(&["help"]).1, help);
+    // The compile line lists every --emit and --framework value, and --client-only.
+    assert!(
+        help.contains("--emit html|js|element|css|dts|manifest|html-data|interface|server|tsx"),
+        "{help}"
+    );
+    assert!(
+        help.contains("--framework react|vue|svelte|solid|solid2|vanilla"),
+        "{help}"
+    );
+    assert!(help.contains("[--client-only]"), "{help}");
+    assert!(help.contains(
+        "Exit codes: 0 success (warnings included), 1 errors in the input, 2 a usage error."
+    ));
+    for command in zubra::cli::COMMANDS {
+        let (code, own, stderr) = exit(&[command.name, "--help"]);
+        assert_eq!(code, 0, "{} --help: {stderr}", command.name);
+        assert_eq!(exit(&[command.name, "-h"]).1, own);
+        assert_eq!(exit(&["help", command.name]).1, own);
+        // Before anything the command would do: no "unable to read source", no server started.
+        assert_eq!(exit(&[command.name, "x.zb", "--help"]).0, 0);
+        for flag in command.flags {
+            assert!(
+                own.contains(&flag.usage()),
+                "{} --help lacks {}",
+                command.name,
+                flag.name
+            );
+        }
+        assert!(help.contains(&format!("zubra {}", command.name)));
+    }
+    let version = format!("zubra {}\n", env!("CARGO_PKG_VERSION"));
+    for arguments in [
+        &["--version"][..],
+        &["-V"],
+        &["check", "--version"],
+        &["compile", "-V"],
+    ] {
+        assert_eq!(
+            exit(arguments),
+            (0, version.clone(), String::new()),
+            "{arguments:?}"
+        );
+    }
+}
+
+#[test]
+fn usage_errors_exit_2_and_suggest_the_near_name() {
+    let (code, _, stderr) = exit(&["chek", "x.zb"]);
+    assert_eq!(code, 2);
+    assert!(
+        stderr.starts_with("unknown command `chek`; did you mean `check`?"),
+        "{stderr}"
+    );
+    let (code, _, stderr) = exit(&["deploy"]);
+    assert_eq!(code, 2);
+    assert!(stderr.starts_with("unknown command `deploy`\n"), "{stderr}");
+    let (code, _, stderr) = exit(&["check", "--formt", "json", "x.zb"]);
+    assert_eq!(code, 2);
+    assert!(
+        stderr.starts_with("unknown flag `--formt`; did you mean `--format`?"),
+        "{stderr}"
+    );
+    let (code, _, stderr) = exit(&["compile", "x.zb", "--emit", "jss"]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("did you mean `js`?"), "{stderr}");
+    assert_eq!(exit(&["compile", "x.zb", "--emit"]).0, 2);
+    assert_eq!(exit(&["compile"]).0, 2);
+    assert_eq!(exit(&["check"]).0, 2);
+    assert_eq!(exit(&[]).0, 2);
+    // A command of the npm package's: named, with where it is.
+    for command in ["build", "add", "types", "mcp"] {
+        let (code, _, stderr) = exit(&[command]);
+        assert_eq!(code, 2, "{command}");
+        assert!(
+            stderr.starts_with(&format!(
+                "`zubra {command}` is in the npm package: npx zubra {command}"
+            )),
+            "{stderr}"
+        );
+    }
+    let (code, _, stderr) = exit(&["check", "--types", "x.zb"]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("npx zubra check --types"), "{stderr}");
+}
+
+#[test]
+fn errors_in_the_input_exit_1_and_warnings_0_unless_denied() {
+    let dir = temp_dir("exits");
+    let missing = dir.join("missing.zb");
+    let (code, _, stderr) = exit(&["check", missing.to_str().unwrap()]);
+    assert_eq!(code, 1);
+    assert_eq!(stderr, format!("no such file: {}\n", missing.display()));
+    let warned = dir.join("x-warned.zb");
+    fs::write(
+        &warned,
+        "<x-warned hidden={false}><p>{hidden}</p></x-warned>",
+    )
+    .unwrap();
+    let warned = warned.to_str().unwrap();
+    let (code, _, stderr) = exit(&["check", warned]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stderr.contains("warning[ZB4019]"), "{stderr}");
+    let (code, _, stderr) = exit(&["check", warned, "--deny-warnings"]);
+    assert_eq!(code, 1);
+    assert!(
+        stderr.ends_with("1 warning (--deny-warnings)\n"),
+        "{stderr}"
+    );
+    let (code, json, _) = exit(&["check", warned, "--deny-warnings", "--format", "json"]);
+    assert_eq!(code, 1);
+    let report: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(report[0]["code"], "ZB4019");
+    assert_eq!(report[0]["severity"], "warning");
+    // A TypeScript component: the check says its types weren't checked, and where they are.
+    let typed = dir.join("x-typed.zb");
+    fs::write(
+        &typed,
+        "<script lang=\"ts\">\n  let n: number = 1\n</script>\n<x-typed><p>{n}</p></x-typed>",
+    )
+    .unwrap();
+    let (code, _, stderr) = exit(&["check", typed.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        stderr.contains("TypeScript types weren't checked: run npx zubra check --types"),
+        "{stderr}"
+    );
+    assert!(!exit(&["check", warned]).2.contains("TypeScript"));
+}
+
+#[test]
+fn vanilla_is_no_framework_and_its_other_names_still_work() {
+    let dir = temp_dir("vanilla");
+    let path = dir.join("x-plain.zb");
+    fs::write(&path, "<x-plain label=\"\"><p>{label}</p></x-plain>").unwrap();
+    let path = path.to_str().unwrap();
+    let (code, vanilla, stderr) =
+        exit(&["compile", path, "--emit", "dts", "--framework", "vanilla"]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(exit(&["compile", path, "--emit", "dts"]).1, vanilla);
+    for alias in ["element", "none", "plain"] {
+        assert_eq!(
+            exit(&["compile", path, "--emit", "dts", "--framework", alias]).1,
+            vanilla,
+            "{alias}"
+        );
+        assert_eq!(
+            exit(&[
+                "compile",
+                path,
+                "--emit",
+                "dts",
+                &format!("--framework={alias}")
+            ])
+            .1,
+            vanilla,
+            "{alias}"
+        );
+    }
+    assert_ne!(
+        exit(&["compile", path, "--emit", "dts", "--framework", "react"]).1,
+        vanilla
+    );
+    // The emits both CLIs take.
+    for emit in zubra::cli::EMITS {
+        let (code, _, stderr) = exit(&["compile", path, "--emit", emit]);
+        assert_eq!(code, 0, "--emit {emit}: {stderr}");
+    }
+    assert_eq!(
+        exit(&["compile", path, "--emit", "js", "--client-only"]).0,
+        0
     );
 }

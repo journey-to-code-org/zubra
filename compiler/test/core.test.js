@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCompiler, CompileError, CompilerCrash, over, requestWith as createCompilerRaw, restarting } from '../core.js';
 import * as node from '../index.js';
@@ -39,7 +39,7 @@ test('renders every registry component exactly as the Node entry does', { skip }
 
 test('props and slots pass through', { skip }, () => {
   const { renderToString } = createCompiler(wasm()); // used without its object, as a Worker's handler would
-  const path = '/app/card.zb';
+  const path = resolve('app/card.zb');
   const files = { [path]: '<script>const doubled = n * 2</script><x-card n={0}><b>{doubled}</b><zb-slot></zb-slot></x-card>' };
   const options = { files, props: { n: 21 }, slots: { default: '<i>hi</i>' } };
   const html = renderToString(path, options);
@@ -55,7 +55,8 @@ test('formats as the Node entry does', { skip }, () => {
 
 test('compile errors are CompileErrors with diagnostics', { skip }, () => {
   const zubra = createCompiler(wasm());
-  assert.throws(() => zubra.renderToString('/app/bad.zb', { files: { '/app/bad.zb': '<x-bad><p></x-bad>' } }), (error) => {
+  const path = resolve('app/bad.zb');
+  assert.throws(() => zubra.renderToString(path, { files: { [path]: '<x-bad><p></x-bad>' } }), (error) => {
     assert.ok(error instanceof CompileError);
     assert.ok(error instanceof node.CompileError, 'the same class as the Node entry exports');
     assert.ok(error.diagnostics.length > 0);
@@ -70,7 +71,7 @@ test('render says what is missing when it has no files', { skip }, () => {
 test('createCompiler takes a module, an instance or exports, and refuses anything else', { skip }, () => {
   const module = wasm();
   const instance = new WebAssembly.Instance(module, {});
-  const path = '/app/t.zb';
+  const path = resolve('app/t.zb');
   const files = { [path]: '<x-t><p>hi</p></x-t>' };
   for (const given of [module, instance, instance.exports]) {
     assert.equal(createCompiler(given).renderToString(path, { files }), '<x-t><p>hi</p></x-t>');
@@ -161,7 +162,7 @@ test('restarting() leaves other errors alone and keeps its instance', () => {
 
 test('markup nested past the limit is a CompileError, and the compiler goes on answering', { skip }, () => {
   const compiler = createCompiler(wasm());
-  const path = '/app/deep.zb';
+  const path = resolve('app/deep.zb');
   const page = { [path]: '<x-deep><zb-slot></zb-slot></x-deep>' };
   const nested = (depth) => `${'<div>'.repeat(depth)}x${'</div>'.repeat(depth)}`;
   // At the limit: rendered, in the WebAssembly build's own stack.
@@ -175,4 +176,16 @@ test('markup nested past the limit is a CompileError, and the compiler goes on a
     assert.match(compiler.renderToString(path, { files: page, slots: { default: '<b>ok</b>' } }), /<b>ok<\/b>/);
   }
   assert.throws(() => compiler.renderToString(path, { files: { [path]: `<x-deep>${nested(300)}</x-deep>` } }), /nested more than 256/);
+});
+
+// Without zubra.wasm (a checkout that hasn't run `npm run build`), the error names both ways out:
+// the WebAssembly build, and ZUBRA_COMPILER, the only other compiler this package uses.
+test('without zubra.wasm or ZUBRA_COMPILER, the error says how to give it a compiler', { skip: node.available() ? 'zubra.wasm is built' : false }, async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { ZUBRA_COMPILER, ...env } = process.env;
+  const script = "import('./index.js').then((m) => { try { m.request({ command: 'version' }); } catch (error) { console.log(error.message); } })";
+  const message = execFileSync(process.execPath, ['-e', script], { cwd: join(here, '..'), env, encoding: 'utf8' });
+  assert.match(message, /zubra\.wasm is missing/);
+  assert.match(message, /npm run build/);
+  assert.match(message, /ZUBRA_COMPILER/);
 });

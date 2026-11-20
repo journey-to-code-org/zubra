@@ -91,6 +91,7 @@ pub fn strip(source: &str, start: Span) -> Result<(String, Types), Diagnostic> {
     if let Some(error) = parsed.diagnostics.first() {
         let offset = error.labels.first().map_or(0, |label| label.offset());
         return Err(Diagnostic::new(
+            crate::codes::SCRIPT_SYNTAX,
             at(offset),
             format!("invalid <script lang=\"ts\">: {}", error.message),
         ));
@@ -141,7 +142,7 @@ pub fn strip(source: &str, start: Span) -> Result<(String, Types), Diagnostic> {
     if let Some((offset, message, help)) = stripper.error {
         // Types are removed, never compiled (the "erasable syntax only" rule); each refusal says
         // what to write and where the rule is explained.
-        let error = Diagnostic::new(at(offset), message);
+        let error = Diagnostic::new(crate::codes::TS_NOT_ERASABLE, at(offset), message);
         return Err(match help {
             Some(help) => error.with_help(format!("{help}; see docs/typescript.md")),
             None => error.with_help("see docs/typescript.md"),
@@ -176,8 +177,12 @@ pub fn strip(source: &str, start: Span) -> Result<(String, Types), Diagnostic> {
             match edits.copy_text(index) {
                 Ok(text) => moved.push((Range::new(*offset_at, *offset_at), text)),
                 Err((offset, message)) => {
-                    return Err(Diagnostic::new(at(offset), message)
-                        .with_help("write it on one line; see docs/typescript.md"));
+                    return Err(Diagnostic::new(
+                        crate::codes::TS_NOT_ERASABLE,
+                        at(offset),
+                        message,
+                    )
+                    .with_help("write it on one line; see docs/typescript.md"));
                 }
             }
         }
@@ -211,8 +216,12 @@ pub fn strip(source: &str, start: Span) -> Result<(String, Types), Diagnostic> {
                 match edits.code(range) {
                     Ok(code) => out.push_str(&code),
                     Err((offset, message)) => {
-                        return Err(Diagnostic::new(at(offset), message)
-                            .with_help("write it on one line; see docs/typescript.md"));
+                        return Err(Diagnostic::new(
+                            crate::codes::TS_NOT_ERASABLE,
+                            at(offset),
+                            message,
+                        )
+                        .with_help("write it on one line; see docs/typescript.md"));
                     }
                 }
                 rest = &after[close + '\u{E001}'.len_utf8()..];
@@ -295,7 +304,7 @@ pub fn strip(source: &str, start: Span) -> Result<(String, Types), Diagnostic> {
         .first()
     {
         let offset = error.labels.first().map_or(0, |label| label.offset());
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::TS_NOT_ERASABLE,
             at(offset),
             format!("this TypeScript can't be reduced to JavaScript by removing its types: {}", error.message),
         )
