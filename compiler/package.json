@@ -1,6 +1,6 @@
 {
   "name": "@zubra/compiler",
-  "version": "5.23.0",
+  "version": "6.0.0-rc.0",
   "description": "The Zubra compiler as WebAssembly: compile .zb components from Node without installing Rust",
   "license": "ISC",
   "repository": {
@@ -67,7 +67,7 @@
     "zubra": "cli.js"
   },
   "peerDependencies": {
-    "@zubra/runtime": ">=5.23.0"
+    "@zubra/runtime": ">=6.0.0-rc.0"
   },
   "peerDependenciesMeta": {
     "@zubra/runtime": {

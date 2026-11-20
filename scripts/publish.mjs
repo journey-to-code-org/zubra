@@ -1,4 +1,4 @@
-// Publishes the eight npm packages for the current version, in the order they depend on each other:
+// Publishes the nine npm packages for the current version, in the order they depend on each other:
 //
 //   node scripts/publish.mjs [--dry-run]
 //
@@ -56,16 +56,20 @@ const dirty = execFileSync('git', ['status', '--porcelain'], { cwd: repo, encodi
 if (!dry && branch !== 'main') throw new Error(`publish: run this on main (you're on ${branch}); merge the release PR and pull first`);
 if (!dry && dirty) throw new Error(`publish: the working tree has uncommitted changes:\n${dirty}`);
 
+// A prerelease (6.0.0-rc.0) goes out under the `next` tag, so `npm install` keeps the last release;
+// npm 11 refuses to publish one without a tag.
+const prerelease = version.includes('-');
+
 const published = (name) => npm(['view', `${name}@${version}`, 'version'], repo, 'pipe').stdout.trim() === version;
 
-console.log(`publish: ${version}${dry ? ' (dry run)' : ''}`);
+console.log(`publish: ${version}${prerelease ? ' (prerelease, tag next)' : ''}${dry ? ' (dry run)' : ''}`);
 for (const { dir, build } of packages) {
   const { name } = manifest(dir);
   if (!dry && published(name)) { console.log(`publish: ${name}@${version} is already on npm, skipping`); continue; }
   const cwd = join(repo, dir);
   if (build && npm(['run', 'build'], cwd).status !== 0) throw new Error(`publish: building ${name} failed`);
   console.log(`publish: ${name}@${version}`);
-  if (npm(['publish', '--access', 'public', ...(actions ? ['--provenance'] : []), ...(dry ? ['--dry-run'] : [])], cwd).status !== 0) {
+  if (npm(['publish', '--access', 'public', ...(prerelease ? ['--tag', 'next'] : []), ...(actions ? ['--provenance'] : []), ...(dry ? ['--dry-run'] : [])], cwd).status !== 0) {
     throw new Error(`publish: ${name} failed; fix it and run this again (packages already on npm are skipped)`);
   }
 }

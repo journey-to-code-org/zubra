@@ -1,7 +1,11 @@
 # Releases a version when it reaches main: when the version in runtime/package.json (set by
 # scripts/bump-version.sh in the release PR) has no GitHub release yet, this tags the commit, publishes
-# the eight npm packages with provenance (scripts/publish.mjs), publishes the VS Code extension, and
+# the nine npm packages with provenance (scripts/publish.mjs), publishes the VS Code extension, and
 # makes the GitHub release, with the version's CHANGELOG.md section as its notes and the .vsix attached.
+#
+# A prerelease (6.0.0-rc.0) goes to npm under the `next` tag and gets a GitHub release marked as a
+# prerelease, with its binaries; the VS Code extension is left on the last release, since the
+# Marketplace takes only numbers (scripts/bump-version.sh doesn't move it for a prerelease).
 #
 # The order is so a failure leaves nothing half-public: the tag comes first, because it's the step a
 # token can be refused (5.8.0 published to npm, then got a 403 creating its release, and every later
@@ -74,6 +78,7 @@ jobs:
         run: |
           version=$(node -p "require('./runtime/package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          case "$version" in *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;; *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;; esac
           # Released means the GitHub release exists: a tag alone is a release that stopped partway.
           if gh release view "v$version" > /dev/null 2>&1; then
             echo "v$version is released: nothing to do."
@@ -158,7 +163,7 @@ jobs:
       # a version it has accepted (5.4.0's packaging gave up after two and a half): wait until it
       # does, up to ten minutes, asking the registry rather than npm's cache.
       - name: Wait for npm to serve the language server
-        if: steps.version.outputs.new == 'true'
+        if: steps.version.outputs.new == 'true' && steps.version.outputs.prerelease != 'true'
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -171,11 +176,11 @@ jobs:
       # The extension's own devDependencies, from its lockfile: @vscode/vsce, which packages and
       # publishes it (scripts/package.mjs installs the .vsix's dependencies from the same lockfile).
       - name: Install the VS Code extension's tools
-        if: steps.version.outputs.new == 'true'
+        if: steps.version.outputs.new == 'true' && steps.version.outputs.prerelease != 'true'
         run: npm ci --no-audit --no-fund
         working-directory: editors/vscode
       - name: Package the VS Code extension
-        if: steps.version.outputs.new == 'true'
+        if: steps.version.outputs.new == 'true' && steps.version.outputs.prerelease != 'true'
         env:
           npm_config_prefer_online: "true"
         run: for attempt in 1 2 3; do npm run package && exit 0; sleep 30; done; exit 1
@@ -185,7 +190,7 @@ jobs:
       # GitHub release, so a release that exists is a release that's complete; skipped when the
       # Marketplace already has the version (a re-run).
       - name: Publish the extension to the Marketplace
-        if: steps.version.outputs.new == 'true'
+        if: steps.version.outputs.new == 'true' && steps.version.outputs.prerelease != 'true'
         env:
           VERSION: ${{ steps.version.outputs.version }}
         working-directory: editors/vscode
@@ -202,9 +207,15 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
-          gh release create "v$VERSION" "editors/vscode/zubra-$VERSION.vsix" --verify-tag \
-            --title "$VERSION" --notes-file "$RUNNER_TEMP/notes.md" --latest
+          if [ "$PRERELEASE" = true ]; then
+            gh release create "v$VERSION" --verify-tag --prerelease \
+              --title "$VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "v$VERSION" "editors/vscode/zubra-$VERSION.vsix" --verify-tag \
+              --title "$VERSION" --notes-file "$RUNNER_TEMP/notes.md" --latest
+          fi
 
   # Prebuilt CLI binaries for the release just made, or for a release that is missing them (this
   # job runs on every push to main, and does nothing once the release has a SHA256SUMS file).

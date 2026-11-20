@@ -1,5 +1,6 @@
 // Every package carries the release's version, and the packages that need the compiler and the
-// runtime ask for this release or later (`^<major>.<minor>.0`), so npm installs them together.
+// runtime ask for this release or later (`^<major>.<minor>.0`, or `^<version>` for a prerelease),
+// so npm installs them together.
 // `scripts/bump-version.sh` keeps both true.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,11 +13,14 @@ import { fileURLToPath } from 'node:url';
 const repo = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const json = (path) => JSON.parse(readFileSync(join(repo, path), 'utf8'));
 const version = json('runtime/package.json').version;
-const range = `^${version.replace(/^(\d+\.\d+)\..*/, '$1.0')}`;
+const prerelease = version.includes('-');
+const range = prerelease ? `^${version}` : `^${version.replace(/^(\d+\.\d+)\..*/, '$1.0')}`;
 
 test('every package has the release version', () => {
   for (const path of ['compiler', 'create', 'plugin', 'runtime', 'server', 'editors/language-server', 'editors/vscode']) {
-    assert.equal(json(`${path}/package.json`).version, version, path);
+    // A prerelease leaves the VS Code extension on the last release: the Marketplace takes only numbers.
+    if (prerelease && path === 'editors/vscode') assert.match(json(`${path}/package.json`).version, /^\d+\.\d+\.\d+$/, path);
+    else assert.equal(json(`${path}/package.json`).version, version, path);
   }
   assert.match(readFileSync(join(repo, 'Cargo.toml'), 'utf8'), new RegExp(`^version = "${version.replaceAll('.', '\\.')}"$`, 'm'));
 });
@@ -49,12 +53,16 @@ test('scripts/bump-version.sh moves that range with the version', () => {
     assert.match(block, /@zubra\/runtime/);
     mkdirSync(join(dir, 'compiler'));
     for (const file of ['compiler/package.json', 'compiler/package-lock.json']) cpSync(join(repo, file), join(dir, file));
-    execFileSync('sh', ['-c', `set -e; v=9.8.7; ${block}`], { cwd: dir });
+    execFileSync('sh', ['-c', `set -e; v=9.8.7; V='[0-9][0-9A-Za-z.-]*'; ${block}`], { cwd: dir });
     for (const file of ['compiler/package.json', 'compiler/package-lock.json']) {
       const text = readFileSync(join(dir, file), 'utf8');
-      assert.equal(text.match(/"@zubra\/runtime": ">=([0-9.]+)"/)?.[1], '9.8.7', file);
+      assert.equal(text.match(/"@zubra\/runtime": ">=([0-9A-Za-z.-]+)"/)?.[1], '9.8.7', file);
       JSON.parse(text);
     }
+    // And on from a prerelease to the release after it.
+    execFileSync('sh', ['-c', `set -e; v=9.8.8-rc.0; V='[0-9][0-9A-Za-z.-]*'; ${block}`], { cwd: dir });
+    execFileSync('sh', ['-c', `set -e; v=9.8.8; V='[0-9][0-9A-Za-z.-]*'; ${block}`], { cwd: dir });
+    assert.equal(readFileSync(join(dir, 'compiler/package.json'), 'utf8').match(/"@zubra\/runtime": ">=([0-9A-Za-z.-]+)"/)?.[1], '9.8.8');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
