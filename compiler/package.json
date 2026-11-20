@@ -56,7 +56,7 @@
     "!registry/test"
   ],
   "scripts": {
-    "build": "cargo build -p zubra-wasm --target wasm32-unknown-unknown --release && cp ../target/wasm32-unknown-unknown/release/zubra_wasm.wasm zubra.wasm",
+    "build": "cargo build --locked -p zubra-wasm --target wasm32-unknown-unknown --release && cp ../target/wasm32-unknown-unknown/release/zubra_wasm.wasm zubra.wasm",
     "test": "node --test \"test/*.test.js\"",
     "prepack": "node scripts/prepack.mjs"
   },

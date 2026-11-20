@@ -102,3 +102,15 @@ test("a key that can't be an attribute or CSS property name is left out, and the
   assert.equal(left.length, 3, left.join('\n'));
   assert.ok(left.every((message) => /left out/.test(message)), left.join('\n'));
 });
+
+// Pre-6.0 audit: as the server renders it, a style value that isn't a single CSS value is left
+// out with a message, and the rest of the style still applies.
+test("a style value that isn't a single CSS value is left out, as on the server", async () => {
+  const { page, messages } = await open('<spread-demo></spread-demo>', { modules: ['spread'] });
+  await set(page, { attrs: { title: 'x', style: { color: 'red;}', background: 'url(//evil.example/pixel)', margin: '0px', width: { nested: 1 }, '--brand': 'green' } } });
+  const { attributes } = await link(page);
+  assert.equal(attributes.style, 'margin: 0px; --brand: green;');
+  const left = messages.filter((message) => message.startsWith('error: zubra:'));
+  assert.equal(left.length, 3, left.join('\n'));
+  assert.ok(left.every((message) => /single CSS value/.test(message)), left.join('\n'));
+});

@@ -50,24 +50,67 @@ fn a_spread_known_only_in_the_browser_is_left_for_the_element() {
 
 #[test]
 fn what_an_attribute_couldn_t_do_a_known_spread_can_t() {
-    for (attrs, message) in [
-        (r#"{ style: "color: red" }"#, "must be an object"),
+    // (A spread's `style` it can't write is left out: see the test below.)
+    let source = "<script>\n  const attrs = [1, 2]\n</script>\n<x-a><a {...attrs}>go</a></x-a>";
+    let error = compile(source, "{}").unwrap_err();
+    assert!(
+        error.message.contains("spreads an object"),
+        "{}",
+        error.message
+    );
+}
+
+// Found by the pre-6.0 audit: a spread's `style` that was text, or held a value like `red;}`,
+// failed the whole render; a spread's object is data, so the bad part is left out instead.
+#[test]
+fn a_spread_leaves_out_a_style_it_cant_write() {
+    for (attrs, expected) in [
+        (
+            r#"{ style: "color: red", title: "t" }"#,
+            r#"<a title="t">go</a>"#,
+        ),
+        (r#"{ style: 7, title: "t" }"#, r#"<a title="t">go</a>"#),
+        (
+            r#"{ style: { color: "red;}", fontSize: "2px" } }"#,
+            r#"<a style="font-size: 2px">go</a>"#,
+        ),
         (
             r#"{ style: { color: "red; background: url(x)" } }"#,
-            "isn't a single CSS value",
+            r#"<a>go</a>"#,
         ),
-        (r#"[1, 2]"#, "spreads an object"),
+        (
+            r#"{ style: { color: { nested: 1 }, margin: "0" } }"#,
+            r#"<a style="margin: 0">go</a>"#,
+        ),
     ] {
         let source = format!(
             "<script>\n  const attrs = {attrs}\n</script>\n<x-a><a {{...attrs}}>go</a></x-a>"
         );
-        let error = compile(&source, "{}").unwrap_err();
-        assert!(
-            error.message.contains(message),
-            "{attrs}: {}",
-            error.message
-        );
+        let html =
+            compile(&source, "{}").unwrap_or_else(|error| panic!("{attrs}: {}", error.message));
+        assert!(html.contains(expected), "{attrs}: {html}");
     }
+    // From the props, the way a server renders a visitor's data.
+    let source = "<x-a attrs={{}}><a {...attrs}>go</a></x-a>";
+    let html = compile(source, r#"{"attrs":{"style":"color:red","title":"t"}}"#).unwrap();
+    assert!(html.contains(r#"<a title="t">go</a>"#), "{html}");
+    let html = compile(
+        source,
+        r#"{"attrs":{"style":{"color":"red;}","margin":"0"}}}"#,
+    )
+    .unwrap();
+    assert!(html.contains(r#"<a style="margin: 0">go</a>"#), "{html}");
+    // A style the author writes is still checked as before.
+    let error = compile(
+        "<x-a tone=\"\"><a style:color={tone}>go</a></x-a>",
+        r#"{"tone":"red;}"}"#,
+    )
+    .unwrap_err();
+    assert!(
+        error.message.contains("isn't a single CSS value"),
+        "{}",
+        error.message
+    );
 }
 
 #[test]

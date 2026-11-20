@@ -29,7 +29,9 @@ export function serve(dir, base = '/', port = 0) {
       path = join(path, 'index.html');
     }
     if (!existsSync(path)) return notFound(response);
-    response.writeHead(200, { 'content-type': TYPES[extname(path)] ?? 'application/octet-stream' });
+    // GitHub Pages sends this on every file. The playground's previews depend on it: they are
+    // sandboxed frames (an opaque origin) loading the runtime as modules, which are CORS requests.
+    response.writeHead(200, { 'content-type': TYPES[extname(path)] ?? 'application/octet-stream', 'access-control-allow-origin': '*' });
     createReadStream(path).pipe(response);
   });
   const notFound = (response) => {
