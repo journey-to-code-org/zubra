@@ -41,6 +41,21 @@ test('page values are escaped', () => {
   assert.match(html, /&lt;b&gt;/);
 });
 
+test("a page's numbers are written as numbers, so a page can't put markup in the pane through them", () => {
+  // The reading comes from the inspected page, whose script can return anything (security
+  // audit 4): where the pane expects a line or a count, a string of markup is not written.
+  const markup = '"><img src=x onerror=alert(1)>';
+  const html = render({
+    ...reading,
+    component: { ...reading.component, at: { line: markup, column: markup } },
+    bindings: [{ ...reading.bindings[0], at: { line: markup, column: markup } }],
+    lastUpdate: { number: markup, written: ['count'], ran: markup },
+  });
+  assert.ok(!html.includes('<img'), html);
+  assert.ok(!html.includes('onerror'), html);
+  assert.match(html, /data-line="NaN"/);
+});
+
 test('an unlocated component (an ordinary build) says how to get lines', () => {
   const html = render({
     ...reading,

@@ -47,10 +47,11 @@ test('the counter counts, and the app sees its count', () => inBrowser(async (pa
 
   await page.click('hello-counter button.more');
   await page.click('hello-counter button.more');
-  await page.waitForFunction(() => document.querySelector('#seen')?.textContent === '2');
+  // (Playwright's locators look inside shadow roots, as an app's own may be: Lit's.)
+  await page.locator('#seen', { hasText: /^2$/ }).waitFor();
   assert.equal(await page.textContent('hello-counter output'), 'Clicks: 2');
   await page.click('hello-counter button.less');
-  await page.waitForFunction(() => document.querySelector('#seen')?.textContent === '1');
+  await page.locator('#seen', { hasText: /^1$/ }).waitFor();
 }));
 
 // The examples on the starter page. When you delete zubra-examples.zb, delete this test with it
@@ -80,9 +81,9 @@ test('the examples work: a list, a form control, async data and slots', () => in
   assert.equal(await page.textContent('zubra-examples .zx-sent'), 'stars=3');
 
   // Async data: a tip arrives, and asking again brings the next one.
-  await page.waitForFunction(() => document.querySelector('async-tip p')?.textContent.startsWith('A top-level let'));
+  await page.locator('async-tip p', { hasText: /^A top-level let/ }).waitFor();
   await page.click('async-tip > button');
-  await page.waitForFunction(() => document.querySelector('async-tip p')?.textContent.startsWith('A const that'));
+  await page.locator('async-tip p', { hasText: /^A const that/ }).waitFor();
 
   // Slots: the card's heading is a prop, its body and note are what the page put inside it.
   const card = page.locator('example-card', { has: page.locator('h3', { hasText: 'Slots' }) });

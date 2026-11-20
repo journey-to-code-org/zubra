@@ -74,6 +74,21 @@ test('without JavaScript the same form posts, and the page comes back with the n
   assert.equal(await page.textContent('guest-book .gb-said'), 'Write something first.');
 }));
 
+// The guest book keeps the latest notes, not every one: anyone can sign it, and each page shows
+// them all. (When the notes move to a database, keep a limit there, or page through them.)
+test('the guest book keeps the latest notes, not all of them', async () => {
+  const { notes, addNote, KEPT } = await import('../src/notes.js');
+  const before = [...notes];
+  try {
+    for (let i = 0; i < KEPT + 30; i++) addNote(`note ${i}`);
+    assert.equal(notes.length, KEPT);
+    assert.equal(notes.at(-1), `note ${KEPT + 29}`, 'the newest is kept');
+    assert.equal(notes[0], 'note 30', 'the oldest go first');
+  } finally {
+    notes.splice(0, notes.length, ...before);
+  }
+});
+
 // The examples on the starter page. When you delete zubra-examples.zb, delete this test with it.
 test('the examples work: a list, a form control, async data and slots', () => open({}, async (page) => {
   await page.waitForFunction(() => customElements.get('todo-list') && customElements.get('rating-input') && customElements.get('async-tip'));

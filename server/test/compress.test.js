@@ -116,7 +116,7 @@ test('fetch: the same, as a Response', async () => {
   assert.equal(await zubra.fetch(new Request('http://x/elsewhere', { headers: { 'accept-encoding': 'br' } })), null);
 });
 
-test('a file is compressed once, and what is kept has a limit', async () => {
+test('a file is compressed once, however its path is spelled, and what is kept has a limit', async () => {
   const brotli = mock.method(nodeZlib, 'brotliCompressSync');
   const gzip = mock.method(nodeZlib, 'gzipSync');
   syncBuiltinESMExports();
@@ -132,20 +132,51 @@ test('a file is compressed once, and what is kept has a limit', async () => {
     assert.equal(gzip.mock.calls[0].arguments[1].level, 9);
     await ask(BASE, 'br');
     assert.equal(brotli.mock.callCount(), 1, 'both encodings of a file are kept');
-    // One file has no end of spellings (%7A is z): past the limit, what was kept is let go.
+    // One file has no end of spellings (%7A is z). Each is the same file, compressed once: a
+    // Brotli of the runtime's base takes tens of milliseconds, synchronously, so compressing it
+    // again for every new spelling would let anyone keep the server busy (security audit 4).
     const hex = (char) => `%${char.charCodeAt(0).toString(16)}`;
-    const distinct = [];
-    for (let bits = 1; bits < 256; bits++) distinct.push('/_zubra/runtime/' + [...'zubra.js'].map((char, i) => ((bits >> i) & 1 ? hex(char) : char)).join(''));
-    const more = distinct.map((spelling) => spelling.replace('/runtime/', '/%72untime/'));
-    for (const spelling of [...distinct, ...more]) assert.equal((await ask(spelling, 'gzip')).headers.get('content-encoding'), 'gzip', spelling);
-    const before = gzip.mock.callCount();
-    assert.equal(before, 1 + 510);
-    await ask(BASE, 'gzip');
-    assert.equal(gzip.mock.callCount(), before + 1, 'the first spelling was let go with the rest');
+    const spellings = [];
+    for (let bits = 1; bits < 256; bits++) spellings.push('/_zubra/runtime/' + [...'zubra.js'].map((char, i) => ((bits >> i) & 1 ? hex(char) : char)).join(''));
+    spellings.push(...spellings.map((spelling) => spelling.replace('/runtime/', '/%72untime/')), '/_zubra/runtime/x/../zubra.js');
+    for (const spelling of spellings) {
+      const response = await ask(spelling, Math.random() < 0.5 ? 'gzip' : 'br');
+      assert.equal(response.status, 200, spelling);
+      assert.ok(response.headers.get('content-encoding'), spelling);
+    }
+    assert.equal(gzip.mock.callCount(), 1, 'every spelling is the file already compressed');
+    assert.equal(brotli.mock.callCount(), 1, 'every spelling is the file already compressed');
   } finally {
     brotli.mock.restore();
     gzip.mock.restore();
     syncBuiltinESMExports();
+  }
+});
+
+test('what is kept has a limit: past it, what was kept is let go', async () => {
+  // Answers that differ without end: in development, `reload`'s versions of whichever components
+  // a page names. 60 components with long names make each answer more than a packet.
+  const many = mkdtempSync(join(tmpdir(), 'zubra-compress-many-'));
+  const names = Array.from({ length: 60 }, (_, i) => `kept-limit-number-${String(i).padStart(2, '0')}`);
+  for (const name of names) writeFileSync(join(many, `${name}.zb`), `<${name}>\n  <p>${name}</p>\n</${name}>\n`);
+  const gzip = mock.method(nodeZlib, 'gzipSync');
+  syncBuiltinESMExports();
+  try {
+    const zubra = createZubra({ components: many, production: false, devtools: false, compress: true, reload: true });
+    const ask = (list) => zubra.fetch(new Request(`http://x/_zubra/reload/versions/${list.join('+')}`, { headers: { 'accept-encoding': 'gzip' } }));
+    // 501 different answers: each list leaves out two of the names.
+    const lists = [];
+    for (let a = 0; a < names.length && lists.length < 501; a++) for (let b = a + 1; b < names.length && lists.length < 501; b++) lists.push(names.filter((_, i) => i !== a && i !== b));
+    for (const list of lists) assert.equal((await ask(list)).headers.get('content-encoding'), 'gzip');
+    assert.equal(gzip.mock.callCount(), 501);
+    await ask(lists[lists.length - 1]);
+    assert.equal(gzip.mock.callCount(), 501, 'the latest is kept');
+    await ask(lists[0]);
+    assert.equal(gzip.mock.callCount(), 502, 'the first was let go with the rest');
+  } finally {
+    gzip.mock.restore();
+    syncBuiltinESMExports();
+    rmSync(many, { recursive: true, force: true });
   }
 });
 

@@ -14,7 +14,9 @@ for (const framework of ['vanilla', 'react', 'vue', 'svelte', 'solid', 'preact',
     rmSync(dir, { recursive: true, force: true });
     create(dir, framework, { name: `${framework} starter` });
     try {
-      execFileSync(process.execPath, ['--test', 'test/app.test.js'], { cwd: dir, stdio: 'pipe', encoding: 'utf8' });
+      // (Without the runner's NODE_TEST_CONTEXT: a nested `node --test` that has it exits 0
+      // whatever its tests did.)
+      execFileSync(process.execPath, ['--test', 'test/app.test.js'], { cwd: dir, stdio: 'pipe', encoding: 'utf8', env: { ...process.env, NODE_TEST_CONTEXT: undefined } });
     } catch (error) {
       throw new Error(`the ${framework} starter's test failed:\n${error.stdout}${error.stderr}`);
     }

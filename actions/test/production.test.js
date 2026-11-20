@@ -41,5 +41,5 @@ test('createActions serves the minified scripts in production and the source oth
 });
 
 test('the minified form script passes the form script\'s own browser tests', () => {
-  execFileSync(process.execPath, ['--test', join(root, 'test/enhance-forms.test.js')], { stdio: 'pipe', env: { ...process.env, ZUBRA_ACTIONS_SCRIPTS: 'dist/production' } });
+  execFileSync(process.execPath, ['--test', join(root, 'test/enhance-forms.test.js')], { stdio: 'pipe', env: { ...process.env, ZUBRA_ACTIONS_SCRIPTS: 'dist/production', NODE_TEST_CONTEXT: undefined } });
 });
