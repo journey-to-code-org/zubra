@@ -871,7 +871,7 @@ mod tests {
     #[test]
     fn it_refuses_what_does_not_parse_and_jsx() {
         let error = format("<x-a>\n  <p>\n</x-a>\n", &FormatOptions::default()).unwrap_err();
-        assert!(error.message.contains("closing tag"), "{}", error.message);
+        assert!(error.message.contains("<p> is never closed"), "{}", error.message);
         let jsx = "export default function XA() {\n  return <x-a></x-a>\n}\n";
         let error = format(jsx, &FormatOptions::default()).unwrap_err();
         assert!(error.message.contains("JSX"), "{}", error.message);

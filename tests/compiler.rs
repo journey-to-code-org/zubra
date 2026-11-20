@@ -564,8 +564,8 @@ fn validates_srcset_and_srcdoc() {
 fn rejects_malformed_html_and_unsafe_template_features() {
     for (source, expected) in [
         ("<zb-x><p></section></zb-x>", "does not match"),
-        ("<zb-x><p></zb-x>", "does not match"),
-        ("<zb-x><p>", "missing closing tag"),
+        ("<zb-x><p></zb-x>", "<p> is never closed"),
+        ("<zb-x><p>", "<p> is never closed"),
         ("<zb-x><script>alert(1)</script></zb-x>", "<script>"),
         (
             "<zb-x><button onclick=\"run()\">Go</button></zb-x>",

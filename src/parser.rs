@@ -468,6 +468,9 @@ struct TemplateParser<'a> {
     html: bool,
     /// How many elements deep the parser is (see [`MAX_DEPTH`]).
     depth: usize,
+    /// Where each element whose content is being parsed opened, innermost last: an unclosed
+    /// one is reported there, not where its parent's closing tag shows it.
+    open: Vec<(String, Span)>,
 }
 
 /// How deep elements may nest, in a template or in slot content. The parser and every pass
@@ -483,6 +486,7 @@ impl<'a> TemplateParser<'a> {
             cursor,
             html: false,
             depth: 0,
+            open: Vec::new(),
         }
     }
 
@@ -659,10 +663,12 @@ impl<'a> TemplateParser<'a> {
                     return Err(Diagnostic::new(span, "unexpected closing tag"));
                 };
                 if !name.eq_ignore_ascii_case(expected) {
-                    return Err(Diagnostic::new(
-                        span,
-                        format!("closing tag </{name}> does not match <{expected}>"),
-                    ));
+                    return Err(self.unclosed(expected, &name, span).unwrap_or_else(|| {
+                        Diagnostic::new(
+                            span,
+                            format!("closing tag </{name}> does not match <{expected}>"),
+                        )
+                    }));
                 }
                 return Ok(nodes);
             }
@@ -754,9 +760,39 @@ impl<'a> TemplateParser<'a> {
             }
         }
         if let Some(name) = closing {
-            return Err(self.error(&format!("missing closing tag </{name}>")));
+            let end = self.current_span();
+            return Err(match self.open.last() {
+                Some((_, opened)) => Diagnostic::new(
+                    *opened,
+                    format!("<{name}> is never closed"),
+                )
+                .with_help(format!(
+                    "the file ends at {}:{} with <{name}> still open; close it with </{name}>",
+                    end.line, end.column
+                )),
+                None => self.error(&format!("missing closing tag </{name}>")),
+            });
         }
         Ok(nodes)
+    }
+
+    /// `</parent>` while `<expected>` is open, where `parent` is an element around it: `<expected>`
+    /// was never closed. Reported where it opened (that's the line to fix), with where the parser
+    /// noticed in the help.
+    fn unclosed(&self, expected: &str, found: &str, at: Span) -> Option<Diagnostic> {
+        let (_, opened) = self.open.last()?;
+        let found_lower = found.to_ascii_lowercase();
+        let outer = &self.open[..self.open.len() - 1];
+        if !outer.iter().any(|(name, _)| *name == found_lower) {
+            return None;
+        }
+        Some(
+            Diagnostic::new(*opened, format!("<{expected}> is never closed"))
+                .with_help(format!(
+                    "</{found}> at {}:{} closes the element around it first; close <{expected}> before it",
+                    at.line, at.column
+                )),
+        )
     }
 
     /// An element with its attributes and (directive-lowered) children, before the element
@@ -810,6 +846,20 @@ impl<'a> TemplateParser<'a> {
                     span: attribute_span,
                 });
                 continue;
+            }
+            if !self.html && self.starts_with("@") {
+                // Vue's and Lit's `@click`: Zubra writes the platform's own `onclick`.
+                let event = self.cursor.rest()[1..]
+                    .bytes()
+                    .take_while(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
+                    .map(char::from)
+                    .collect::<String>();
+                let event = if event.is_empty() { "click".to_owned() } else { event };
+                return Err(self
+                    .error("expected an HTML tag or attribute name")
+                    .with_help(format!(
+                        "Zubra uses the platform's attribute names: write `on{event}={{…}}`"
+                    )));
             }
             let attribute_name = self.parse_name()?;
             if !seen.insert(attribute_name.to_ascii_lowercase()) {
@@ -939,7 +989,9 @@ impl<'a> TemplateParser<'a> {
                     }));
             }
             self.depth += 1;
+            self.open.push((name.to_ascii_lowercase(), span));
             let mut children = self.parse_nodes(Some(&name))?;
+            self.open.pop();
             self.depth -= 1;
             if !self.html && TABLE_SECTIONS.contains(&name.to_ascii_lowercase().as_str()) {
                 drop_blank_text(&mut children);
@@ -2495,7 +2547,59 @@ fn lower_directive(mut element: Element) -> Result<Node, Diagnostic> {
                 span: element.span,
             })
         }
+        // (`zb-unresolved-…` is the JSX lowering's own stand-in for a component it can't load.)
+        _ if lower.starts_with("zb-")
+            && !ZB_ELEMENTS.contains(&lower.as_str())
+            && !lower.starts_with("zb-unresolved-") =>
+        {
+            Err(unknown_zb_element(&element.name, element.span))
+        }
         _ => Ok(Node::Element(element)),
+    }
+}
+
+/// Every `zb-` element a template can name: the compiler's directives, and the elements
+/// @zubra/runtime defines (`<zb-outlet>`, `<zb-context>`). The prefix is reserved for these.
+const ZB_ELEMENTS: [&str; 15] = [
+    "zb-if",
+    "zb-else-if",
+    "zb-else",
+    "zb-each",
+    "zb-slot",
+    "zb-switch",
+    "zb-case",
+    "zb-await",
+    "zb-pending",
+    "zb-then",
+    "zb-catch",
+    "zb-window",
+    "zb-document",
+    "zb-outlet",
+    "zb-context",
+];
+
+/// `<zb-iff>`: an unknown element under the reserved prefix is a typo of a directive, or a
+/// component that has to be named with another prefix.
+fn unknown_zb_element(name: &str, span: Span) -> Diagnostic {
+    let lower = name.to_ascii_lowercase();
+    let error = Diagnostic::new(
+        span,
+        format!("unknown element <{name}>: the zb- prefix is reserved for Zubra's own elements"),
+    );
+    // Compared without the shared prefix, so `zb-card` isn't taken for `zb-case`.
+    let own = &lower["zb-".len()..];
+    let best = ZB_ELEMENTS
+        .iter()
+        .map(|candidate| (&candidate["zb-".len()..], *candidate))
+        .map(|(rest, candidate)| (crate::validate::edit_distance(own, rest), rest, candidate))
+        .filter(|(distance, rest, _)| *distance <= (rest.len().max(own.len()) / 3).max(1))
+        .map(|(distance, _, candidate)| (distance, candidate))
+        .min();
+    match best {
+        Some((_, candidate)) => error.with_help(format!("did you mean `<{candidate}>`?")),
+        None => error.with_help(format!(
+            "a component of your own needs another prefix: `<app-{own}>`"
+        )),
     }
 }
 

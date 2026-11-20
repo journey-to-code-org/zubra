@@ -924,6 +924,65 @@ fn dropped_load_keys(component: &ast::ComponentAst) -> Vec<Diagnostic> {
         .collect()
 }
 
+/// `<TodoList />` in a `.zb` template: a JSX habit, where it names a component; here it is an
+/// element nothing defines (a custom element's name is lowercase, with a hyphen). Not in JSX
+/// components, where a capitalized tag is a function component.
+fn pascal_case_elements(nodes: &[ast::Node]) -> Vec<Diagnostic> {
+    fn walk(nodes: &[ast::Node], found: &mut Vec<Diagnostic>) {
+        for node in nodes {
+            match node {
+                ast::Node::Element(element) => {
+                    let name = &element.name;
+                    if name.starts_with(|character: char| character.is_ascii_uppercase())
+                        && name.chars().any(|character| character.is_ascii_lowercase())
+                        && name.chars().all(|character| character.is_ascii_alphanumeric())
+                    {
+                        let mut kebab = String::new();
+                        for (index, character) in name.chars().enumerate() {
+                            if character.is_ascii_uppercase() && index > 0 {
+                                kebab.push('-');
+                            }
+                            kebab.push(character.to_ascii_lowercase());
+                        }
+                        let help = if kebab.contains('-') {
+                            format!("did you mean `<{kebab}>` (import './{kebab}.zb')?")
+                        } else {
+                            format!("name the component with a hyphen, as `<app-{kebab}>`, and import its file")
+                        };
+                        found.push(
+                            Diagnostic::new(
+                                element.span,
+                                format!("<{name}> isn't a component here: custom element names are lowercase with a hyphen"),
+                            )
+                            .with_help(help),
+                        );
+                    }
+                    walk(&element.children, found);
+                }
+                ast::Node::If { consequent, alternate, .. } => {
+                    walk(consequent, found);
+                    walk(alternate, found);
+                }
+                ast::Node::Each { children, .. } | ast::Node::Else { children, .. } => {
+                    walk(children, found)
+                }
+                ast::Node::Slot { fallback, .. } => walk(fallback, found),
+                ast::Node::Await { pending, then, catch, .. } => {
+                    walk(pending, found);
+                    for branch in then.iter().chain(catch) {
+                        walk(&branch.children, found);
+                    }
+                }
+                ast::Node::Settled { branch, .. } => walk(&branch.children, found),
+                ast::Node::Text(_) => {}
+            }
+        }
+    }
+    let mut found = Vec::new();
+    walk(nodes, &mut found);
+    found
+}
+
 fn warnings_of(source: &str) -> Vec<Diagnostic> {
     let parsed = if jsx::looks_like_jsx(source) {
         // A JSX component's props are its parameters; their names are checked the same way.
@@ -948,6 +1007,7 @@ fn warnings_of(source: &str) -> Vec<Diagnostic> {
         .iter()
         .cloned()
         .chain(dropped_load_keys(&component))
+        .chain(if lowered.is_none() { pascal_case_elements(&component.nodes) } else { Vec::new() })
         .chain(
             validate::enum_props(&component)
                 .into_iter()

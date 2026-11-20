@@ -746,8 +746,8 @@ mod tests {
 
     #[test]
     fn files_loaded_once_answer_every_request_that_names_them_as_the_files_would() {
-        let parent = r#"<script>import ZbTag from './tag.zb'</script><zb-list name="x"><zb-tag tone={name}></zb-tag><p onclick={() => 1}>{name}</p></zb-list>"#;
-        let tag = r#"<zb-tag tone="plain"><b>{tone}</b></zb-tag>"#;
+        let parent = r#"<script>import MyTag from './tag.zb'</script><my-list name="x"><my-tag tone={name}></my-tag><p onclick={() => 1}>{name}</p></my-list>"#;
+        let tag = r#"<my-tag tone="plain"><b>{tone}</b></my-tag>"#;
         let files = json!({ "/app/list.zb": parent, "/app/tag.zb": tag });
         let loaded = call(json!({ "command": "load", "files": files }));
         assert_eq!(loaded["ok"], true, "{loaded}");
@@ -780,7 +780,7 @@ mod tests {
             "any file of the set: {html}"
         );
         // An error is the same error.
-        let broken = json!({ "/app/list.zb": "<zb-list><p>{missing}</p></zb-list>" });
+        let broken = json!({ "/app/list.zb": "<my-list><p>{missing}</p></my-list>" });
         let broken_handle = call(json!({ "command": "load", "files": broken }))["output"].clone();
         assert_eq!(
             call(json!({ "path": "/app/list.zb", "loaded": broken_handle, "emit": "html" })),
@@ -896,8 +896,8 @@ mod tests {
         // A child's interface is worked out once for its parsed tree, not once per use: every
         // use is checked and filled in by it, and an edited child (another default, a prop that
         // is now a number) by its new one.
-        let parent = r#"<script>import ZbTag from './tag.zb'
-const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-list><zb-each items={rows} as="row" key={row.id}><zb-tag tone={row.tone}></zb-tag><zb-tag size="2"></zb-tag></zb-each></zb-list>"#;
+        let parent = r#"<script>import MyTag from './tag.zb'
+const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><my-list><zb-each items={rows} as="row" key={row.id}><my-tag tone={row.tone}></my-tag><my-tag size="2"></my-tag></zb-each></my-list>"#;
         let render = |tag: &str| {
             call(json!({
                 "path": "/app/list.zb",
@@ -906,15 +906,15 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
             }))
         };
         let tag = |tone: &str, size: &str| {
-            format!("<zb-tag tone=\"{tone}\" size={size}><b>{{tone}} {{size + size}}</b></zb-tag>")
+            format!("<my-tag tone=\"{tone}\" size={size}><b>{{tone}} {{size + size}}</b></my-tag>")
         };
         // Before it had a `tone`: passing one is an error, and stops being one.
-        let before = render("<zb-tag size=\"1\"><b>{size + size}</b></zb-tag>");
+        let before = render("<my-tag size=\"1\"><b>{size + size}</b></my-tag>");
         assert!(
             before["error"]
                 .as_str()
                 .unwrap_or_default()
-                .contains("<zb-tag> has no prop `tone`"),
+                .contains("<my-tag> has no prop `tone`"),
             "{before}"
         );
         let first = render(&tag("plain", "\"1\""));
@@ -950,16 +950,16 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
     fn a_long_lived_process_reuses_a_parsed_component_but_never_a_stale_one() {
         // The same parent, rendered again with other props, then with its child edited, then
         // with a grandchild edited and with a child that has gone: each answer is the current one.
-        let parent = r#"<script>import ZbChild from './child.zb'</script><zb-parent name="x"><zb-child label={name}></zb-child></zb-parent>"#;
+        let parent = r#"<script>import MyChild from './child.zb'</script><my-parent name="x"><my-child label={name}></my-child></my-parent>"#;
         let child = |text: &str| {
             format!(
-                r#"<script>import ZbLeaf from './leaf.zb'</script><zb-child label=""><b>{text} {{label}}</b><zb-leaf></zb-leaf></zb-child>"#
+                r#"<script>import MyLeaf from './leaf.zb'</script><my-child label=""><b>{text} {{label}}</b><my-leaf></my-leaf></my-child>"#
             )
         };
         let render = |name: &str, child: &str, leaf: &str| {
             let mut files = json!({ "/app/parent.zb": parent, "/app/child.zb": child });
             if !leaf.is_empty() {
-                files["/app/leaf.zb"] = json!(format!("<zb-leaf><i>{leaf}</i></zb-leaf>"));
+                files["/app/leaf.zb"] = json!(format!("<my-leaf><i>{leaf}</i></my-leaf>"));
             }
             call(
                 json!({ "path": "/app/parent.zb", "files": files, "emit": "html", "props": { "name": name } }),
@@ -995,8 +995,8 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
                 .as_array()
                 .map_or(0, Vec::len)
         };
-        let plain = r#"<zb-w label=""><p>{label}</p></zb-w>"#;
-        let shadowing = r#"<zb-w title=""><p>{title}</p></zb-w>"#;
+        let plain = r#"<my-w label=""><p>{label}</p></my-w>"#;
+        let shadowing = r#"<my-w title=""><p>{title}</p></my-w>"#;
         assert_eq!(warned(plain), 0);
         assert_eq!(
             warned(shadowing),
@@ -1009,7 +1009,7 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
 
     #[test]
     fn a_render_says_what_it_left_out_because_it_was_not_a_safe_url() {
-        let source = r#"<zb-pic url="" pic="" set="" rest={{}}><a href={url}>Go</a><img src={pic} srcset={set} alt=""><a {...rest}>More</a></zb-pic>"#;
+        let source = r#"<my-pic url="" pic="" set="" rest={{}}><a href={url}>Go</a><img src={pic} srcset={set} alt=""><a {...rest}>More</a></my-pic>"#;
         let files = json!({ "/app/pic.zb": source });
         let render = |props: Value| {
             call(json!({ "path": "/app/pic.zb", "files": files, "emit": "html", "props": props }))
@@ -1023,7 +1023,7 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
         assert_eq!(response["ok"], true, "{response}");
         let html = response["output"].as_str().unwrap();
         assert!(
-            html.contains(r#"><a>Go</a><img alt=""><a>More</a></zb-pic>"#),
+            html.contains(r#"><a>Go</a><img alt=""><a>More</a></my-pic>"#),
             "{html}"
         );
         let omitted: Vec<&str> = response["omitted"]
@@ -1058,7 +1058,7 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
 
     #[test]
     fn has_slot_is_answered_on_the_server_from_the_slots_given() {
-        let source = "<script>\n  import { hasSlot as given } from '@zubra/runtime'\n  const footer = given(\"footer\")\n  const body = given()\n  const which = 'aside'\n  const aside = given(which)\n</script>\n<zb-card>\n  <main zb-if={body}><zb-slot></zb-slot></main>\n  <footer zb-if={footer}><zb-slot name=\"footer\"></zb-slot></footer>\n  <aside zb-if={aside}><zb-slot name=\"aside\"></zb-slot></aside>\n</zb-card>";
+        let source = "<script>\n  import { hasSlot as given } from '@zubra/runtime'\n  const footer = given(\"footer\")\n  const body = given()\n  const which = 'aside'\n  const aside = given(which)\n</script>\n<my-card>\n  <main zb-if={body}><zb-slot></zb-slot></main>\n  <footer zb-if={footer}><zb-slot name=\"footer\"></zb-slot></footer>\n  <aside zb-if={aside}><zb-slot name=\"aside\"></zb-slot></aside>\n</my-card>";
         let files = json!({ "/app/card.zb": source });
         let render = |slots: Value| {
             call(
@@ -1090,7 +1090,7 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
             .as_str()
             .expect("html")
             .to_owned();
-        assert!(html.starts_with("<zb-card data-zb-filled>"), "{html}");
+        assert!(html.starts_with("<my-card data-zb-filled>"), "{html}");
     }
 
     #[test]
@@ -1126,25 +1126,25 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
                 .expect("html")
                 .to_owned()
         };
-        let badge = "<zb-badge>\n  <span><zb-slot></zb-slot> <zb-slot name=\"icon\"></zb-slot> <zb-slot name=\"after\"></zb-slot></span>\n</zb-badge>";
+        let badge = "<my-badge>\n  <span><zb-slot></zb-slot> <zb-slot name=\"icon\"></zb-slot> <zb-slot name=\"after\"></zb-slot></span>\n</my-badge>";
         let html = render(badge, json!({}));
-        assert!(html.starts_with("<zb-badge data-zb-filled>"), "{html}");
+        assert!(html.starts_with("<my-badge data-zb-filled>"), "{html}");
         let html = render(
             badge,
             json!({ "icon": "<i>!</i>", "default": "3", "after": " " }),
         );
         assert!(
-            html.starts_with("<zb-badge data-zb-filled=\"default icon\">"),
+            html.starts_with("<my-badge data-zb-filled=\"default icon\">"),
             "in a fixed order, and whitespace isn't content: {html}"
         );
         // No slots: nothing to tell apart. Shadow DOM: the shadow root is the element's alone.
-        let html = render("<zb-plain>\n  <b>Hi</b>\n</zb-plain>", json!({}));
-        assert!(html.starts_with("<zb-plain>"), "{html}");
+        let html = render("<my-plain>\n  <b>Hi</b>\n</my-plain>", json!({}));
+        assert!(html.starts_with("<my-plain>"), "{html}");
         let html = render(
-            "<zb-shade shadow>\n  <span><zb-slot></zb-slot></span>\n</zb-shade>",
+            "<my-shade shadow>\n  <span><zb-slot></zb-slot></span>\n</my-shade>",
             json!({ "default": "3" }),
         );
-        assert!(html.starts_with("<zb-shade>"), "{html}");
+        assert!(html.starts_with("<my-shade>"), "{html}");
     }
 
     #[test]
@@ -1152,7 +1152,7 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
         // A list derived through a formatted time: only the browser formats times, so the list
         // is empty in the HTML. (Front Desk's Free Times shipped like this without a word, then
         // through a function with a loop, which the server now runs.)
-        let source = "<script>\n  const label = (at) => new Date(at).toLocaleTimeString('en-US')\n  const choices = starts.map((one) => ({ time: one, label: label(one) }))\n</script>\n<zb-times starts={[0]}>\n  <zb-each items={choices} as=\"one\" key={one.time}><b>{one.label}</b></zb-each>\n  <i>{starts.length}</i>\n</zb-times>";
+        let source = "<script>\n  const label = (at) => new Date(at).toLocaleTimeString('en-US')\n  const choices = starts.map((one) => ({ time: one, label: label(one) }))\n</script>\n<my-times starts={[0]}>\n  <zb-each items={choices} as=\"one\" key={one.time}><b>{one.label}</b></zb-each>\n  <i>{starts.length}</i>\n</my-times>";
         let files = json!({ "/app/times.zb": source });
         let ask = |gaps: bool| {
             call(
@@ -1177,15 +1177,15 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
         // The rest still renders; not asked, no `gaps`; nothing to say, no `gaps` either.
         assert!(response["output"].as_str().unwrap().contains("<i>1</i>"));
         assert!(ask(false).get("gaps").is_none());
-        let whole = json!({ "/app/times.zb": "<zb-times starts={['09:00']}><i>{starts.length}</i></zb-times>" });
+        let whole = json!({ "/app/times.zb": "<my-times starts={['09:00']}><i>{starts.length}</i></my-times>" });
         let response = call(
             json!({ "path": "/app/times.zb", "files": whole, "emit": "html", "partial": true, "gaps": true }),
         );
         assert!(response.get("gaps").is_none(), "{response}");
     }
 
-    const BADGE: &str = "<zb-badge label=\"x\"><b>{label}</b></zb-badge>";
-    const INBOX: &str = "<script>import './parts/../badge.zb'</script>\n<zb-inbox><zb-badge label=\"Ada\"></zb-badge></zb-inbox>";
+    const BADGE: &str = "<my-badge label=\"x\"><b>{label}</b></my-badge>";
+    const INBOX: &str = "<script>import './parts/../badge.zb'</script>\n<my-inbox><my-badge label=\"Ada\"></my-badge></my-inbox>";
 
     #[test]
     fn compiles_every_output_from_the_files_it_is_given() {
@@ -1223,14 +1223,14 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
         let react = call(
             json!({ "path": "/app/badge.zb", "files": files, "emit": "dts", "framework": "react" }),
         );
-        assert!(react["output"].as_str().unwrap().contains("ZbBadgeReact"));
+        assert!(react["output"].as_str().unwrap().contains("MyBadgeReact"));
     }
 
     #[test]
     fn a_check_can_say_whether_the_component_needs_the_browser() {
         let files = json!({
-            "/app/label.zb": "<zb-label text=\"x\"><b>{text}</b></zb-label>",
-            "/app/counter.zb": "<script>\n  let n = 0\n</script>\n<zb-counter><p>{n}</p></zb-counter>",
+            "/app/label.zb": "<my-label text=\"x\"><b>{text}</b></my-label>",
+            "/app/counter.zb": "<script>\n  let n = 0\n</script>\n<my-counter><p>{n}</p></my-counter>",
         });
         let label = call(
             json!({ "command": "check", "path": "/app/label.zb", "files": files, "client": true }),
@@ -1250,7 +1250,7 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
 
     #[test]
     fn reports_errors_and_warnings_for_terminals_and_editors() {
-        let files = json!({ "/app/x.zb": "<zb-x hidden={false}>\n  <p>{hiden}</p>\n</zb-x>" });
+        let files = json!({ "/app/x.zb": "<my-x hidden={false}>\n  <p>{hiden}</p>\n</my-x>" });
         let response = call(json!({ "command": "check", "path": "/app/x.zb", "files": files }));
         assert_eq!(response["ok"], false);
         assert!(response["error"]
@@ -1295,9 +1295,9 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
             ("{\"files\": {}}", "`path` is required"),
             ("{\"path\": \"/a.zb\"}", "`files` must map"),
             ("{\"path\": \"/a.zb\", \"files\": {}}", "no source for `/a.zb`"),
-            ("{\"path\": \"/a.zb\", \"files\": {\"/a.zb\": \"<zb-a></zb-a>\"}, \"emit\": \"pdf\"}", "unknown emit"),
-            ("{\"path\": \"/a.zb\", \"files\": {\"/a.zb\": \"<zb-a></zb-a>\"}, \"command\": \"run\"}", "unknown command"),
-            ("{\"path\": \"/a.zb\", \"files\": {\"/a.zb\": \"<zb-a></zb-a>\"}, \"emit\": \"js\", \"cssImport\": \"x\"}", "go together"),
+            ("{\"path\": \"/a.zb\", \"files\": {\"/a.zb\": \"<my-a></my-a>\"}, \"emit\": \"pdf\"}", "unknown emit"),
+            ("{\"path\": \"/a.zb\", \"files\": {\"/a.zb\": \"<my-a></my-a>\"}, \"command\": \"run\"}", "unknown command"),
+            ("{\"path\": \"/a.zb\", \"files\": {\"/a.zb\": \"<my-a></my-a>\"}, \"emit\": \"js\", \"cssImport\": \"x\"}", "go together"),
         ] {
             let response: Value = serde_json::from_str(&handle(request)).unwrap();
             assert_eq!(response["ok"], false);

@@ -306,7 +306,7 @@ fn the_cli_formats_files_and_folders_checks_and_reads_stdin() {
     );
     assert!(!ok);
     assert!(
-        stderr.contains("broken.zb") && stderr.contains("closing tag"),
+        stderr.contains("broken.zb") && stderr.contains("<p> is never closed"),
         "{stderr}"
     );
     let _ = fs::remove_dir_all(&dir);
