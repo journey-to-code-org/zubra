@@ -12,7 +12,7 @@ Only code that relied on a state being the TC39 proposal's object, or that names
 - `Signal.subtle.watched` or `Signal.subtle.unwatched` as option keys to `new Signal.State()` or `new Signal.Computed()` (`{ [Signal.subtle.watched]() {…} }`);
 - `globalThis.Signal`, or a `Signal` from another package, such as `signal-polyfill`, used with Zubra's state;
 - passing what `state()` or `computed()` returns to another library that expects a TC39 signal;
-- a component of your own whose tag starts with `zb-` ([below](#components-named-zb)).
+- a component of your own whose tag starts with `zb-` ([below](#components-whose-tag-starts-with-zb)).
 
 If none of these are in your code, nothing changes for you.
 
@@ -60,7 +60,7 @@ Signals mode has these limits:
 - **Builds and servers must agree.** A runtime from `buildRuntime()` or `buildApp()` has to be built with the same `engine` as the server that sends it, or the server refuses it.
 - **At the edge, serve `signal-tc39.js` as `signal.js`.** Serve `dist/production` that way, and don't use `bundle`.
 
-## Components named `zb-…`
+## Components whose tag starts with zb
 
 The `zb-` prefix is reserved for Zubra's own elements (the directives, `<zb-outlet>` and `<zb-context>`). In 5.x an unknown `<zb-…>` element compiled into an element nothing defines, so a typo such as `<zb-iff>` went unnoticed. In 6.0 it is a compile error with the nearest built-in as help. A component of your own named `zb-…` can't be used from another component's template any more: rename it (`<zb-card>` to `<app-card>`, say), in its host tag and wherever it's used.
 
