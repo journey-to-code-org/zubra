@@ -43,7 +43,12 @@ async function running(dir, script, port) {
     throw new Error(`${script} didn't answer on ${port}`);
   };
   await up();
-  return { origin, up, stop: () => child.kill() };
+  const stop = () => new Promise((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) return resolve();
+    child.once('exit', resolve);
+    child.kill();
+  });
+  return { origin, up, stop };
 }
 const empty = (origin) => fetch(`${origin}/_zb/action/guest-book/add`, { method: 'POST', headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded', origin }, body: 'text=' }).then((response) => response.json());
 const edit = (dir, file, from, to) => {
@@ -77,7 +82,7 @@ test("the server starter in development: an edited 'use server' function is ther
     assert.match(text, /hello-counter\.zb:\d+:\d+/);
     assert.match(text, /did you mean `label`\?/);
   } finally {
-    app.stop();
+    await app.stop();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -93,7 +98,7 @@ test('the server starter in production: an error is a 500 that says nothing of i
     assert.equal(response.status, 500);
     assert.equal(await response.text(), 'Something went wrong');
   } finally {
-    app.stop();
+    await app.stop();
     rmSync(dir, { recursive: true, force: true });
   }
 });

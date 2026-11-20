@@ -61,8 +61,11 @@ function go(next) {
   let url;
   try {
     url = new URL(next, location.href);
-  } catch {}
-  if (url?.protocol !== 'http:' && url?.protocol !== 'https:') {
+  } catch {
+    console.warn('@zubra/actions: ignored an invalid redirect location', next);
+    return;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     console.warn(`@zubra/actions: not navigating to ${JSON.stringify(next)}, which isn't an http(s) URL`);
     return;
   }

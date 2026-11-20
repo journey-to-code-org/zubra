@@ -1,6 +1,23 @@
 // What a `load` can return besides props. Marked with a registered symbol, so an answer made by
 // one copy of this module is recognised by another.
+import { RouteError } from './table.js';
+
 export const ANSWER = Symbol.for('@zubra/router.answer');
+
+/** Normalize local redirects and require explicit permission to leave the site. */
+export function checkedLocation({ location, external }, url) {
+  if (/[\x00-\x1f\x7f]/.test(location)) throw new RouteError('redirect() location contains a control character');
+  if (/^[/\\]/.test(location)) return '/' + location.replace(/^[/\\]+/, '');
+  let target;
+  try {
+    target = new URL(location, url);
+  } catch {
+    throw new RouteError(`redirect() to ${JSON.stringify(location)}: not a URL`);
+  }
+  if (!['http:', 'https:'].includes(target.protocol)) throw new RouteError(`redirect() to a ${target.protocol} URL is refused`);
+  if (target.origin !== url.origin && !external) throw new RouteError(`redirect() to ${target.origin}, another site: say redirect(to, { external: true }) if that's meant`);
+  return target.origin === url.origin ? target.pathname + target.search + target.hash : target.href;
+}
 
 /** `return notFound()`: the path has nothing behind it (no such farm). The response is a 404. */
 export const notFound = () => ({ [ANSWER]: 'notFound' });

@@ -40,6 +40,24 @@ test('createActions serves the minified scripts in production and the source oth
   }
 });
 
+test('createActions defaults to production except in explicit development', async () => {
+  const components = mkdtempSync(join(tmpdir(), 'zb-actions-default-'));
+  const previous = process.env.NODE_ENV;
+  try {
+    for (const value of [undefined, 'production', 'test', 'development']) {
+      if (value === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = value;
+      const actions = await createActions({ components, cacheDir: join(components, 'cache') });
+      const response = await actions.fetch(new Request('http://localhost/_zb/actions.js'));
+      assert.equal(await response.text(), read(value === 'development' ? 'src' : 'dist/production', 'client.js'), String(value));
+    }
+  } finally {
+    if (previous === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previous;
+    rmSync(components, { recursive: true, force: true });
+  }
+});
+
 test('the minified form script passes the form script\'s own browser tests', () => {
   execFileSync(process.execPath, ['--test', join(root, 'test/enhance-forms.test.js')], { stdio: 'pipe', env: { ...process.env, ZUBRA_ACTIONS_SCRIPTS: 'dist/production', NODE_TEST_CONTEXT: undefined } });
 });

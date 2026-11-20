@@ -32,8 +32,8 @@ test('development: the server starts, the rest are served, and each broken file 
     const said = warn.mock.calls.map((call) => call.arguments[0]);
     assert.equal(said.length, 2);
     assert.match(said[0], /^@zubra\/actions: forms[\\/]half-done\.zb doesn't compile, so its server functions aren't served until it does and the server restarts\.\n/);
-    assert.match(said[0], /closing tag <\/half-done> does not match <output>/);
-    assert.match(said[0], /half-done\.zb:9:1/);
+    assert.match(said[0], /<output> is never closed/);
+    assert.match(said[0], /half-done\.zb:8:23/);
     assert.match(said[1], /^@zubra\/actions: mid-line\.zb doesn't compile/);
     assert.match(said[1], /invalid <script>/);
   } finally {
@@ -44,7 +44,7 @@ test('development: the server starts, the rest are served, and each broken file 
 test('production: a component that doesn\'t compile stops the server from starting', async () => {
   const warn = mock.method(console, 'warn', () => {});
   try {
-    await assert.rejects(createActions({ components, cacheDir: join(work, 'cache-prod'), production: true }), /closing tag <\/half-done> does not match <output>/);
+    await assert.rejects(createActions({ components, cacheDir: join(work, 'cache-prod'), production: true }), /<output> is never closed/);
     assert.equal(warn.mock.callCount(), 0);
   } finally {
     warn.mock.restore();
@@ -52,5 +52,5 @@ test('production: a component that doesn\'t compile stops the server from starti
 });
 
 test('the build is as strict as production', async () => {
-  await assert.rejects(serverHalves(components), /closing tag <\/half-done> does not match <output>/);
+  await assert.rejects(serverHalves(components), /<output> is never closed/);
 });

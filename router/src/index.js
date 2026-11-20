@@ -29,7 +29,7 @@ import { existsSync, mkdirSync, readdirSync, renameSync, statSync, writeFileSync
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { findCompiler } from '@zubra/server';
-import { ANSWER } from './answers.js';
+import { ANSWER, checkedLocation } from './answers.js';
 import { APP, buildTable, fromRoot, layoutMatcher, matcher, RouteError } from './table.js';
 
 export { notFound, redirect, show } from './answers.js';
@@ -393,34 +393,6 @@ function sourcesUnder(dir, out = []) {
 /** Rewrite each relative import (`'./x'`, `'../x'`) with `to(specifier)`. */
 function rewriteImports(code, to) {
   return code.replace(/(\bfrom\s*|\bimport\s*\(?\s*)(['"])(\.{1,2}\/[^'"]+)\2/g, (_, keyword, quote, specifier) => `${keyword}${quote}${to(specifier)}${quote}`);
-}
-
-/**
- * Where a `redirect()` sends the browser: on this site unless it says `{ external: true }`.
- * A path starting `//` or `/\` is another site to a browser, so it's written with one slash;
- * an absolute URL elsewhere (a `next` from the query string) is refused, and so is any scheme
- * that isn't http(s). `redirect(next)` after a sign-in can't send anyone off the site.
- * A control character (C0 or DEL) anywhere is refused: browsers drop tab, LF and CR from a URL,
- * so `/\t/evil.example` would arrive as `//evil.example`, another site.
- */
-function checkedLocation({ location, external }, url) {
-  // eslint-disable-next-line no-control-regex
-  if (/[\x00-\x1f\x7f]/.test(location)) throw new RouteError(`redirect() to ${JSON.stringify(location)}: a URL with a control character is refused`);
-  if (/^[/\\]/.test(location)) {
-    const path = '/' + location.replace(/^[/\\]+/, '');
-    // Read the way a browser reads it: still this site, or it's refused.
-    if (new URL(path, url).origin !== url.origin) throw new RouteError(`redirect() to ${JSON.stringify(location)}: not a path on this site`);
-    return path;
-  }
-  let target;
-  try {
-    target = new URL(location, url);
-  } catch {
-    throw new RouteError(`redirect() to ${JSON.stringify(location)}: not a URL`);
-  }
-  if (!['http:', 'https:'].includes(target.protocol)) throw new RouteError(`redirect() to a ${target.protocol} URL is refused`);
-  if (target.origin !== url.origin && !external) throw new RouteError(`redirect() to ${target.origin}, another site: say redirect(to, { external: true }) if that's meant`);
-  return target.origin === url.origin ? target.pathname + target.search + target.hash : target.href;
 }
 
 // A Host header is a host and an optional port. Anything else (a path, a query, an empty one)
