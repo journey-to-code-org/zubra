@@ -1,9 +1,9 @@
 use serde_json::json;
 use zubra::{compile, compile_js, compile_value, compile_with_slots, Diagnostic};
 
-const GREETING: &str = r#"<zb-greeting name url>
+const GREETING: &str = r#"<my-greeting name url>
   <article class="greeting"><h1>Hello, {name}!</h1><a href={url}>Visit</a></article>
-</zb-greeting>"#;
+</my-greeting>"#;
 
 fn error(source: &str, props: &str) -> Diagnostic {
     compile(source, props).expect_err("expected a compile error")
@@ -25,7 +25,7 @@ fn renders_a_component_inside_its_host_element() {
     let html = compile(GREETING, r#"{"name":"Mikey","url":"https://mnix.dev"}"#).unwrap();
     assert_eq!(
         html,
-        "<zb-greeting name=\"Mikey\" url=\"https://mnix.dev\">\n  <article class=\"greeting\"><h1>Hello, Mikey!</h1><a href=\"https://mnix.dev\">Visit</a></article>\n</zb-greeting>"
+        "<my-greeting name=\"Mikey\" url=\"https://mnix.dev\">\n  <article class=\"greeting\"><h1>Hello, Mikey!</h1><a href=\"https://mnix.dev\">Visit</a></article>\n</my-greeting>"
     );
 }
 
@@ -306,7 +306,7 @@ fn script_errors_are_reported_where_they_happen() {
 #[test]
 fn rejects_unknown_references_with_location_and_suggestion() {
     let diagnostic = error(
-        "<zb-greeting name>\n  <p>Hi {nmae}</p>\n</zb-greeting>",
+        "<my-greeting name>\n  <p>Hi {nmae}</p>\n</my-greeting>",
         r#"{"name":"Mikey"}"#,
     );
     assert_eq!(diagnostic.message, "unknown reference `nmae`");
