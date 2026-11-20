@@ -32,7 +32,7 @@ const stars = ref(1);
 
 ## JSX components
 
-`.zb.jsx` and `.zb.tsx` files are components too (see the main README), resolved and wrapped like `.zb` files: `import Rating from './rating.zb.tsx'` in a React file is a React component, and `?element` gives the element. TypeScript reads the component's own source for its types, so no typings file is written for it.
+`.zb.jsx` and `.zb.tsx` files are components too (see [JSX components](https://github.com/zubra-js/zubra/blob/main/docs/reference.md#jsx-components) in the reference), resolved and wrapped like `.zb` files: `import Rating from './rating.zb.tsx'` in a React file is a React component, and `?element` gives the element. TypeScript reads the component's own source for its types, so no typings file is written for it.
 
 ## What an import gives
 
@@ -74,7 +74,7 @@ Props go to the component, other attributes to its host, children to its slots (
 
 ## Styles
 
-With Vite, a component's `<style>` is a CSS module in Vite's pipeline, so PostCSS, Tailwind (`@reference "tailwindcss"`, `@apply`) and preprocessors (`<style lang="scss">`) process it. Light-DOM components' CSS lands in the page's CSS bundle, and only there: a light-DOM element inside another shadow root (a Lit or FAST app's) gets its component's rules copied from the page's stylesheets. Shadow components get theirs as a string (`?inline`) for their shadow roots. With other bundlers, plain CSS is inlined in the module. See the main README's Styles section.
+With Vite, a component's `<style>` is a CSS module in Vite's pipeline, so PostCSS, Tailwind (`@reference "tailwindcss"`, `@apply`) and preprocessors (`<style lang="scss">`) process it. Light-DOM components' CSS lands in the page's CSS bundle, and only there: a light-DOM element inside another shadow root (a Lit or FAST app's) gets its component's rules copied from the page's stylesheets. Shadow components get theirs as a string (`?inline`) for their shadow roots. With other bundlers, plain CSS is inlined in the module. See [Styles](https://github.com/zubra-js/zubra/blob/main/docs/reference.md#styles) in the reference.
 
 ## Options
 
@@ -164,7 +164,7 @@ npx zubra types src ../ui && tsc --noEmit
 
 `zubra types` (from `@zubra/compiler`) takes the files and folders of components to type (default: the folder it runs in), the framework from the app's `package.json` (`--framework react|vue|svelte|solid|none` says otherwise) and the folder from `--dir` (default `.zubra/types`).
 
-In the editor you don't need these files: the VS Code extension's TypeScript plugin types `.zb` imports from the components directly, updated each time one is saved (see [Editor support](../docs/editor-support.md)). They're for `tsc` in builds and CI.
+In the editor you don't need these files: the VS Code extension's TypeScript plugin types `.zb` imports from the components directly, updated each time one is saved (see [Editor support](https://github.com/zubra-js/zubra/blob/main/docs/editor-support.md)). They're for `tsc` in builds and CI.
 
 ## Development
 
