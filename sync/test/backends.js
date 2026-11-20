@@ -34,6 +34,7 @@ export async function startBinary(extra = []) {
     base,
     stopped,
     close: () => {
+      child.ref();
       child.kill();
       rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
