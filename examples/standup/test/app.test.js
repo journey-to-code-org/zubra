@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
+import { shot } from '../../../demos/shot.js';
 import { createApp } from '../server.js';
 
 const dir = mkdtempSync(join(tmpdir(), 'standup-'));
@@ -66,6 +67,7 @@ test('one teammate types; the other sees it, and sees who is editing', async () 
   await ada.page.focus(`${card('ada')} textarea`);
   await grace.page.waitForSelector(`${card('ada')} .presence`, { timeout: 5000 });
   assert.equal(await grace.page.$(`${card('grace')} .presence`), null);
+  await shot(grace.page, 'standup'); // the demo gallery's screenshot: what Grace sees while Ada types
   await ada.page.focus(`${card('grace')} textarea`);
   await grace.page.waitForSelector(`${card('ada')} .presence`, { state: 'detached', timeout: 5000 });
   assert.deepEqual([...ada.errors, ...grace.errors], []);

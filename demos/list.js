@@ -20,6 +20,8 @@ export const demos = [
     blurb: 'Objects as props, a contribution-style grid with keyboard navigation, and a Zubra form control in a Preact form.', build: 'frameworks' },
   { id: 'angular-booking', dir: 'examples/frameworks/angular-booking', title: 'Booking wizard', stack: 'Angular 22', group: 'Frameworks',
     blurb: 'Reactive forms whose controls are Zubra elements, with validation and a step indicator.', build: 'frameworks' },
+  { id: 'fast-orders', dir: 'examples/frameworks/fast-orders', title: 'Order sheet', stack: 'FAST Element 3', group: 'Frameworks',
+    blurb: 'Light-DOM Zubra elements in a FASTElement’s shadow root, set by :prop bindings, heard through @valuechange, with the currency from FAST’s Context.', build: 'frameworks' },
 
   // Styling libraries (also in examples/frameworks)
   { id: 'tailwind-cafe', dir: 'examples/frameworks/tailwind-cafe', title: 'Café order builder', stack: 'Tailwind CSS 4', group: 'Styling libraries',
@@ -56,6 +58,11 @@ export const demos = [
     blurb: 'Search, paging, quick sales and inline editing, swapped in by htmx and hydrated in place.' },
   { id: 'flask-garden', dir: 'examples/backends/flask-garden', title: 'Garden plots', stack: 'Flask, Jinja, SQLite', group: 'Servers',
     blurb: 'Components rendered by the Rust CLI, with no Node.js on the server.' },
+  { id: 'axum-garden', dir: 'examples/backends/axum-garden', title: 'Garden plots, in Rust', stack: 'Axum', group: 'Servers',
+    blurb: 'The Flask garden’s pages and components from a Rust server: compiled into the binary, with no Node.js and no child process.' },
+  { id: 'standup', dir: 'examples/standup', title: 'Standup board', stack: 'Node.js and @zubra/sync', group: 'Servers',
+    blurb: 'One card per person, edited by everyone at once and offline, with the log in a SQLite file.' },
+
 
   // Plain HTML
   { id: 'todo', dir: 'examples/todo', title: 'To-do list', stack: 'Vite, no framework', group: 'Plain HTML',

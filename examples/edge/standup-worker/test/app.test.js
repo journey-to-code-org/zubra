@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { shot } from '../../../../demos/shot.js';
 import { startWorker } from './wrangler.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -61,6 +62,7 @@ test('one teammate types; the other sees it, and sees who is editing, through th
   await ada.page.focus(`${card('ada')} textarea`);
   await grace.page.waitForSelector(`${card('ada')} .presence`, { timeout: 5000 });
   assert.equal(await grace.page.$(`${card('grace')} .presence`), null);
+  await shot(grace.page, 'standup-worker'); // the demo gallery's screenshot: what Grace sees while Ada types
   assert.deepEqual([...ada.errors, ...grace.errors], []);
   // Ada leaves the page mid-edit: it says it's leaving (pagehide), and Grace stops seeing her.
   await ada.page.goto('about:blank');
