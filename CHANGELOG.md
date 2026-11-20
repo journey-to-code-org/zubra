@@ -4,6 +4,17 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Changed
+
+- **The engine option is `engine: 'zubra' | 'signals'`.** `@zubra/unplugin`, `createZubra` (Node and edge), `buildRuntime()` and `buildApp()` read signals mode as `signals === true`, so `signals: 'true'` or a typo (`signal: true`) was silently Zubra's engine. `engine` is `'zubra'` (the default) or `'signals'`, and any other value is an error naming the two. `signals: true`, which 6.0.0-rc.0 shipped, still means `engine: 'signals'`, with a development warning to write that. The plugin and `createZubra` also warn about an option name they don't know, with the nearest one (`signal` → `engine: 'signals'`). The plugin's README lists `engine`, `devtools` and `compilerModule`. Found by the pre-6.0 audit.
+- **`zb-` is reserved for Zubra's own elements.** An unknown `<zb-…>` element compiled silently into an element nothing defines (`<zb-iff>` for `<zb-if>`); it is now an error, with the nearest of the directives, `<zb-outlet>` and `<zb-context>` as help, or another prefix for a component of your own. A component named `zb-…` can't be used from another template any more: rename it ([Migrating to 6.0](docs/migrating-to-6.0.md#components-named-zb)). The examples, the reference's examples and the tests name theirs `my-…`. Found by the pre-6.0 audit.
+- **5.x's TC39 names say what happened to them, in development.** On the default engine `new Signal.subtle.Watcher()` was "not a constructor", `Signal.subtle.watched` was `undefined` (so `{ [Signal.subtle.watched]: fn }` never ran) and `introspectSources?.()` returned `undefined`. In the development build these names (and `introspectSinks`, `hasSinks`, `hasSources`) now throw an error that names signals mode and the migration guide, and a State or Computed made with a `watched` or `unwatched` option key warns once. The production build is byte for byte the same; the development build is about 300 B (gzip) larger. Found by the pre-6.0 audit.
+
+### Fixed
+
+- **Clearer compile errors.** `@click={…}` says to write `onclick={…}`. An element left open is reported where it opened (`<div> is never closed`), not at its parent's closing tag, with where the parser noticed in the help. `<TodoList />` in a `.zb` template warns that custom element names are lowercase with a hyphen, and names `<todo-list>` and its import. Found by the pre-6.0 audit.
+- **Compile errors in Vite say it once, with the file and the frame.** A script error (`let = = 2`) was met first by the typings' compile, outside the plugin's error handling, so Vite's overlay had no file link or frame. Each error's message also held the whole compiler output, which Vite prints the frame after, so the source line showed twice; the message is now its first line. A compile error no longer carries the plugin's own stack frames (nor `@zubra/server`'s, on its development 500 page; a crash keeps them), `Error: error:` and `warning: warning:` lose their doubled prefix, and several warnings from one component are reported one by one. Found by the pre-6.0 audit.
+
 ## 6.0.0-rc.0 — 2026-11-20
 
 A release candidate for 6.0.0, on npm's `next` tag: `npm install @zubra/runtime@next @zubra/compiler@next` (and the same for the other packages) tries it, and a plain `npm install` keeps 5.23. The VS Code extension stays on 5.23.0 until 6.0.0.
