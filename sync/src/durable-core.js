@@ -27,8 +27,8 @@ export function syncObject(ctx, owner, options = {}) {
     ...rest,
     log: durableObjectLog(ctx.storage, { table }),
     heartbeat,
-    // The object's own authorize, then the options'; without either, reads only, as
-    // createSyncServer does.
+    // The object's own authorize, then the options'; without either, no reads and no writes
+    // from pages, as createSyncServer does.
     authorize: typeof owner.authorize === 'function' ? (asked) => owner.authorize(asked) : authorize,
   });
   return {
