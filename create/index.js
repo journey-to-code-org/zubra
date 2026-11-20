@@ -51,6 +51,13 @@ export function create(dir, framework, { name = basename(resolve(dir)), typescri
     // The component in TypeScript, and a tsconfig.json unless the framework has its own.
     const own = existsSync(join(target, 'tsconfig.json'));
     cpSync(join(templates, 'typescript'), target, { recursive: true, filter: (from) => !(own && from.endsWith('tsconfig.json')) });
+    // React's .tsx files: `jsx` to check them, and `allowArbitraryExtensions` so an import of
+    // `./x.zb` is typed from the `x.d.zb.ts` the build plugin writes beside it (without it, it's
+    // `any`, and a wrong prop passes). The other frameworks check their own files their own way.
+    if (framework === 'react' && !own) {
+      const config = join(target, 'tsconfig.json');
+      writeFileSync(config, readFileSync(config, 'utf8').replace('"strict": true,\n', '"strict": true,\n    "jsx": "react-jsx",\n    "allowArbitraryExtensions": true,\n'));
+    }
     const manifest = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'));
     manifest.devDependencies = { ...manifest.devDependencies, typescript: manifest.devDependencies?.typescript ?? TYPESCRIPT };
     manifest.scripts = { ...manifest.scripts, check: 'zubra check --types src' };

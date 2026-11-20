@@ -64,6 +64,10 @@ for (const framework of ['react', 'angular']) {
     // Angular keeps its own (its compiler needs it); the others get one.
     if (framework === 'angular') assert.match(tsconfig, /angularCompilerOptions/);
     else assert.match(tsconfig, /"include": \["src"\]/);
+    // React's .tsx files are typed against the components' typings, so tsc catches a wrong prop.
+    const options = JSON.parse(tsconfig).compilerOptions;
+    assert.equal(options.jsx, framework === 'react' ? 'react-jsx' : options.jsx);
+    assert.equal(options.allowArbitraryExtensions, framework === 'react' ? true : undefined);
     assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /npm run check {3}# type-checks the components/);
     assert.match(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), /`npm run check` type-checks every component/);
   });
@@ -74,6 +78,12 @@ test('without --typescript, nothing about TypeScript changes', () => {
   const files = create(dir, 'vue');
   assert.ok(!files.includes('tsconfig.json'));
   assert.doesNotMatch(readFileSync(join(dir, 'src/components/hello-counter.zb'), 'utf8'), /lang="ts"/);
+  // Vue with --typescript keeps the plain tsconfig: no JSX, nothing React's .tsx files need.
+  const vue = join(work(), 'vue-ts');
+  create(vue, 'vue', { typescript: true });
+  const vueOptions = JSON.parse(readFileSync(join(vue, 'tsconfig.json'), 'utf8')).compilerOptions;
+  assert.equal(vueOptions.jsx, undefined);
+  assert.equal(vueOptions.allowArbitraryExtensions, undefined);
   const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
   assert.equal(pkg.scripts.check, undefined);
   assert.equal(pkg.devDependencies.typescript, undefined);
