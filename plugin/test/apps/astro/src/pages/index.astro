@@ -15,7 +15,7 @@ import Counter from '../../components/counter.zb.tsx';
     <Inbox />
     <Counter id="counter" count={4} client:load />
     <script>
-      await customElements.whenDefined('zb-rating');
+      await customElements.whenDefined('my-rating');
       await customElements.whenDefined('zb-counter');
       window.ready = true;
     </script>

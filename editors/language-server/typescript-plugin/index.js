@@ -73,7 +73,9 @@ function init({ typescript: ts }) {
     function frameworkFor(variant, importer) {
       if (variant === 'element') return 'none';
       if (variant) return variant;
-      if (FRAMEWORKS.includes(config.framework) || config.framework === 'none') return config.framework;
+      // No framework is `vanilla` (also `none`, `element`, `plain`): the element's own typings.
+      if (['vanilla', 'none', 'element', 'plain'].includes(config.framework)) return 'none';
+      if (FRAMEWORKS.includes(config.framework)) return config.framework;
       return projectFramework(dirname(importer));
     }
 

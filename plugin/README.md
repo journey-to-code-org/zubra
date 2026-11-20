@@ -32,7 +32,7 @@ const stars = ref(1);
 
 ## JSX components
 
-`.zb.jsx` and `.zb.tsx` files are components too (see the main README), resolved and wrapped like `.zb` files: `import Rating from './rating.zb.tsx'` in a React file is a React component, and `?element` gives the element. TypeScript reads the component's own source for its types, so no typings file is written for it.
+`.zb.jsx` and `.zb.tsx` files are components too (see [JSX components](https://github.com/zubra-js/zubra/blob/main/docs/reference.md#jsx-components) in the reference), resolved and wrapped like `.zb` files: `import Rating from './rating.zb.tsx'` in a React file is a React component, and `?element` gives the element. TypeScript reads the component's own source for its types, so no typings file is written for it.
 
 ## What an import gives
 
@@ -44,7 +44,7 @@ const stars = ref(1);
 | another `.zb` component | the custom element class |
 | any other file | the project's framework (detected from the React or Vue Vite plugin), or the element class when there is none |
 
-Every variant defines the custom element, so `<zb-rating>` also works in plain HTML. Add `?element`, `?react` or `?vue` to an import to choose explicitly. `tag` is also exported.
+Every variant defines the custom element, so `<my-rating>` also works in plain HTML. Add `?element`, `?react` or `?vue` to an import to choose explicitly. `tag` is also exported.
 
 - **React**: props are set as properties; `on<Event>` in any casing listens for the component's events (`onValueChange` for `valuechange`); `value` + `onValueChange` is the controlled pattern. Children go into the component's slots (`slot="name"` for named slots) and stay live as React updates them.
 - **Vue**: props are set as DOM properties before the element starts; events are Vue events (`@valuechange`); every `<prop>` + `<prop>change` pair supports `v-model:<prop>`, and `v-model` binds `value`. Named slots (`<template #title>`) become `slot="title"` content.
@@ -74,14 +74,16 @@ Props go to the component, other attributes to its host, children to its slots (
 
 ## Styles
 
-With Vite, a component's `<style>` is a CSS module in Vite's pipeline, so PostCSS, Tailwind (`@reference "tailwindcss"`, `@apply`) and preprocessors (`<style lang="scss">`) process it. Light-DOM components' CSS lands in the page's CSS bundle, and only there: a light-DOM element inside another shadow root (a Lit or FAST app's) gets its component's rules copied from the page's stylesheets. Shadow components get theirs as a string (`?inline`) for their shadow roots. With other bundlers, plain CSS is inlined in the module. See the main README's Styles section.
+With Vite, a component's `<style>` is a CSS module in Vite's pipeline, so PostCSS, Tailwind (`@reference "tailwindcss"`, `@apply`) and preprocessors (`<style lang="scss">`) process it. Light-DOM components' CSS lands in the page's CSS bundle, and only there: a light-DOM element inside another shadow root (a Lit or FAST app's) gets its component's rules copied from the page's stylesheets. Shadow components get theirs as a string (`?inline`) for their shadow roots. With other bundlers, plain CSS is inlined in the module. See [Styles](https://github.com/zubra-js/zubra/blob/main/docs/reference.md#styles) in the reference.
 
 ## Options
+
+An option name the plugin doesn't know is warned about, with the nearest one it does (`signal` → `engine: 'signals'`), and an `engine` that isn't one of the two is an error.
 
 ```js
 zubra({
   compiler: '/path/to/zubra',    // default: $ZUBRA_COMPILER, then @zubra/compiler, then `zubra` on PATH
-  framework: 'auto',           // or 'react' | 'vue' | 'element': the default for plain files
+  framework: 'auto',           // or 'react' | 'vue' | 'vanilla' (the element; also 'element'): the default for plain files
   dts: true,                   // write typings next to each component; { dir: '.zubra/types' } writes them
                                // in the app instead (see Types), false writes none
   runtime: '@zubra/runtime',     // the runtime module compiled code imports
@@ -93,6 +95,12 @@ zubra({
                                // that uses one of their tags gets the import written for it (see below)
   root: process.cwd(),         // where your own components are (default: Vite's root, or the current folder):
                                // a package's component with one of their tags gets yours (docs/guide/04-composition.md)
+  devtools: false,             // compile for the Zubra DevTools in builds too, not only in Vite's dev server
+                               // (default: $ZUBRA_DEVTOOLS === '1'), with the runtime's development build
+  engine: 'zubra',             // the reactive engine: 'zubra' (the default) or 'signals', the TC39 Signals API
+                               // (experimental; see docs/migrating-to-6.0.md). `signals: true` is its old name
+  compilerModule: '@zubra/compiler',
+                               // the module server builds render with
 })
 ```
 
@@ -162,9 +170,9 @@ Set the option in every app that builds the shared folder and delete the `*.d.zb
 npx zubra types src ../ui && tsc --noEmit
 ```
 
-`zubra types` (from `@zubra/compiler`) takes the files and folders of components to type (default: the folder it runs in), the framework from the app's `package.json` (`--framework react|vue|svelte|solid|none` says otherwise) and the folder from `--dir` (default `.zubra/types`).
+`zubra types` (from `@zubra/compiler`) takes the files and folders of components to type (default: the folder it runs in), the framework from the app's `package.json` (`--framework react|vue|svelte|solid|solid2|vanilla` says otherwise) and the folder from `--dir` (default `.zubra/types`).
 
-In the editor you don't need these files: the VS Code extension's TypeScript plugin types `.zb` imports from the components directly, updated each time one is saved (see [Editor support](../docs/editor-support.md)). They're for `tsc` in builds and CI.
+In the editor you don't need these files: the VS Code extension's TypeScript plugin types `.zb` imports from the components directly, updated each time one is saved (see [Editor support](https://github.com/zubra-js/zubra/blob/main/docs/editor-support.md)). They're for `tsc` in builds and CI.
 
 ## Development
 

@@ -8,6 +8,21 @@
     "url": "git+https://github.com/zubra-js/zubra.git",
     "directory": "plugin"
   },
+  "homepage": "https://github.com/zubra-js/zubra/tree/main/plugin#readme",
+  "bugs": {
+    "url": "https://github.com/zubra-js/zubra/issues"
+  },
+  "keywords": [
+    "zubra",
+    "web components",
+    "custom elements",
+    "vite",
+    "rollup",
+    "webpack",
+    "esbuild",
+    "unplugin",
+    "astro"
+  ],
   "type": "module",
   "exports": {
     ".": {

@@ -183,7 +183,7 @@ test('one folder as a string; a folder that isn\'t there says so; a tag twice wa
   twice.watchChange.call({}, join(work, 'twice/b/two.zb'));
   twice.transform.call(context, '<same-tag />', join(work, 'hook/B.svelte'));
   assert.equal(warnings.length, 1);
-  assert.match(warnings[0], /autoImport: <same-tag> is .*twice\/a\/one\.zb; .*twice\/b\/two\.zb has the same tag and is not imported for it/);
+  assert.match(warnings[0].replaceAll('\\', '/'), /autoImport: <same-tag> is .*twice\/a\/one\.zb; .*twice\/b\/two\.zb has the same tag and is not imported for it/);
 });
 
 test('a component added later is found', async () => {

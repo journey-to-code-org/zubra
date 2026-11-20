@@ -114,7 +114,7 @@ test("the app's own copy of a package's part stands in for it, and a different o
     assert.deepEqual(errors, [], 'one definition: no "already defined" warning in the browser');
     const standIns = warnings.filter((message) => message.includes('<kit-count> is the app\'s'));
     assert.equal(standIns.length, 1, warnings.join('\n'));
-    assert.match(standIns[0], /parts\/kit-count\.zb, in place of .*node_modules\/@acme\/kit\/components\/kit-count\.zb, which differs from it/);
+    assert.match(standIns[0].replaceAll('\\', '/'), /parts\/kit-count\.zb, in place of .*node_modules\/@acme\/kit\/components\/kit-count\.zb, which differs from it/);
   } finally {
     await close();
   }

@@ -27,7 +27,7 @@ const { chromium } = require('playwright');
 const tsc = join(dirname(require.resolve('typescript/package.json')), 'bin', 'tsc');
 
 // Inside plugin/, so the apps resolve the plugin's node_modules.
-const work = join(here, '.tmp');
+const work = join(here, '.tmp-plugin');
 let browser;
 const servers = [];
 
@@ -104,7 +104,7 @@ test('React: .zb imports are React components, with props, events, children and 
   await settle(page);
   assert.deepEqual(await page.evaluate(() => window.kinds), { plain: 'react', element: 'zb-card' });
 
-  await page.click('zb-rating .two');
+  await page.click('my-rating .two');
   await settle(page);
   assert.equal(await page.textContent('#stars'), '2', 'onValueChange');
 
@@ -114,7 +114,7 @@ test('React: .zb imports are React components, with props, events, children and 
   await settle(page);
   assert.equal(strip((await card())[1]), '<p>b</p><p>c</p><p>a</p>');
 
-  assert.deepEqual(await page.$$eval('zb-inbox zb-badge b', (bs) => bs.map((b) => b.textContent)), ['Ada', 'Linus'],
+  assert.deepEqual(await page.$$eval('zb-inbox my-badge b', (bs) => bs.map((b) => b.textContent)), ['Ada', 'Linus'],
     'a component using a component, both compiled by the plugin');
   assert.equal(await page.$eval('#from-html h2', (h2) => h2.textContent), 'HTML', 'the element works in plain HTML too');
   assert.deepEqual(messages, []);
@@ -125,7 +125,7 @@ test('Vue: .zb imports are Vue components, with v-model, events and named slots'
   const root = await bundle('vue');
   const { page, messages } = await visit(root);
   await settle(page);
-  await page.click('zb-rating .two');
+  await page.click('my-rating .two');
   await settle(page);
   assert.equal(await page.textContent('#stars'), '2', 'v-model');
   assert.equal(await page.textContent('#log'), 'change', '@change');
@@ -295,6 +295,7 @@ test('compile errors fail the build with the source line', async () => {
   writeFileSync(join(root, 'components/card.zb'), '<zb-card heading="x">\n  <h2>{headng}</h2>\n</zb-card>\n');
   await assert.rejects(bundle('plain', root), (error) => {
     assert.match(error.message, /unknown reference `headng`/);
+    assert.match(error.message, /ZB2001/, 'with its code');
     assert.match(error.message, /2 \|   <h2>\{headng\}<\/h2>/);
     assert.match(error.message, /did you mean `heading`\?/);
     return true;
@@ -338,14 +339,14 @@ test('dev server: components compile on demand; editing one updates it in place,
     // A development build is what the DevTools panel reads: located parts, the file, the names.
     const module = await inbox();
     assert.match(module, /at: \[\d+, \d+\]/);
-    assert.ok(module.includes(`source: { file: ${JSON.stringify(join(root, 'components/inbox.zb'))}`), 'the absolute path, for Open in editor');
+    assert.ok(module.replaceAll('\\', '/').includes(`source: { file: ${JSON.stringify(join(root, 'components/inbox.zb').replaceAll('\\', '/'))}`), 'the absolute path, for Open in editor');
     const inspected = await page.evaluate(async () => {
       globalThis.__ZUBRA_DEVTOOLS__.connect();
       while (!globalThis.__ZUBRA_DEVTOOLS__.ready) await new Promise((resolve) => setTimeout(resolve, 20));
       const result = globalThis.__ZUBRA_DEVTOOLS__.inspect(document.querySelector('zb-card:not(#from-html) footer'));
       return { tag: result.component.tag, file: result.component.file, located: result.bindings.some((binding) => binding.here && binding.at) };
     });
-    assert.deepEqual(inspected, { tag: 'zb-card', file: join(root, 'components/card.zb'), located: true });
+    assert.deepEqual(inspected, { tag: 'zb-card', file: join(root, 'components/card.zb').replaceAll('\\', '/'), located: true });
 
     // Edit the card: the live elements get the new template, without a page reload.
     await page.evaluate(() => { window.stale = true; });
@@ -499,7 +500,7 @@ test('without a CLI, the WebAssembly compiler (@zubra/compiler) builds the app',
     await build({ root, configFile: false, logLevel: 'silent', plugins: [zubra(), react()], build: { outDir: join(root, 'dist'), minify: false } });
     const { page, messages } = await visit(root);
     await settle(page);
-    await page.click('zb-rating .two');
+    await page.click('my-rating .two');
     await settle(page);
     assert.equal(await page.textContent('#stars'), '2');
     assert.deepEqual(messages, []);
@@ -524,7 +525,7 @@ test('the WebAssembly compiler in the dev server: compiled for the DevTools too'
   try {
     const module = await (await fetch(`${server.resolvedUrls.local[0]}components/rating.zb?zubra=element&import`)).text();
     assert.match(module, /at: \[\d+, \d+\]/);
-    assert.ok(module.includes(`source: { file: ${JSON.stringify(join(root, 'components/rating.zb'))}`));
+    assert.ok(module.replaceAll('\\', '/').includes(`source: { file: ${JSON.stringify(join(root, 'components/rating.zb').replaceAll('\\', '/'))}`));
   } finally {
     await server.close();
     if (saved !== undefined) process.env.ZUBRA_COMPILER = saved;
@@ -539,12 +540,12 @@ for (const name of ['svelte', 'solid', 'lit']) {
     await settle(page);
     const card = () => page.$eval('zb-card', (el) => [el.querySelector('header').innerHTML, el.querySelector('section').innerHTML].map((html) => html.replace(/<!--.*?-->/g, '').replace(/\s+/g, ' ').trim()));
     assert.deepEqual(await card(), ['<h2 slot="title">Custom</h2>', '<p>a</p><p>b</p>']);
-    assert.equal(await page.$eval('zb-badge .badge', (el) => el.dataset.color), 'red', 'objects arrive as properties');
+    assert.equal(await page.$eval('my-badge .badge', (el) => el.dataset.color), 'red', 'objects arrive as properties');
 
-    await page.click('zb-rating .two');
+    await page.click('my-rating .two');
     await settle(page);
     assert.equal(await page.textContent('#stars'), '2', 'the event updated the app, which set the prop back');
-    assert.equal(await page.$eval('zb-rating', (el) => el.value), 2);
+    assert.equal(await page.$eval('my-rating', (el) => el.value), 2);
     assert.equal(await page.textContent('#log'), 'change');
 
     await page.evaluate(() => window.app.setItems(['c', 'a', 'b']));
@@ -554,7 +555,7 @@ for (const name of ['svelte', 'solid', 'lit']) {
     await settle(page);
     const heading = { svelte: 'Svelte', solid: 'Solid', lit: 'Lit' }[name];
     assert.deepEqual(await card(), [`<h2>${heading}</h2>`, '<p>b</p>'], 'removals, and the fallback comes back');
-    assert.equal(await page.$eval('zb-badge .badge', (el) => el.dataset.color), 'blue');
+    assert.equal(await page.$eval('my-badge .badge', (el) => el.dataset.color), 'blue');
     await page.evaluate(() => { window.app.setItems([]); window.app.setTitle(true); });
     await settle(page);
     assert.deepEqual(await card(), ['<h2 slot="title">Custom</h2>', '<p>No content</p>']);
@@ -565,14 +566,14 @@ for (const name of ['svelte', 'solid', 'lit']) {
 
 // The other bundlers unplugin supports: the same app, built by each, run in the browser.
 const BUNDLER_ENTRY = `import '../components/inbox.zb';\nimport '../components/styled-card.zb';\nwindow.ready = true;\n`;
-const BUNDLER_PAGE = '<!doctype html><meta charset="utf-8"><zb-inbox></zb-inbox><zb-styled-card><p class="mine">mine</p></zb-styled-card><script type="module" src="/bundle.js"></script>';
+const BUNDLER_PAGE = '<!doctype html><meta charset="utf-8"><zb-inbox></zb-inbox><my-styled-card><p class="mine">mine</p></my-styled-card><script type="module" src="/bundle.js"></script>';
 
 async function checkBundle(root) {
   writeFileSync(join(root, 'dist/index.html'), BUNDLER_PAGE);
   const { page, messages } = await visit(root);
   await settle(page);
-  assert.deepEqual(await page.$$eval('zb-inbox zb-badge b', (bs) => bs.map((b) => b.textContent)), ['Ada', 'Linus'], 'nested components');
-  assert.equal(await page.$eval('zb-styled-card h2', (h2) => getComputedStyle(h2).color), 'rgb(255, 0, 0)', 'inlined styles, scoped');
+  assert.deepEqual(await page.$$eval('zb-inbox my-badge b', (bs) => bs.map((b) => b.textContent)), ['Ada', 'Linus'], 'nested components');
+  assert.equal(await page.$eval('my-styled-card h2', (h2) => getComputedStyle(h2).color), 'rgb(255, 0, 0)', 'inlined styles, scoped');
   assert.equal(await page.$eval('.mine', (p) => getComputedStyle(p).color), 'rgb(0, 0, 0)', 'slotted content is not the card\'s to style');
   assert.deepEqual(messages, []);
   await page.close();
@@ -622,7 +623,7 @@ test('esbuild builds the app', async () => {
 // One of signal-impl.js's messages: it survives minifying, and only the TC39 engine has it.
 const TC39_ENGINE = 'Called watch/unwatch without a Computed or State argument';
 
-test("signals: true puts the TC39 engine where Zubra's would be, in each bundler", async () => {
+test("engine: 'signals' puts the TC39 engine where Zubra's would be, in each bundler", async () => {
   const { rollup } = await import('rollup');
   const { nodeResolve } = await import('@rollup/plugin-node-resolve');
   const { default: zubraRollup } = await import('../src/rollup.js');
@@ -655,9 +656,9 @@ test("signals: true puts the TC39 engine where Zubra's would be, in each bundler
   for (const [name, run] of Object.entries(builds)) {
     for (const signals of [false, true]) {
       const root = bundlerApp(`${name}-signals-${signals}`);
-      await run(root, signals ? { signals } : {});
+      await run(root, signals ? { engine: 'signals' } : {});
       const code = readFileSync(join(root, 'dist/bundle.js'), 'utf8');
-      assert.equal(code.includes(TC39_ENGINE), signals, `${name}, signals: ${signals}`);
+      assert.equal(code.includes(TC39_ENGINE), signals, `${name}, engine: ${signals ? 'signals' : 'zubra'}`);
       // (Vite's library build puts the styles in a file of their own, which the page doesn't load.)
       if (name !== 'vite') await checkBundle(root);
     }
@@ -711,8 +712,8 @@ test('astro: server-rendered pages, hydrated with a client directive', async () 
     assert.match(html, /<zb-card data-kind="static" heading="Astro" data-zb-filled="default title">/);
     // (Astro takes the `slot` attribute off what it passes.)
     assert.match(html, /<header><\?zb \[!\?><h2>Custom \{braces\}<\/h2><\?zb \]\?><\/header>[^]*<section><\?zb \[!\?><p>Body<\/p><\?zb \]\?><\/section>/);
-    assert.match(html, /<zb-badge class="row" data-who="Ada" label="Ada" count="3"/, 'nested components render too');
-    assert.match(html, /<astro-island[^>]*><zb-rating id="r" class="big" value="1">[^]*<output>1<\/output>/);
+    assert.match(html, /<my-badge class="row" data-who="Ada" label="Ada" count="3"/, 'nested components render too');
+    assert.match(html, /<astro-island[^>]*><my-rating id="r" class="big" value="1">[^]*<output>1<\/output>/);
 
     // A JSX component with a derived value: partly server-rendered (the derived text is left
     // for the element), then hydrated.
@@ -725,9 +726,9 @@ test('astro: server-rendered pages, hydrated with a client directive', async () 
     await page.click('#counter button');
     await settle(page);
     assert.equal(await page.textContent('#counter .doubled'), '10');
-    await page.click('zb-rating .two');
+    await page.click('my-rating .two');
     await settle(page);
-    assert.equal(await page.textContent('zb-rating output'), '2', 'the island hydrated');
+    assert.equal(await page.textContent('my-rating output'), '2', 'the island hydrated');
     assert.deepEqual(messages, []);
     await page.close();
   } finally {
@@ -743,7 +744,7 @@ test('JSX components: imported from React as React components, and as elements',
   const { page, messages } = await visit(root);
   await settle(page);
   assert.equal(await page.evaluate(() => window.kind), 'zb-counter');
-  const read = (id) => page.$eval(`#${id}`, (el) => [el.querySelector('zb-badge i').textContent, el.querySelector('.doubled').textContent]);
+  const read = (id) => page.$eval(`#${id}`, (el) => [el.querySelector('my-badge i').textContent, el.querySelector('.doubled').textContent]);
   assert.deepEqual(await read('react'), ['1', '2']);
   assert.deepEqual(await read('plain'), ['5', '10'], 'the element in plain HTML');
   await page.click('#react button');

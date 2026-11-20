@@ -27,7 +27,7 @@ export default function zubra(options = {}) {
         });
         updateConfig({
           vite: {
-            plugins: [vite({ framework: 'element', ...options })],
+            plugins: [vite({ framework: 'vanilla', ...options })],
             // The server build renders with @zubra/compiler, which loads zubra.wasm from beside
             // itself: bundled into Astro's prerender chunks, it would look for it there. (From
             // npm it's external anyway; linked or in a workspace, Vite would bundle it.)

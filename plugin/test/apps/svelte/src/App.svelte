@@ -15,11 +15,11 @@
   };
 </script>
 
-<zb-rating value={stars} onvaluechange={(event) => (stars = event.detail)} onchange={() => log.push('change')}></zb-rating>
+<my-rating value={stars} onvaluechange={(event) => (stars = event.detail)} onchange={() => log.push('change')}></my-rating>
 <p id="stars">{stars}</p>
 <zb-card heading="Svelte">
   {#if title}<h2 slot="title">Custom</h2>{/if}
   {#each items as item (item)}<p>{item}</p>{/each}
 </zb-card>
-<zb-badge label="x" info={info}></zb-badge>
+<my-badge label="x" info={info}></my-badge>
 <p id="log">{log.join(',')}</p>
