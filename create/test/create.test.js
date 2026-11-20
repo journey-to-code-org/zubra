@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { FRAMEWORKS, create, parse } from '../index.js';
 
 const work = () => mkdtempSync(join(tmpdir(), 'create-zubra-'));
@@ -18,8 +19,9 @@ for (const framework of Object.keys(FRAMEWORKS).filter((framework) => framework 
   test(`${framework}: an app with the component, the plugin, a test, and no placeholders left`, () => {
     const dir = join(work(), 'My App');
     const files = create(dir, framework);
+    const paths = files.map((file) => file.replaceAll('\\', '/'));
     for (const file of ['.gitignore', 'README.md', 'package.json', 'src/style.css', ...COMPONENTS.map((name) => `src/components/${name}.zb`), 'test/app.test.js', 'test/build.js', 'AGENTS.md', 'skills/zubra-component/SKILL.md', 'skills/zubra-consume/SKILL.md']) {
-      assert.ok(files.includes(file), `${file} in ${files.join(', ')}`);
+      assert.ok(paths.includes(file), `${file} in ${files.join(', ')}`);
     }
     for (const file of files) {
       assert.doesNotMatch(readFileSync(join(dir, file), 'utf8'), /\{\{(name|title|version|framework)\}\}/, file);
@@ -35,7 +37,7 @@ for (const framework of Object.keys(FRAMEWORKS).filter((framework) => framework 
     assert.match(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), /^# My App/);
     // The starter page: the welcome, the counter the page binds to, and the examples, in the
     // framework's own entry (as tags, or as the components React, Vue and Astro import).
-    const page = files.filter((file) => /^(index\.html|server\.js|src\/(App\.(jsx|vue|svelte)|app\.ts|main\.js|pages\/index\.astro))$/.test(file)).map((file) => readFileSync(join(dir, file), 'utf8')).join('\n');
+    const page = paths.filter((file) => /^(index\.html|server\.js|src\/(App\.(jsx|vue|svelte)|app\.ts|main\.js|pages\/index\.astro))$/.test(file)).map((file) => readFileSync(join(dir, file), 'utf8')).join('\n');
     for (const tag of ['zubra-welcome', 'hello-counter', 'zubra-examples']) {
       const component = tag.replace(/(^|-)(\w)/g, (_, _dash, letter) => letter.toUpperCase());
       assert.match(page, new RegExp(`<(${tag}|${component})[\\s>/]|page\\.render\\('${tag}'`), `${tag} in the ${framework} page`);
@@ -66,6 +68,10 @@ for (const framework of ['react', 'angular']) {
     // Angular keeps its own (its compiler needs it); the others get one.
     if (framework === 'angular') assert.match(tsconfig, /angularCompilerOptions/);
     else assert.match(tsconfig, /"include": \["src"\]/);
+    // React's .tsx files are typed against the components' typings, so tsc catches a wrong prop.
+    const options = JSON.parse(tsconfig).compilerOptions;
+    assert.equal(options.jsx, framework === 'react' ? 'react-jsx' : options.jsx);
+    assert.equal(options.allowArbitraryExtensions, framework === 'react' ? true : undefined);
     assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /npm run check {3}# type-checks the components/);
     assert.match(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), /`npm run check` type-checks every component/);
   });
@@ -76,6 +82,12 @@ test('without --typescript, nothing about TypeScript changes', () => {
   const files = create(dir, 'vue');
   assert.ok(!files.includes('tsconfig.json'));
   assert.doesNotMatch(readFileSync(join(dir, 'src/components/hello-counter.zb'), 'utf8'), /lang="ts"/);
+  // Vue with --typescript keeps the plain tsconfig: no JSX, nothing React's .tsx files need.
+  const vue = join(work(), 'vue-ts');
+  create(vue, 'vue', { typescript: true });
+  const vueOptions = JSON.parse(readFileSync(join(vue, 'tsconfig.json'), 'utf8')).compilerOptions;
+  assert.equal(vueOptions.jsx, undefined);
+  assert.equal(vueOptions.allowArbitraryExtensions, undefined);
   const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
   assert.equal(pkg.scripts.check, undefined);
   assert.equal(pkg.devDependencies.typescript, undefined);
@@ -98,18 +110,25 @@ test('command line: arguments, and a run without a terminal', () => {
   assert.equal(parse(['--js']).typescript, false);
   assert.throws(() => parse(['a', 'b']), /unexpected argument b/);
   const cwd = work();
-  const out = execFileSync(process.execPath, [new URL('../index.js', import.meta.url).pathname, 'site', '--framework', 'svelte'], { cwd, encoding: 'utf8' });
+  const entry = fileURLToPath(new URL('../index.js', import.meta.url));
+  const out = execFileSync(process.execPath, [entry, 'site', '--framework', 'svelte'], { cwd, encoding: 'utf8' });
   assert.match(out, /A Zubra app \(Svelte\) is in site/);
   assert.match(out, /cd site\n {2}npm install/);
   assert.match(out, /made of the examples in src\/components\//);
   assert.match(readFileSync(join(cwd, 'site/src/App.svelte'), 'utf8'), /<hello-counter/);
   // No terminal and no framework: plain HTML, in zb-app.
-  execFileSync(process.execPath, [new URL('../index.js', import.meta.url).pathname], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  execFileSync(process.execPath, [entry], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   assert.match(readFileSync(join(cwd, 'zb-app/index.html'), 'utf8'), /<hello-counter/);
   // --typescript says how to check.
-  const typed = execFileSync(process.execPath, [new URL('../index.js', import.meta.url).pathname, 'typed', '--framework', 'vanilla', '--typescript'], { cwd, encoding: 'utf8' });
-  assert.match(typed, /A Zubra app \(No framework \(plain HTML and JavaScript\), TypeScript\) is in typed/);
+  const typed = execFileSync(process.execPath, [entry, 'typed', '--framework', 'vanilla', '--typescript'], { cwd, encoding: 'utf8' });
+  assert.match(typed, /A Zubra app \(Vanilla: no framework \(plain HTML and JavaScript\), TypeScript\) is in typed/);
   assert.match(typed, /npm run check {3}type-checks the components/);
+  // No framework is `vanilla`; `element`, `none` and `plain` are its other names.
+  for (const alias of ['element', 'none', 'plain']) {
+    const made = execFileSync(process.execPath, [entry, alias, '--framework', alias], { cwd, encoding: 'utf8' });
+    assert.match(made, /A Zubra app \(Vanilla: no framework/, alias);
+    assert.equal(readFileSync(join(cwd, alias, 'index.html'), 'utf8'), readFileSync(join(cwd, 'zb-app/index.html'), 'utf8').replaceAll('zb-app', alias));
+  }
 });
 
 test("no starter component has a registry component's name, so `zubra add` never finds its file taken", () => {
@@ -121,9 +140,10 @@ test("no starter component has a registry component's name, so `zubra add` never
 test('the server app: a Node server, a form with a server function, no bundler, and its own docs', () => {
   const dir = join(work(), 'shop');
   const files = create(dir, 'server', { name: 'My Shop' });
-  for (const file of ['server.js', 'src/notes.js', 'src/components/guest-book.zb', 'skills/zubra-server/SKILL.md', 'test/app.test.js']) assert.ok(files.includes(file), file);
+  const paths = files.map((file) => file.replaceAll('\\', '/'));
+  for (const file of ['server.js', 'src/notes.js', 'src/components/guest-book.zb', 'skills/zubra-server/SKILL.md', 'test/app.test.js']) assert.ok(paths.includes(file), file);
   // No build step: nothing of Vite's, and not the shared test's build helper.
-  assert.deepEqual(files.filter((file) => /vite|index\.html|test\/build\.js/.test(file)), []);
+  assert.deepEqual(paths.filter((file) => /vite|index\.html|test\/build\.js/.test(file)), []);
   const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
   assert.deepEqual(Object.keys(manifest.dependencies).sort(), ['@zubra/actions', '@zubra/compiler', '@zubra/runtime', '@zubra/server']);
   for (const name of Object.keys(manifest.dependencies)) assert.equal(manifest.dependencies[name], `^${version}`);
@@ -155,6 +175,16 @@ test('the server app: a Node server, a form with a server function, no bundler, 
     assert.doesNotMatch(text, /hot reload|vite|\{\{/i);
   }
   assert.match(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), /skills\/zubra-server\/SKILL\.md/);
+  // AGENTS.md's guest-book excerpt is the real component, shortened: every line of its script is a
+  // line of guest-book.zb (a comment after `//` aside), so it names what it uses (`from`, `list`).
+  const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8');
+  const excerpt = agents.slice(agents.indexOf('## A function on the server')).match(/```html\n<script>\n([\s\S]*?)\n<\/script>/)[1];
+  const real = new Set(readFileSync(join(dir, 'src/components/guest-book.zb'), 'utf8').split('\n').map((line) => line.trim()));
+  for (const line of excerpt.split('\n').map((text) => text.replace(/\s+\/\/ .*$/, '').trim()).filter(Boolean)) {
+    assert.ok(real.has(line), `AGENTS.md's guest-book excerpt has "${line}", which guest-book.zb doesn't`);
+  }
+  assert.match(excerpt, /import \{ from \} from '@zubra\/runtime'/);
+  assert.match(excerpt, /let list = from\(saved\)/);
   // In development a saved component updates the open page in place (`reload`), as the bundler
   // starters do, so the counter's comment and the welcome line, shared with them, hold here too.
   assert.match(server, /reload: !production/);
@@ -171,3 +201,40 @@ test('the server app: a Node server, a form with a server function, no bundler, 
   assert.match(readFileSync(join(typed, 'README.md'), 'utf8'), /^npm run check {3}# type-checks the components[^\n]*\nnpm test {8}# starts the server/m);
   assert.match(readFileSync(join(typed, 'AGENTS.md'), 'utf8'), /`npm run check` type-checks every component/);
 });
+
+// A starter's own `npm test` without Playwright's Chromium: it fails at once, says how to install
+// it, and leaves nothing running (an open server kept `npm test` waiting forever). Run against a
+// Playwright whose launch() fails, as it does when the browser isn't installed.
+for (const framework of ['react', 'server']) {
+  test(`${framework}: the app's test fails fast, with the fix, when Chromium isn't installed`, () => {
+    const dir = join(work(), 'app');
+    create(dir, framework);
+    const playwright = join(dir, 'node_modules/playwright');
+    mkdirSync(playwright, { recursive: true });
+    writeFileSync(join(playwright, 'package.json'), '{ "name": "playwright", "type": "module", "main": "index.js" }');
+    writeFileSync(join(playwright, 'index.js'), "export const chromium = { launch: async () => { throw new Error(\"Executable doesn't exist\"); } };\n");
+    if (framework === 'server') {
+      // The server's own imports (@zubra/server, @zubra/actions) aren't installed here: a plain one.
+      writeFileSync(join(dir, 'server.js'), "import { createServer } from 'node:http';\nexport const server = createServer((req, res) => res.end());\n");
+    } else {
+      // Nothing to build: the test must stop before it builds.
+      writeFileSync(join(dir, 'test/build.js'), "export async function buildApp() { throw new Error('built before the browser started'); }\n");
+    }
+    const started = Date.now();
+    let output = '';
+    let status = 0;
+    try {
+      // (Without the test runner's NODE_TEST_CONTEXT, which would make it report to this one.)
+      const { NODE_TEST_CONTEXT, ...env } = process.env;
+      execFileSync(process.execPath, ['--test', 'test/app.test.js'], { cwd: dir, env, encoding: 'utf8', stdio: 'pipe', timeout: 60_000 });
+    } catch (error) {
+      ({ status } = error);
+      output = `${error.stdout}${error.stderr}`;
+      assert.notEqual(error.signal, 'SIGTERM', `npm test was still running after a minute:\n${output}`);
+    }
+    assert.notEqual(status, 0, 'the test failed');
+    assert.match(output, /npx playwright install chromium/);
+    assert.doesNotMatch(output, /built before the browser started/);
+    assert.ok(Date.now() - started < 30_000, `it took ${Date.now() - started} ms`);
+  });
+}

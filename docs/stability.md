@@ -1,23 +1,24 @@
 # Stability: what may change, and how
 
-Zubra is moving fast on purpose, and this page says so rather than leaving it to the version numbers. It also lists everything the project maintains, with a tier for each, so you can tell what you can build on and what may still go.
+Zubra moved fast on purpose before 6.0, and this page says what that means from 6.0 on rather than leaving it to the version numbers. It also lists everything the project maintains, with a tier for each, so you can tell what you can build on and what may still go.
 
-## The stage: pre-adoption
+## The 6.x long-term-support line
 
-Nobody depends on Zubra in production yet, so it follows the platform as soon as the platform moves: a new standard lands, and Zubra uses it in the next release. That has meant majors close together (1.0 to 5.x in its first week; `CHANGELOG.md` has each).
+6.0.0 starts a long-term-support line. For all of 6.x:
 
-What doesn't change in this stage:
+- **Everything Stable is frozen.** Every row marked Stable below: the `.zb` format, the compiled ABI (`abi: 5`), the CLI's commands, flags and exit codes, the typings and Custom Elements Manifest the compiler writes, the hydration markers, and every Stable npm entry. These change only in a major, and not before 7.0.
+- **Patch releases (6.0.x) are bug and security fixes only.**
+- **Minor releases (6.x.0) add things, or change something Supported**, each with a written reason and an entry in `CHANGELOG.md` that says what to do. A minor may not break a Stable contract.
+- **Experimental pieces may change in any release**: signals mode, `@zubra/runtime/track`, `@zubra/runtime/outlet`, `@zubra/unplugin/rspack`, and the other rows marked Experimental below.
+- **A Stable item that 7.0 removes is deprecated first**, with a warning in at least two 6.x minors before 7.0.
+- **6.x gets security and critical fixes for 18 months after 6.0.0**, in its latest release (`SECURITY.md` says how to report one).
+- **Every major ships with a migration guide**, and with an automatic migration where the change is mechanical. 6.0's is [Migrating to 6.0](migrating-to-6.0.md).
 
-- **Within a major, nothing Stable breaks.** The `.zb` format, the CLI, the runtime's public API and the compiled ABI (see "Contracts") break only in a major.
-- **Every change is in `CHANGELOG.md`.** A major's entry says what broke and how to upgrade; a Supported change's entry says what to do.
+## Before 6.0: pre-adoption
 
-What this stage leaves out, on purpose: separate migration guides and a `zubra migrate` command. Both existed and were removed in 5.0.x, since there was no one to migrate.
+Until 6.0, nobody depended on Zubra in production, so it followed the platform as soon as the platform moved: a new standard landed, and Zubra used it in the next release. That meant majors close together (1.0 to 5.x in its first week; `CHANGELOG.md` has each). Within a major nothing Stable broke, and every change was in `CHANGELOG.md`. The 5.x line left out migration guides and a `zubra migrate` command, since there was no one to migrate; 6.0 brings back the guide ([Migrating to 6.0](migrating-to-6.0.md)), and the long-term-support line above keeps one for every major.
 
-**When this stage ends:** when the first project outside the author's ships on Zubra, or the first issue reports a break in someone else's code, whichever comes first. From then on:
-
-- a Stable change needs a deprecation that warns for at least two minors before the major that makes it;
-- every major ships with a migration guide, and with an automatic migration where the change is mechanical;
-- this section records the date the stage ended.
+This stage ends with 6.0.0.
 
 ## Tiers
 
@@ -33,13 +34,14 @@ Every npm package entry and command below has a tier; `docs/test/stability.test.
 
 | Contract | Tier | Notes |
 |---|---|---|
-| The `.zb` format and `.zb.jsx` / `.zb.tsx` front ends | Stable | The README's rules are the reference |
+| The `.zb` format and `.zb.jsx` / `.zb.tsx` front ends | Stable | [The reference](reference.md)'s rules are the contract |
 | The compiled ABI (`abi: 5`) | Stable | The runtime still runs `abi: 2` and `abi: 3` output (through `$define`) and `abi: 4` output (through `$element`), filling in what they don't name; `since-4.test.js` runs 5.18.0's output |
-| CLI commands, flags and exit codes | Stable | Except the commands marked below |
+| CLI commands, flags and exit codes | Stable | Both CLIs, native and npm, from one table (`src/cli.rs`); exit codes 0, 1 and 2 as in [the reference](reference.md#the-cli). Except the commands marked below |
+| Diagnostic codes (`ZB2001`) | Stable | [docs/diagnostics.md](diagnostics.md) lists every one; a code is never reused or renumbered |
 | The Custom Elements Manifest and typings the compiler writes | Stable | |
 | Hydration markers (processing instructions) | Stable | The runtime still reads 4.x comment markers |
 | The `zubra request` / `zubra serve` JSON protocol | Supported | What the server clients speak |
-| The compiler's error and warning text | Supported | Tools should read `--format json` codes, not the prose |
+| The compiler's error and warning text | Supported | Tools should read the codes (`--format json`'s `code`, the language server's `Diagnostic.code`), not the prose |
 
 The compiled ABI runs one way: a runtime runs what its own and older compilers wrote, not what a later one writes. So an app's `@zubra/compiler` is never a later release than its `@zubra/runtime`; install the two, and `@zubra/server`, at one version. From the release after 5.19.0 npm enforces it: `@zubra/compiler` has an optional peer on `@zubra/runtime` no older than itself, so installing a compiler ahead of the runtime is refused (`ERESOLVE`) where it used to succeed, and the compiler alone still installs no runtime. 5.19.0 and earlier have no such peer (pinning the runtime alone leaves the compiler on the latest), which is what `@zubra/server`'s warning at start is for.
 
@@ -63,7 +65,7 @@ The compiled ABI runs one way: a runtime runs what its own and older compilers w
 | `@zubra/runtime/zag` | Stable | Runtime; registry | Registry `combo-box` |
 | `@zubra/runtime/primitives` | Stable | Runtime; registry | Registry menus, tabs |
 | `@zubra/runtime/motion` | Supported | Runtime (both outputs) | Zubra UI motion components |
-| Signals mode (`signals: true` in `@zubra/unplugin`, `@zubra/server` and `buildRuntime()`: `signal-tc39.js` as the engine) | Experimental | Runtime in signals mode (unit, browser, production, Sync); Plugin (`plugin.test.js`); Server (`signals.test.js`) | Nothing yet: for interoperating with other Signals libraries and tools |
+| Signals mode (`engine: 'signals'` in `@zubra/unplugin`, `@zubra/server` and `buildRuntime()`: `signal-tc39.js` as the engine; `signals: true` is its 6.0.0-rc.0 name) | Experimental | Runtime in signals mode (unit, browser, production, Sync); Plugin (`plugin.test.js`, `options.test.js`); Server (`signals.test.js`) | Nothing yet: for interoperating with other Signals libraries and tools |
 | `@zubra/runtime/track` | Experimental | Runtime (unit, browser) | Async `resource()` fetchers in `.zb` scripts; nothing outside its tests yet |
 | `@zubra/runtime/react` | Stable | Framework and meta-framework examples | React and Next.js examples |
 | `@zubra/runtime/vue` | Stable | Framework and meta-framework examples | Vue and Nuxt examples |
@@ -152,7 +154,7 @@ A sibling: needed only for `'use collection'` state.
 
 ### `@zubra/router`
 
-A sibling: needed only for `'use route'` and `'use layout'` components, in an app with no host framework. New in this release, so its options may still move in a minor.
+A sibling: needed only for `'use route'` and `'use layout'` components, in an app with no host framework. On npm since 5.17, and Supported, so its options may still move in a minor (with a changelog entry that says what to do).
 
 | Entry | Tier | Tested by | Used by |
 |---|---|---|---|
@@ -167,7 +169,7 @@ A sibling: needed only for `'use route'` and `'use layout'` components, in an ap
 | `@zubra/language-server` | Supported | Editor support | The VS Code extension |
 | `@zubra/language-server/analysis` | Supported | Editor support | Same |
 | `bin zubra-language-server` | Supported | Editor support | Same |
-| `prettier-plugin-zubra` | Supported | Prettier plugin | Projects that format with Prettier |
+| `prettier-plugin-zubra` | Experimental | Prettier plugin | Not published: not on npm yet; install it from the repository (`prettier-plugin/`) |
 
 ## Everything else Zubra maintains
 

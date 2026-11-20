@@ -17,19 +17,19 @@
 <style>
   button { font: inherit }
 </style>
-<zb-rating value={0}>
+<my-rating value={0}>
   <button type="button" onclick={() => rate(1)}>1</button>
   <button type="button" onclick={() => rate(2)}>2</button>
   <output>{value}</output>
-</zb-rating>
+</my-rating>
 ```
 
 1. **The host tag declares the element.** Its name is the custom element, and its attributes are the props: `value={0}` is a prop with a default, `label="Hi"` a string default, a bare `name` a required prop. `shadow` opts into shadow DOM and `form-associated` makes it a form control. What a declarative custom element needs (name, observed attributes, defaults, shadow mode, form association) sits where an HTML author would look.
-2. **Light DOM is the default.** Styles scope with native `@scope (zb-rating) to ([data-zb-slotted="zb-rating"])`, which stops at content callers put in slots, so light-DOM components get most of shadow DOM's style encapsulation without its costs. `<zb-slot>` projects in light DOM, and in shadow components it compiles to a native `<slot>`.
+2. **Light DOM is the default.** Styles scope with native `@scope (my-rating) to ([data-zb-slotted="my-rating"])`, which stops at content callers put in slots, so light-DOM components get most of shadow DOM's style encapsulation without its costs. `<zb-slot>` projects in light DOM, and in shadow components it compiles to a native `<slot>`.
 3. **`{expr}` bindings, evaluated statically when possible.** A deterministic subset (literals, operators, member access, template literals, arrow functions and pure built-ins such as `.map` and `.toFixed`) renders on the server. Anything else is JavaScript that runs in the browser. Partial server rendering leaves those parts as `<?zb [??>` regions.
 4. **Directives as elements.** `<zb-if>`, `<zb-each key>`, `<zb-slot>` and `<zb-await>` are template syntax a parser already understands, unlike `{#if}` blocks.
 5. **Events are inferred from `emit('name', detail)`** and named like the platform's events: lowercase with no separators (`valuechange`), `beforeX` cancelable. Two-way binding follows from naming: `value` plus `valuechange` is a model pair that each framework adapter maps to its own idiom.
-6. **One script, run once per element.** There's no re-rendering and no hook rules. Reactivity is the TC39 Signals API.
+6. **One script, run once per element.** There's no re-rendering and no hook rules. Reactivity is the TC39 Signals model on Zubra's own engine: state read with `.get()` and written with `.set()`, shaped like Svelte 5's; the TC39 Signals API itself is an experimental mode (`signals: true`), where a state is a `Signal.State`.
 
 ## What implementing it taught us
 
@@ -40,4 +40,4 @@
 
 ## Reproducing
 
-The format reference is the main README of [zubra](https://github.com/zubra-js/zubra). The compiler's test suites (`cargo test`) and the browser suites (`runtime/`, `plugin/`) exercise every feature above.
+The format reference is [zubra's reference](../reference.md). The compiler's test suites (`cargo test`) and the browser suites (`runtime/`, `plugin/`) exercise every feature above.

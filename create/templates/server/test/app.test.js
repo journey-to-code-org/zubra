@@ -8,13 +8,18 @@ import { server } from '../server.js';
 let browser;
 let origin;
 before(async () => {
+  // The browser first: if it's missing, the tests fail now with the fix, before the server listens.
+  try {
+    browser = await chromium.launch();
+  } catch (error) {
+    throw new Error(`Chromium didn't start. Install it once with \`npx playwright install chromium\`.\n${error.message}`);
+  }
   await new Promise((resolve) => server.listen(0, resolve));
   origin = `http://127.0.0.1:${server.address().port}`;
-  browser = await chromium.launch();
 });
 after(async () => {
   await browser?.close();
-  server.close();
+  if (server.listening) server.close();
 });
 
 /** A page of the app; nothing may reach its console as an error. */

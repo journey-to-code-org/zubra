@@ -51,7 +51,7 @@ With `--typescript`, `hello-counter.zb` is `<script lang="ts">` with an `interfa
 
 | Path | What |
 |---|---|
-| `server.js` | The whole server, about sixty lines, in the order the handlers have to go: `actions.handle` (a form posted to a server function), `zubra.handle` (the components' modules), then the page, rendered and finished by one `zubra.page()`. |
+| `server.js` | The whole server, about ninety lines with its comments (sixty without), in the order the handlers have to go: `actions.handle` (a form posted to a server function), `zubra.handle` (the components' modules), then the page, rendered and finished by one `zubra.page()`. |
 | `src/components/guest-book.zb` | A form whose `action` is a `'use server'` function, and a list that starts from what the server rendered (`from(saved)`) and follows the function's answer. It works with JavaScript off: the form posts, the server redirects, and the page comes back with the new note. |
 | `src/notes.js` | The data, read and written only on the server. |
 | `test/app.test.js` | Starts the server and uses the page in Chromium twice, with JavaScript and without. |

@@ -15,7 +15,7 @@ It's read-only, and it follows the page: it re-reads when the selection changes 
 
 ## Try it
 
-Install it, then start an app made by `npm create zubra@latest` with `npm run dev`: Vite serves its components as development builds, so select an element one renders and the Zubra pane shows it. Clicking a line opens it in your editor. (The [playground](https://zubra-js.github.io/zubra/playground/)'s previews are development builds too, but they run in sandboxed frames, since a shared link's code mustn't run on the site's origin, and the pane, which reads the top page, can't reach into them.)
+Install it, then start an app made by `npm create zubra@latest` with `npm run dev`: Vite serves its components as development builds, so select an element one renders and the Zubra pane shows it. Clicking a line opens it in your editor. (The [playground](https://zubra-js.github.io/zubra/playground/)'s previews are development builds too, but they run in sandboxed frames, since a shared link's code mustn't run on the site's origin, and the pane, which reads the top page, can't reach into them; their own hook can still open a line in the playground editor.)
 
 ## What it needs
 

@@ -2,13 +2,17 @@
 
 Render [Zubra](https://github.com/zubra-js/zubra) web components from Laravel, or any PHP app, with no Node.js anywhere. The components are compiled by the Zubra compiler (a Rust binary) running as one long-lived `zubra serve` process; the browser hydrates the HTML your server wrote.
 
-It isn't on Packagist yet. Install it from the repository, and put a compiler where it can find it (see "Finding the compiler"):
+It isn't on Packagist yet, and Composer can't install it straight from GitHub: its `composer.json` is in `clients/php/`, not at the repository's root, which is where a `vcs` repository looks. Install it from a checkout instead, as a `path` repository, and put a compiler where it can find it (see "Finding the compiler"):
 
-```json
-"repositories": [{ "type": "vcs", "url": "https://github.com/zubra-js/zubra" }]
+```sh
+git clone https://github.com/zubra-js/zubra ../zubra
 ```
 
-(or a `path` repository pointing at `clients/php` in a checkout), then `composer require zubra/zubra`.
+```json
+"repositories": [{ "type": "path", "url": "../zubra/clients/php" }]
+```
+
+then `composer require zubra/zubra:@dev`. (`@dev`, because a `path` package's version is its checkout's branch, `dev-main`. Composer symlinks it, so `git pull` in the checkout updates it; add `"options": { "symlink": false }` to copy it instead, for a deploy.)
 
 ```php
 $zubra = new Zubra\Zubra(__DIR__ . '/components');      // a folder of .zb files

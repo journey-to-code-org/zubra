@@ -15,7 +15,7 @@ Every component also compiles to HTML: the same markup the element would render,
   ```
 
   The page is complete before JavaScript, and form controls submit their server-rendered values (`examples/meta/` has each framework).
-- **Next.js**: import `.zb` files through the Turbopack loader, with its server rule (`options: { server: true }`, see the README). The React wrapper then writes each shadow-DOM element's shadow root into the server's HTML, for elements without React children.
+- **Next.js**: import `.zb` files through the Turbopack loader, with its server rule (`options: { server: true }`, see [Using components in an app](../reference.md#using-components-in-an-app) in the reference). The React wrapper then writes each shadow-DOM element's shadow root into the server's HTML, for elements without React children.
 
 ## In your own server
 
@@ -50,4 +50,4 @@ The component's script runs on the server too, as far as it's deterministic: `.m
 zubra compile src/components/user-card.zb --props props.json --partial > card.html
 ```
 
-**Next:** [Read the output](08-read-the-output.md), which shows what all of this compiles to and why. The [README](../../README.md) has every feature in detail, and the [playground](https://zubra-js.github.io/zubra/playground/) is the quickest way to try one.
+**Next:** [Read the output](08-read-the-output.md), which shows what all of this compiles to and why. [The reference](../reference.md) has every feature in detail, and the [playground](https://zubra-js.github.io/zubra/playground/) is the quickest way to try one.

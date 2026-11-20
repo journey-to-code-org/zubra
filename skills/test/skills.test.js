@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '../..');
-const zubra = join(repo, 'target/release/zubra');
+const zubra = join(repo, 'target/release', process.platform === 'win32' ? 'zubra.exe' : 'zubra');
 const skills = readdirSync(join(repo, 'skills')).filter((name) => existsSync(join(repo, 'skills', name, 'SKILL.md')));
 const read = (skill) => readFileSync(join(repo, 'skills', skill, 'SKILL.md'), 'utf8');
 const blocks = (text, lang) => [...text.matchAll(new RegExp('```' + lang + '\\n([\\s\\S]*?)```', 'g'))].map((m) => m[1]);

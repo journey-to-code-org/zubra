@@ -18,7 +18,7 @@ import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 
 export const FRAMEWORKS = {
-  vanilla: 'No framework (plain HTML and JavaScript)',
+  vanilla: 'Vanilla: no framework (plain HTML and JavaScript)',
   react: 'React',
   vue: 'Vue',
   svelte: 'Svelte',
@@ -36,11 +36,15 @@ const { version } = JSON.parse(readFileSync(new URL('./package.json', import.met
 /** The TypeScript the --typescript apps check with (Angular's own template pins the same). */
 export const TYPESCRIPT = '~6.0.3';
 
+/** No framework is `vanilla`; these are its other names, as in `zubra compile --framework`. */
+const ALIASES = { element: 'vanilla', none: 'vanilla', plain: 'vanilla' };
+
 /**
  * Write the app for `framework` into `dir` (which must be empty or missing); returns the files
  * written. `typescript`: the component in TypeScript, and `npm run check` to type-check it.
  */
 export function create(dir, framework, { name = basename(resolve(dir)), typescript = false } = {}) {
+  framework = ALIASES[framework] ?? framework;
   if (!(framework in FRAMEWORKS)) throw new Error(`create-zubra: unknown framework "${framework}"; one of ${Object.keys(FRAMEWORKS).join(', ')}`);
   const target = resolve(dir);
   if (existsSync(target) && readdirSync(target).length) throw new Error(`create-zubra: ${dir} isn't empty`);
@@ -51,6 +55,13 @@ export function create(dir, framework, { name = basename(resolve(dir)), typescri
     // The component in TypeScript, and a tsconfig.json unless the framework has its own.
     const own = existsSync(join(target, 'tsconfig.json'));
     cpSync(join(templates, 'typescript'), target, { recursive: true, filter: (from) => !(own && from.endsWith('tsconfig.json')) });
+    // React's .tsx files: `jsx` to check them, and `allowArbitraryExtensions` so an import of
+    // `./x.zb` is typed from the `x.d.zb.ts` the build plugin writes beside it (without it, it's
+    // `any`, and a wrong prop passes). The other frameworks check their own files their own way.
+    if (framework === 'react' && !own) {
+      const config = join(target, 'tsconfig.json');
+      writeFileSync(config, readFileSync(config, 'utf8').replace('"strict": true,\n', '"strict": true,\n    "jsx": "react-jsx",\n    "allowArbitraryExtensions": true,\n'));
+    }
     const manifest = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'));
     manifest.devDependencies = { ...manifest.devDependencies, typescript: manifest.devDependencies?.typescript ?? TYPESCRIPT };
     manifest.scripts = { ...manifest.scripts, check: 'zubra check --types src' };
@@ -124,6 +135,7 @@ async function main(argv) {
     if (typescript === null) {
       typescript = ask ? /^y/i.test((await prompt.question('TypeScript in components? (y/N): ')).trim()) : false;
     }
+    framework = ALIASES[framework] ?? framework;
     create(dir, framework, { typescript });
     const cd = relative(process.cwd(), resolve(dir)) || '.';
     const check = typescript ? '  npm run check   type-checks the components (zubra check --types)\n' : '';
