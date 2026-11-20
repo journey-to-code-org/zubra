@@ -240,6 +240,9 @@ const NO_AUTHORIZE = 'This sync server takes no writes from pages until it is to
 
 // Where there is a `process.env` to say so (Node, Bun, Deno) and it doesn't say production. A
 // Worker has none, and is somebody's production: nothing is logged there unless `warn` is given.
+/** How many of a collection's documents `notice` counts, at most. */
+const NOTICE_KEYS = 1000;
+
 const development = () => typeof globalThis.process?.env === 'object' && globalThis.process.env.NODE_ENV !== 'production';
 
 export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: given, scope: serverScope = () => null, origins = [], heartbeat = 15_000, device = 'server', maxSkew = 60_000, maxBytes = 1 << 20, maxChanges = 1000, warn = development() ? (message) => console.warn(message) : false } = {}) {
@@ -351,18 +354,33 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
    * changes as a matter of course) and a collection the page's own scope doesn't leave out.
    */
   const noticed = new Set();
-  function notice({ request, scopes: [server, page] }, changes, shown) {
+  /**
+   * What `notice` needs of a read from the start, page by page as it is sent: for each collection,
+   * how many documents it has (counted up to NOTICE_KEYS), whether the page's scope and the
+   * server's leave any of them in, and which collections the request was shown something of. Not
+   * the changes themselves: a stream reading a large log from the start would otherwise hold all
+   * of it until the last page, where it holds one page at a time without `warn`.
+   */
+  const tally = () => ({ collections: new Map(), shown: new Set() });
+  function count(seen, [server, page], changes, shown) {
+    for (const change of shown) seen.shown.add(change.collection);
+    for (const { collection, key } of changes) {
+      if (seen.shown.has(collection) || noticed.has(collection)) continue;
+      let one = seen.collections.get(collection);
+      if (!one) seen.collections.set(collection, (one = { keys: new Set(), page: false, server: false }));
+      if (one.keys.size < NOTICE_KEYS) one.keys.add(key);
+      one.page ||= inScope(page, collection, key);
+      one.server ||= inScope(server, collection, key);
+    }
+  }
+  function notice(request, seen) {
     if (!warn) return;
-    const all = new Map();
-    for (const change of changes) all.set(change.collection, (all.get(change.collection) ?? new Set()).add(change.key));
-    const some = new Set(shown.map((change) => change.collection));
-    for (const [collection, keys] of all) {
-      if (some.has(collection) || noticed.has(collection)) continue;
-      if (![...keys].some((key) => inScope(page, collection, key))) continue;
+    for (const [collection, { keys, page, server }] of seen.collections) {
+      if (seen.shown.has(collection) || noticed.has(collection) || !page) continue;
       noticed.add(collection);
-      const scoped = ![...keys].some((key) => inScope(server, collection, key));
+      const documents = keys.size >= NOTICE_KEYS ? `${NOTICE_KEYS} or more documents` : `${keys.size} document${keys.size === 1 ? '' : 's'}`;
       const path = new URL(request.url).pathname;
-      warn(`@zubra/sync: a page read "${collection}" (GET ${path}) and was sent none of its ${keys.size} document${keys.size === 1 ? '' : 's'}: ${scoped ? "the server's `scope` for that request leaves them all out" : '`authorize` refused every read'}. To the page that is an empty collection, so its components show their defaults and nothing says why. If this request shouldn't see them, there is nothing to do (said once per collection; \`warn: false\` turns it off).`);
+      warn(`@zubra/sync: a page read "${collection}" (GET ${path}) and was sent none of its ${documents}: ${!server ? "the server's `scope` for that request leaves them all out" : '`authorize` refused every read'}. To the page that is an empty collection, so its components show their defaults and nothing says why. If this request shouldn't see them, there is nothing to do (said once per collection; \`warn: false\` turns it off).`);
     }
   }
   /** The server's scope for a request and the page's (`?scope=`), or a Response refusing it. */
@@ -603,18 +621,17 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
           let from = since;
           // From the start of the log, the whole backlog and what of it this stream was shown,
           // for `notice`.
-          const whole = warn && String(since) === '0' ? { changes: [], shown: [] } : null;
+          const whole = warn && String(since) === '0' ? tally() : null;
           for (let first = true; ; first = false) {
             const backlog = await log.after(from);
             if (!backlog.changes.length && !first) break;
             const shown = await visible(listener, backlog.changes);
-            whole?.changes.push(...backlog.changes);
-            whole?.shown.push(...shown);
+            if (whole) count(whole, listener.scopes, backlog.changes, shown);
             listener.send('changes', { changes: shown, cursor: backlog.cursor, ...(reset && first ? { reset: true } : {}) });
             if (!backlog.changes.length || String(backlog.cursor) === String(from)) break;
             from = backlog.cursor;
           }
-          if (whole) notice(listener, whole.changes, whole.shown);
+          if (whole) notice(listener.request, whole);
           // Closed, or taken over by a reconnect, while the backlog was read: no keep-alive.
           if (!listeners.has(listener)) return;
           timer = setInterval(() => write(': keep-alive\n\n'), heartbeat);
@@ -634,7 +651,11 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
       const shown = await visible({ request, scopes }, changes);
       // (Only when this page is the whole log: a longer one comes in several pulls, and the
       // documents this request may see can be in a later one.)
-      if (warn && String(since) === '0' && !(await log.after(cursor)).changes.length) notice({ request, scopes }, changes, shown);
+      if (warn && String(since) === '0' && !(await log.after(cursor)).changes.length) {
+        const seen = tally();
+        count(seen, scopes, changes, shown);
+        notice(request, seen);
+      }
       return json(200, { changes: shown, cursor, ...(reset ? { reset: true } : {}) });
     }
     return json(404, { error: 'Not found' });

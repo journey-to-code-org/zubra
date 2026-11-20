@@ -9,9 +9,12 @@ const fileName = (file) => String(file).split(/[\\/]/).pop();
 /** A source location: a button that opens the editor there, or plain text without a file. */
 function where(file, at, label = null) {
   if (!at) return '<span class="where none" title="Compile with --devtools (Vite\'s dev server does) for source lines">no line</span>';
-  const text = label ?? `${file ? `${fileName(file)}:` : 'line '}${at.line}`;
+  // (Numbers from the page, as numbers: a page can hand the pane anything in their place.)
+  const line = Number(at.line);
+  const column = Number(at.column);
+  const text = label ?? `${file ? `${fileName(file)}:` : 'line '}${line}`;
   if (!file) return `<span class="where">${escape(text)}</span>`;
-  return `<button type="button" class="where" data-file="${escape(file)}" data-line="${at.line}" data-column="${at.column}" title="Open ${escape(file)}:${at.line}:${at.column} in the editor">${escape(text)}</button>`;
+  return `<button type="button" class="where" data-file="${escape(file)}" data-line="${line}" data-column="${column}" title="Open ${escape(file)}:${line}:${column} in the editor">${escape(text)}</button>`;
 }
 
 function values(title, list, empty) {
@@ -24,7 +27,7 @@ function values(title, list, empty) {
 function bindings(list, file) {
   return `<ul class="bindings">${list.map((binding) => `<li class="${binding.ranLast ? 'ran' : ''}">
   <div class="op"><code>${escape(binding.operation)}</code>${binding.ranLast ? '<span class="badge" title="Re-ran in the last update">ran</span>' : ''}</div>
-  <div class="meta"><span class="target">${escape(binding.target)}</span> ${where(file, binding.at, binding.at ? `line ${binding.at.line}` : null)}</div>
+  <div class="meta"><span class="target">${escape(binding.target)}</span> ${where(file, binding.at, binding.at ? `line ${Number(binding.at.line)}` : null)}</div>
   ${binding.dependsOn.length ? `<div class="reads">reads ${binding.dependsOn.map((name) => `<code>${escape(name)}</code>`).join(', ')}</div>` : ''}
   ${why(binding)}
 </li>`).join('')}</ul>`;
@@ -123,9 +126,9 @@ export function render(result) {
   const update = result.lastUpdate;
   return `<header>
   <h1><code>&lt;${escape(component.tag)}&gt;</code></h1>
-  ${file ? where(file, component.at, `${fileName(file)}:${component.at?.line ?? 1}`) : '<span class="where none" title="Compile with --devtools (Vite\'s dev server does) for its file and lines">not located</span>'}
+  ${file ? where(file, component.at, `${fileName(file)}:${Number(component.at?.line ?? 1)}`) : '<span class="where none" title="Compile with --devtools (Vite\'s dev server does) for its file and lines">not located</span>'}
 </header>
-<p class="quiet small">${engine(result)}${update.number ? ` · update ${update.number}: ${update.written.length ? `wrote ${update.written.map((name) => `<code>${escape(name)}</code>`).join(', ')}` : 'no named writes'}, ${update.ran} of this component's bindings re-ran` : ''}</p>
+<p class="quiet small">${engine(result)}${update.number ? ` · update ${count(update.number)}: ${update.written.length ? `wrote ${update.written.map((name) => `<code>${escape(name)}</code>`).join(', ')}` : 'no named writes'}, ${count(update.ran)} of this component's bindings re-ran` : ''}</p>
 ${values('Props', result.props, 'No props.')}
 ${values('State', result.state, component.located ? 'No state.' : 'Names need a --devtools build.')}
 ${here.length ? `<section><h2>On this node</h2>${bindings(here, file)}</section>` : ''}
