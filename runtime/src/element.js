@@ -23,7 +23,7 @@ const COMMENT = 8;
 
 /** Unwrap a signal, so templates can read `{count}` for `const count = state(0)`. */
 /** Where a message's topic is documented. */
-const see = (section) => ` (see https://github.com/zubra-js/zubra#${section})`;
+const see = (section) => ` (see https://github.com/zubra-js/zubra/blob/main/docs/reference.md#${section})`;
 
 export const $r = (value) => (isSignal(value) ? value.get() : value);
 

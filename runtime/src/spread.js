@@ -9,7 +9,7 @@ import { effect } from './effect.js';
 const ATTRIBUTE_NAME = /^[A-Za-z_:][A-Za-z0-9_.:-]*$/;
 const CSS_PROPERTY = /^(?:--[A-Za-z0-9_-]+|[A-Za-z][A-Za-z0-9-]*)$/;
 
-const see = (section) => ` (see https://github.com/zubra-js/zubra#${section})`;
+const see = (section) => ` (see https://github.com/zubra-js/zubra/blob/main/docs/reference.md#${section})`;
 
 // ---- {...spread}: an object's entries as attributes, properties and listeners --------------
 
