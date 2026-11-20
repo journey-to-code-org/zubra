@@ -88,11 +88,7 @@ const left = items.filter((item) => !item.done).length
   </div>
   <nav aria-label="Zubra documentation">
     <a href="https://zubra-js.github.io/zubra/docs/" target="_blank" rel="noreferrer">Tutorial and reference</a>
-    <a
-      href="https://zubra-js.github.io/zubra/playground/"
-      target="_blank"
-      rel="noreferrer"
-    >Playground</a>
+    <a href="https://zubra-js.github.io/zubra/playground/" target="_blank" rel="noreferrer">Playground</a>
     <a
       href="https://github.com/zubra-js/zubra/tree/main/registry/components"
       target="_blank"
