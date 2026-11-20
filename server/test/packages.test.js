@@ -49,7 +49,7 @@ test('a package component renders by name and by tag', () => {
 });
 
 test('the import map sends the package to the component route, which serves its modules', async () => {
-  const zubra = createZubra({ components: components(), packages: ['@acme/kit/components'], cache: false });
+  const zubra = createZubra({ components: components(), packages: ['@acme/kit/components'], cache: false, production: false });
   const page = zubra.page();
   page.render('shop-page');
   const map = JSON.parse(page.head().match(/<script type="importmap">(.*?)<\/script>/)[1]);

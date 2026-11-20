@@ -900,7 +900,7 @@ test('an edit made while the document is still loading is kept, and saved', asyn
 });
 
 
-test('a server that takes no writes (allowReads): the page still works, its edits stay here, and it says why once', { skip: viaBinary && 'the JavaScript server only' }, async () => {
+test('a read-only server (allowReads): the page still works, its edits stay here, and it says why once', { skip: viaBinary && 'the JavaScript server only' }, async () => {
   await closed.write('tasks', 'shut1', { title: 'From the server' });
   const context = await browser.newContext();
   const tab = await context.newPage();
@@ -915,8 +915,25 @@ test('a server that takes no writes (allowReads): the page still works, its edit
   assert.deepEqual((await (await closed.fetch(new Request('http://x/_zb/closed/pull?since=0'))).json()).changes.map((c) => c.value), ['From the server'], 'nothing from the page reached the log');
   const refused = warnings.filter((text) => text.includes("refused this page's changes"));
   assert.equal(refused.length, 1, `said once: ${JSON.stringify(warnings)}`);
-  assert.match(refused[0], /pass createSyncServer\(\{ authorize \}\)/);
+  assert.match(refused[0], /takes no writes from pages/);
   await context.close();
+});
+
+test('a refused pull is reported once by connect and follow', async () => {
+  for (const path of ['/connected?doc=denied', '/following?poll&doc=denied']) {
+    const context = await browser.newContext();
+    const tab = await context.newPage();
+    const warnings = [];
+    tab.on('console', (message) => message.type() === 'warning' && warnings.push(message.text()));
+    await tab.route('**/_zb/sync/pull?**', (route) => route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: 'authorize required' }) }));
+    await tab.goto(`${base}${path}`);
+    await ready(tab);
+    await tab.waitForTimeout(500);
+    const refused = warnings.filter((text) => text.includes("refused this page's reads"));
+    assert.equal(refused.length, 1, path);
+    assert.match(refused[0], /authorize required/);
+    await context.close();
+  }
 });
 
 // ---- follow(): a read-only connection. The reading half is connect()'s, so these run its reading

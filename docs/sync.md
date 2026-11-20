@@ -88,7 +88,7 @@ It pulls and listens exactly as `connect()` does, and leaves out what only a wri
 
 ### Who may read and write
 
-**Without `authorize`, pages may neither read nor write.** Pull and the live stream send a page nothing (in development the server says so, once per collection, with what would open it), and every push, presence and signal from a page is refused with a 403 that says why, and the page says so once in its console. The server's own `write()` is never asked. This is deliberate: a log that takes any change from anyone lets a visitor set a price, mark an order paid or take every seat, and one that hands every page every document shows a visitor what was never on their screen (another customer's order, the staff notes). Before 6.0 reads were open by default; see [the 6.0 guide](migrating-to-6.0.md).
+**Without `authorize`, pages may neither read nor write.** Pulls and live streams are refused with a 403, as are pushes, presence and signals; `connect()` and `follow()` report a refused pull once in the console. When an explicit `authorize` policy hides every change in a collection, the development server warns once and says how to open it. The server's own `write()` and `documents()` are never asked. This is deliberate: a log that takes any change from anyone lets a visitor set a price, mark an order paid or take every seat, and one that hands every page every document shows a visitor what was never on their screen. Before 6.0 reads were open by default; see [the 6.0 guide](migrating-to-6.0.md).
 
 Collections anyone may read and nobody may write (a menu, an order board the server writes) are named:
 
@@ -113,7 +113,7 @@ createSyncServer({
 
 **A page on another site** is let in only if it's listed: `createSyncServer({ origins: ['https://shop.example'] })`. Its writes are taken (a page on any other site is refused, as a browser says where a request comes from), and its answers carry CORS headers, so its browser lets it read its pulls and its live stream and send JSON at all. That's the same as the `zubra-sync` binary's `--origin`. `authorize` still decides what it may read and change. Cookies aren't sent across sites, so a page on another site is anonymous to `authorize` unless the app knows it some other way.
 
-For a page everyone may edit (a shared board on a trusted network, a demo), say so: `createSyncServer({ authorize: allowAnyone })`, which opens reading and writing everything. A Durable Object takes no reads or writes from pages unless its class has an `authorize()` (or `options.authorize`), and the `zubra-sync` binary reads nothing unless it's started with `--read <collection>`, `--read-all` or `--open`, and takes writes only with `--open`.
+For public reads without page writes, use `createSyncServer({ authorize: ({ write }) => !write })`. For a page everyone may edit (a shared board on a trusted network, a demo), say so: `createSyncServer({ authorize: allowAnyone })`, which opens reading and writing everything. A Durable Object takes no reads or writes from pages unless its class has an `authorize()` (or `options.authorize`), and the `zubra-sync` binary reads nothing unless it's started with `--read <collection>`, `--read-all` or `--open`, and takes writes only with `--open`.
 
 Components don't change. The protocol is plain HTTP, so any server can keep the log:
 
@@ -251,7 +251,7 @@ Some state should be seen by the other viewers of a document but never stored: w
 <board-view doc="">
   <div class="pad" onpointermove={(event) => (cursor = { x: event.offsetX, y: event.offsetY })}></div>
   <zb-each items={others} as="other" key={other.peer}>
-    <span class="cursor" style={`left: ${other.cursor.x}px; top: ${other.cursor.y}px`}></span>
+    <span class="cursor" style:left={`${other.cursor.x}px`} style:top={`${other.cursor.y}px`}></span>
   </zb-each>
 </board-view>
 ```

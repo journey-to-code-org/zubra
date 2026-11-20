@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Hono } from 'hono';
 import { createZubra as createNode } from '../src/index.js';
 import { createZubra as createEdge } from '../src/edge.js';
@@ -169,7 +169,7 @@ test('bundled the way Wrangler bundles, a streamed page\'s inline scripts are th
   const { build } = await import('esbuild');
   const out = join(mkdtempSync(join(tmpdir(), 'zb-bundle-')), 'edge.mjs');
   await build({ entryPoints: [join(here, '../src/edge.js')], bundle: true, format: 'esm', platform: 'neutral', mainFields: ['module', 'main'], keepNames: true, minify: true, outfile: out, logLevel: 'silent' });
-  const bundled = (await import(out)).createZubra({ wasm: wasm(), components: sources });
+  const bundled = (await import(pathToFileURL(out).href)).createZubra({ wasm: wasm(), components: sources });
   const { edge } = both();
   const stream = async (zubra) => {
     const page = zubra.page();
@@ -236,7 +236,7 @@ test('mistakes say what to do', { skip }, () => {
   assert.deepEqual(edge.names.sort(), ['a', 'forms/b'], 'a key may carry its extension');
   assert.throws(() => edge.render('nope'), /no component "nope" in the components given to createZubra\(\) \(have: a, forms\/b\)/);
   const broken = createEdge({ wasm: wasm(), components: { bad: '<x-bad><p></x-bad>' } });
-  assert.throws(() => broken.render('bad'), /closing tag <\/x-bad> does not match <p>/);
+  assert.throws(() => broken.render('bad'), /<p> is never closed/);
 });
 
 test('components are in the order a folder walk finds them, a folder where its name falls', { skip }, () => {

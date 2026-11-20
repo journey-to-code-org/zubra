@@ -40,6 +40,14 @@ function checkTimeout(value) {
 /** How many different warnings a server remembers having said (see warnOnce). */
 const WARNED_MOST = 1000;
 
+/** Marks an error as the compiler's verdict on a component (not a crash of the server's). */
+const COMPILE_ERROR = Symbol('zubra.compileError');
+
+/** The compiler's error text as an Error, without its leading `error: ` (printed as `Error: …`). */
+export function compileError(text) {
+  return Object.assign(new Error(String(text).replace(/^error:\s*/, '')), { [COMPILE_ERROR]: true });
+}
+
 export function createCore({ reload, request, files, fromPackage = () => false, sourcesOf: readSources, cache = true, devtools = false, base, imports = {}, syncImports = {}, needs = (_name, code) => code, where = 'the components', assets = () => null, warn = (message) => console.warn(message), gaps = 'warn', clientModules = 'all', inline = true, preload = true, bundle = false, checkPages = false, changed = null, runtimeFile = bundle ? 'zubra.js' : 'core.js', runtimeModules = {}, runtimeSplit = null, runtimeBuilt = null, localModule = () => null, contextKey = ({ module, export: name }) => `${joinPath('', module)}#${name}`, production = false, onError = null, streamTimeout = STREAM_TIMEOUT, minify = false }) {
   if (gaps !== 'warn' && gaps !== 'ignore') throw new Error(`@zubra/server: gaps is "warn" or "ignore", not ${JSON.stringify(gaps)}`);
   if (clientModules !== 'all' && clientModules !== 'needed') throw new Error(`@zubra/server: clientModules is "all" or "needed", not ${JSON.stringify(clientModules)}`);
@@ -115,7 +123,7 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
   };
   const call = (path, body) => {
     const response = send({ path, files: sourcesOf(path), ...body });
-    if (!response.ok) throw new Error(response.error);
+    if (!response.ok) throw compileError(response.error);
     return response.output;
   };
 
@@ -214,7 +222,7 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
     slots = sendable(slots, (path) => `<${tagOf(name)}>'s slot ${path}`);
     context = sendable(context, () => `<${tagOf(name)}>'s context`);
     const response = answer(name, props, slots, pending, idPrefix, context);
-    if (!response.ok) throw new Error(response.error);
+    if (!response.ok) throw compileError(response.error);
     // A value that isn't a safe URL (a user's `javascript:` link) is left out, as the element
     // leaves it out in the browser; the page still renders, and this says what was dropped.
     for (const message of response.omitted ?? []) warn(`@zubra/server: <${name}>: ${message}`);
@@ -336,7 +344,7 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
     // imports are written as the files' addresses, so a page with an import map of its own (a
     // framework's, naming only `@zubra/runtime`) loads them too.
     const response = send({ emit: 'js', runtime: '@zubra/runtime', devtools, binderEntries: true, path, files: sourcesOf(path), ...(stylesHref ? { stylesHref } : {}) });
-    if (!response.ok) throw new Error(response.error);
+    if (!response.ok) throw compileError(response.error);
     return resolved(routed(resolveImports(older(name, String(needs(name, response.output))), bindersFor(name)), besideFor(name), `${where}${name}.zb`));
   });
   const js = (name, stylesHref) => (minify ? once(`min:${name}${stylesHref ? `:${stylesHref}` : ''}`, () => shrink(compiled(name, stylesHref))) : compiled(name, stylesHref));
@@ -695,8 +703,9 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
   function errorPage(error, options = {}) {
     if (production) return { status: 500, type: 'text/plain; charset=utf-8', body: 'Something went wrong' };
     const message = error instanceof Error ? error.message : String(error);
-    // Where it was thrown: the stack's frames, without its first line (the message again).
-    const frames = error instanceof Error && typeof error.stack === 'string' ? error.stack.split('\n').filter((line) => /^\s+at /.test(line)).join('\n') : '';
+    // Where it was thrown: the stack's frames, without its first line (the message again). Not for
+    // a component's compile error, whose frames are this server's own and say nothing about it.
+    const frames = error instanceof Error && !error[COMPILE_ERROR] && typeof error.stack === 'string' ? error.stack.split('\n').filter((line) => /^\s+at /.test(line)).join('\n') : '';
     // The heading names the file when the message points at one (a compiler error does:
     // ` --> /app/components/x.zb:3:5`), the error's kind otherwise. Readable on a phone, in dark
     // mode too, and long lines wrap.

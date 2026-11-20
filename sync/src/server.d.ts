@@ -61,8 +61,8 @@ export function createSyncServer(options?: {
    *
    * Without it, pages may neither read nor write: pull and live send them nothing, and every
    * write from a page is refused (403, saying why). `allowReads(['notes'])` opens those
-   * collections to reading, `allowAnyone` everything to reading and writing. The server's own
-   * `write()` is never asked.
+   * collections to reading; `({ write }) => !write` also allows public reads, and `allowAnyone`
+   * allows everything to reading and writing. The server's own `write()` is never asked.
    */
   /**
    * How far ahead of the server's clock a pushed change's clock may be, in ms (default 60 000).

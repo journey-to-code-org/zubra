@@ -132,7 +132,7 @@ test('a nonce that could close its attribute is refused', () => {
 
 test('inline: false: stylesheet links, module scripts by src, no import map, and the page runs under the strict policy', async () => {
   assert.throws(() => createZubra({ components, inline: 'no' }), /inline is true or false/);
-  const zubra = createZubra({ components, inline: false });
+  const zubra = createZubra({ components, inline: false, production: false });
   const url = await listen((req, res) => {
     if (zubra.handle(req, res)) return;
     const page = zubra.page();
@@ -155,7 +155,7 @@ test('inline: false: stylesheet links, module scripts by src, no import map, and
   assert.match(await css.text(), /color: rgb\(0, 128, 0\)/);
   assert.equal((await fetch(`${url}/_zubra/components/nope.css`)).status, 404);
   // With inline elements, the CSS is in the page and there's no such file.
-  const inlined = createZubra({ components });
+  const inlined = createZubra({ components, production: false });
   assert.equal(await inlined.fetch(new Request('http://localhost/_zubra/components/hello-there.css')), null);
 
   // The module's imports are resolved: the compiler's, and the script's own `@zubra/runtime`.

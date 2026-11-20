@@ -69,6 +69,24 @@ test('production: "Something went wrong", as plain text, and nothing of the erro
   assert.deepEqual(failed, { status: 500, type: 'text/plain; charset=utf-8', body: 'Something went wrong' });
 });
 
+test('production is the default unless development is explicit', () => {
+  const previous = process.env.NODE_ENV;
+  try {
+    for (const value of [undefined, 'production', 'test']) {
+      if (value === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = value;
+      assert.equal(createZubra({ components }).errorPage(failure()).body, 'Something went wrong', String(value));
+    }
+    process.env.NODE_ENV = 'development';
+    assert.match(createZubra({ components }).errorPage(failure()).body, /&lt;script&gt;alert/);
+    assert.match(createZubra({ components, production: false }).errorPage(failure()).body, /&lt;script&gt;alert/);
+    assert.equal(createZubra({ components, production: true }).errorPage(failure()).body, 'Something went wrong');
+  } finally {
+    if (previous === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previous;
+  }
+});
+
 const wasmPath = fileURLToPath(import.meta.resolve('@zubra/compiler/zubra.wasm'));
 const skip = existsSync(wasmPath) ? false : 'zubra.wasm is not built (npm run build in compiler)';
 
@@ -77,4 +95,26 @@ test('the edge entry has it too, and a Worker is production unless told otherwis
   const sources = { 'say-word': '<say-word>\n  <p>word</p>\n</say-word>\n' };
   assert.equal(createEdge({ wasm, components: sources }).errorPage(failure()).body, 'Something went wrong');
   assert.match(createEdge({ wasm, components: sources, production: false }).errorPage(failure()).body, /&lt;script&gt;alert/);
+});
+
+test("development: a component's compile error is the compiler's message, without the server's own frames", () => {
+  const broken = mkdtempSync(join(tmpdir(), 'zubra-error-page-broken-'));
+  try {
+    writeFileSync(join(broken, 'bad-word.zb'), '<script>\n  let = = 2\n</script>\n<bad-word><p>x</p></bad-word>\n');
+    const zubra = createZubra({ components: broken, production: false });
+    let error;
+    try {
+      zubra.page().render('bad-word', {});
+    } catch (thrown) {
+      error = thrown;
+    }
+    assert.ok(error, 'it fails to render');
+    assert.match(error.message, /error\[ZB3001\]: invalid <script>/);
+    assert.match(String(error.stack), /^Error: error\[ZB3001\]: invalid <script>/);
+    const failed = zubra.errorPage(error);
+    assert.match(failed.body, /<pre>error\[ZB3001\]: invalid &lt;script&gt;[^]*bad-word\.zb:2:\d+[^]*let = = 2/);
+    assert.equal(failed.body.match(/<pre>/g).length, 1, 'no frames: they would be the server\'s own');
+  } finally {
+    rmSync(broken, { recursive: true, force: true });
+  }
 });

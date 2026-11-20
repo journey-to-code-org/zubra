@@ -38,8 +38,7 @@ struct Options {
     port: u16,
     origins: Vec<String>,
     keep_alive: Duration,
-    /// Take writes (push, presence, signal) from pages, and let them read everything. Off by
-    /// default: the binary can't tell who is asking.
+    /// Take reads and writes from pages. Off by default: the binary can't tell who is asking.
     open: bool,
     /// What pages may read without `--open`: nothing by default.
     reads: Reads,
@@ -144,7 +143,7 @@ struct State {
 }
 
 /// What a page is told when the binary wasn't started with --open.
-const NOT_OPEN: &str = "This sync server takes no writes from pages until it is told who may make them: start zubra-sync with --open, behind your app's own sign-in (see its README).";
+const NOT_OPEN: &str = "This sync server takes no reads or writes from pages until it is told who may access them: start zubra-sync with --open, behind your app's own sign-in (see its README).";
 
 fn main() {
     let options = match options() {
@@ -360,6 +359,9 @@ fn handle(state: &State, mut request: Request) {
         return respond_json(request, extra, 404, json!({ "error": "Not found" }));
     }
     let route = &path[MOUNT.len()..];
+    if !state.open && request.method() == &Method::Get && matches!(route, "/pull" | "/live") {
+        return respond_json(request, extra, 403, json!({ "error": NOT_OPEN }));
+    }
     match (request.method().clone(), route) {
         (Method::Options, _) => {
             let mut response = Response::empty(StatusCode(204));

@@ -14,6 +14,7 @@ const pull = async (sync, since = 0) => (await sync.fetch(new Request(`http://lo
 test('the log survives a restart: same changes, same cursors, JSON values intact', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'zubra-sync-'));
   const path = join(dir, 'sync.db');
+  let second;
   try {
     const first = await sqliteLog(path);
     const before = createSyncServer({ authorize: allowAnyone, log: first });
@@ -21,13 +22,15 @@ test('the log survives a restart: same changes, same cursors, JSON values intact
     await push(before, [change('done', true, '000000000000002-00000-b')]);
     first.close();
 
-    const after = createSyncServer({ authorize: allowAnyone, log: await sqliteLog(path) });
+    second = await sqliteLog(path);
+    const after = createSyncServer({ authorize: allowAnyone, log: second });
     const all = await pull(after);
     assert.deepEqual(all.changes.map((c) => c.value), ['Buy milk', ['x', { y: 1 }], true]);
     assert.equal(all.cursor, 3);
     assert.deepEqual((await pull(after, 2)).changes.map((c) => c.field), ['done']);
     assert.equal((await pull(after, 3)).cursor, 3);
   } finally {
+    second?.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

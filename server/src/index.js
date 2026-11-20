@@ -26,6 +26,7 @@ import { brotliCompress, brotliCompressSync, gzip, gzipSync, constants as zlib }
 const { Transform } = nodeStream;
 import { findCompiler } from './compiler.js';
 import { versionAt, versionSkew } from './versions.js';
+import { engineOf, unknownOptions } from './options.js';
 import * as runtimeLists from '@zubra/runtime/modules';
 import { createCore, joinPath, parseAttributes, propsFrom, SOURCE_EXTENSION as SOURCE, TYPES } from './core.js';
 
@@ -59,8 +60,10 @@ const posix = (path) => path.split(sep).join('/');
  * `components`: the folder of `.zb` (and `.zb.jsx`/`.zb.tsx`) files. `prefix`: the URL path
  * the browser modules are served under. `cache`: keep compiled output and renders. In
  * development an edit under the folder is still picked up on the next request (the folder's
- * files are checked for changes first); `cache: false` compiles on every request instead. `production`: serve the runtime's production build, without hot
- * reloading, errors as "Something went wrong" (on by default; off with `NODE_ENV=development` or `production: false`). `devtools`: compile for the Zubra DevTools
+ * files are checked for changes first); `cache: false` compiles on every request instead.
+ * `production`: serve the runtime's production build without hot reloading, and answer errors
+ * with "Something went wrong" only. Default: true unless `NODE_ENV` is `development` or
+ * `production: false`. `devtools`: compile for the Zubra DevTools
  * extension and serve the runtime build it reads (on by default except in production;
  * `ZUBRA_DEVTOOLS=1` turns it on there too, for a demo or a staging site). `imports`: more import map entries,
  * for packages the components import beyond `@zubra/runtime` and `@zubra/sync` (both of which
@@ -78,9 +81,11 @@ const posix = (path) => path.split(sep).join('/');
  * file compressed once and kept; off by default, for a host with nothing in front that compresses.
  * `minify` (on in production, off with the DevTools): the component modules it sends are minified,
  * the CSS in them too, by the compiler; `false` sends them as the compiler writes them, to read.
- * `signals: true` (experimental): the runtime's reactivity on the TC39 Signals API in place of
- * Zubra's own engine (`@zubra/runtime`'s `signal-tc39.js` is served as its `signal.js`). The runtime
- * is then served file by file in production too, since its one-file builds hold Zubra's engine.
+ * `engine`: `'zubra'` (the default), or `'signals'` (experimental): the runtime's reactivity on the
+ * TC39 Signals API in place of Zubra's own engine (`@zubra/runtime`'s `signal-tc39.js` is served as
+ * its `signal.js`). The runtime is then served file by file in production too, since its one-file
+ * builds hold Zubra's engine. `signals: true`, its name in 6.0.0-rc.0, still works (development
+ * warns). Any other `engine` is an error, and an option name it doesn't know is warned about.
  */
 /**
  * Development is opt-in: `NODE_ENV=development`, or `production: false`. Anything else, unset
@@ -89,9 +94,21 @@ const posix = (path) => path.split(sep).join('/');
  */
 const developmentByDefault = () => process.env.NODE_ENV === 'development';
 
-export function createZubra({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = !developmentByDefault(), devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, runtime = null, onError, streamTimeout, compress = false, reload = false, signals = false, minify = production && !devtools } = {}) {
+export function createZubra(options = {}) {
+  const production = options.production ?? !developmentByDefault();
+  const say = options.warn ?? console.warn;
   // Said once at start, so a server in development mode never passes for a deployed one.
   if (!production) console.info(`@zubra/server: development mode (${developmentByDefault() ? 'NODE_ENV=development' : 'production: false'})`);
+  const engine = engineOf(options, '@zubra/server', production ? null : say);
+  for (const message of unknownOptions(options, OPTIONS, '@zubra/server')) say(message);
+  const { engine: _engine, ...rest } = options;
+  return create({ ...rest, production, signals: engine === 'signals' });
+}
+
+/** What `createZubra()` takes (`signals` is `engine: 'signals'`'s old name). */
+const OPTIONS = ['components', 'packages', 'prefix', 'cache', 'production', 'devtools', 'imports', 'warn', 'gaps', 'clientModules', 'inline', 'preload', 'bundle', 'runtime', 'onError', 'streamTimeout', 'compress', 'reload', 'engine', 'signals', 'minify'];
+
+function create({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = !developmentByDefault(), devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, runtime = null, onError, streamTimeout, compress = false, reload = false, signals = false, minify = production && !devtools } = {}) {
   const root = resolve(components);
   // The folder as the disk has it, links resolved: what a served module's real path must be inside.
   const realRoot = existsSync(root) ? realpathSync(root) : root;
@@ -113,8 +130,8 @@ export function createZubra({ components = 'components', packages = [], prefix =
   const oneFile = production && !devtools && !signals && existsSync(bundledDir);
   const bundling = Boolean(bundle) && oneFile;
   const runtimeDir = oneFile ? bundledDir : production && !devtools && existsSync(productionDir) ? productionDir : sourceDir;
-  if (signals && !existsSync(join(runtimeDir, 'signal-tc39.js'))) throw new Error('@zubra/server: signals: true needs @zubra/runtime 6.0 or later, which has signals mode (signal-tc39.js)');
-  if (runtime && Boolean(runtime.signals) !== Boolean(signals)) throw new Error(`@zubra/server: the built runtime was built ${runtime.signals ? 'with' : 'without'} signals: true, and this server ${signals ? 'has' : "doesn't have"} it. Build it with the same signals option`);
+  if (signals && !existsSync(join(runtimeDir, 'signal-tc39.js'))) throw new Error("@zubra/server: engine: 'signals' needs @zubra/runtime 6.0 or later, which has signals mode (signal-tc39.js)");
+  if (runtime && Boolean(runtime.signals) !== Boolean(signals)) throw new Error(`@zubra/server: the built runtime was built with engine: '${runtime.signals ? 'signals' : 'zubra'}', and this server has engine: '${signals ? 'signals' : 'zubra'}'. Build it with the same engine`);
   const base = prefix.replace(/\/$/, '');
   const RELOAD = `${base}/reload`;
   // (Not through `warn` alone when there is none: this is about the install, said once at start.)
@@ -210,7 +227,8 @@ export function createZubra({ components = 'components', packages = [], prefix =
       if (compiler.packageFile(root, name).path) throw new Error(`@zubra/server: packages: ${name} is a file; name the folder its components are in`);
       throw new Error(`@zubra/server: packages: ${found.error}`);
     }
-    const dir = found.path;
+    const dir = resolve(found.path);
+    if (!statSync(dir).isDirectory()) throw new Error(`@zubra/server: packages: ${name} is a file; name the folder its components are in`);
     (function walk(at) {
       for (const entry of readdirSync(at).sort()) {
         const path = join(at, entry);

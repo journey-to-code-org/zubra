@@ -1,4 +1,4 @@
-// Who may read and write: without `authorize`, pages neither read (6.0) nor write (security audit K2). With it,
+// Who may read and write: without `authorize`, pages have no access. With it,
 // each change is asked with its field and value (S6), so an app can keep fields for the server.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,26 +30,15 @@ test('without authorize, a page may not push, join or signal, and is told why', 
   const sync = createSyncServer();
   const pushed = await post(sync, 'push', { changes: [change('title', 'free beef')] });
   assert.equal(pushed.status, 403);
-  assert.match((await pushed.json()).error, /takes no writes from pages until it is told who may make them: pass createSyncServer\(\{ authorize \}\)/);
-  assert.deepEqual((await pull(sync)).changes, [], 'nothing reached the log');
+  assert.match((await pushed.json()).error, /takes no reads or writes from pages.*pass createSyncServer\(\{ authorize \}\)/);
+  assert.equal((await sync.fetch(new Request('http://localhost/_zb/sync/pull?since=0'))).status, 403);
   assert.equal((await sync.documents()).get('tasks', 't1'), undefined);
+  assert.equal((await post(sync, 'push', { changes: [] })).status, 403, 'even an empty push needs authorization');
   for (const [path, body] of [['presence', room], ['signal', signal]]) {
     const answer = await post(sync, path, body);
     assert.equal(answer.status, 403, path);
     assert.match((await answer.json()).error, /authorize/, path);
   }
-});
-
-test('without authorize, pages read nothing, on pull or live, and the server still writes (6.0)', async () => {
-  const sync = createSyncServer({ warn: false });
-  await sync.write('tasks', 't1', { title: 'from the server' });
-  assert.deepEqual((await pull(sync)).changes, []);
-  assert.equal((await sync.documents()).get('tasks', 't1').title, 'from the server');
-  const stream = (await sync.fetch(new Request('http://localhost/_zb/sync/live?since=0&peer=p1'))).body.getReader();
-  let text = '';
-  while (!/event: changes\ndata: .*\n\n/.test(text)) text += new TextDecoder().decode((await stream.read()).value);
-  assert.deepEqual(JSON.parse(/event: changes\ndata: (.*)\n\n/.exec(text)[1]).changes, []);
-  stream.cancel().catch(() => {});
 });
 
 test('allowReads: the collections it names are read, others not, and pages write nothing', async () => {
@@ -67,6 +56,17 @@ test('allowReads: the collections it names are read, others not, and pages write
   assert.equal((await pull(all)).changes.length, 2);
   assert.equal((await post(all, 'push', { changes: [change('title', 'no')] })).status, 403);
   assert.throws(() => allowReads('tasks'), /a list of collection names/);
+});
+
+test('without authorize, pull and live do not expose server-written data', async () => {
+  const sync = createSyncServer();
+  await sync.write('tasks', 'private', { title: 'secret' });
+  for (const path of ['pull?since=0', 'live?since=0&peer=p1']) {
+    const response = await sync.fetch(new Request(`http://localhost/_zb/sync/${path}`));
+    assert.equal(response.status, 403, path);
+    assert.match((await response.json()).error, /authorize/);
+  }
+  assert.equal((await sync.documents()).get('tasks', 'private').title, 'secret');
 });
 
 test('allowAnyone opens writes to every page', async () => {
@@ -101,13 +101,13 @@ test('authorize must be a function', () => {
   assert.throws(() => createSyncServer({ authorize: 'anyone' }), /`authorize` is a function/);
 });
 
-test('a Durable Object without an authorize of its own takes no reads or writes from pages; with one, it decides', async () => {
+test('a Durable Object without an authorize refuses reads and writes; with one, it decides', async () => {
   const bare = syncObject({ storage: durableStorage() }, {});
   const pushed = await post(bare, 'push', { changes: [change('title', 'x')] });
   assert.equal(pushed.status, 403);
   assert.match((await pushed.json()).error, /authorize/);
   await bare.write('tasks', 't1', { title: 'server' });
-  assert.equal((await pull(bare)).changes.length, 0, 'nothing read');
+  assert.equal((await bare.fetch(new Request('http://localhost/_zb/sync/pull?since=0'))).status, 403);
   assert.equal((await bare.documents()).get('tasks', 't1').title, 'server', "the server's own writes still work");
   const reading = syncObject({ storage: durableStorage() }, { authorize: allowReads(['tasks']) });
   await reading.write('tasks', 't1', { title: 'server' });
@@ -118,7 +118,20 @@ test('a Durable Object without an authorize of its own takes no reads or writes 
   assert.equal((await post(open, 'push', { changes: [change('secret', 'x', 2)] })).status, 403, "the object's authorize sees the field");
 });
 
-test('the zubra-sync binary takes no writes from pages unless started with --open', { skip: !binaryPath && 'binary not built' }, async () => {
+test('the zubra-sync binary refuses reads unless started with --open', { skip: !binaryPath && 'binary not built' }, async () => {
+  const { base, close } = await startBinary();
+  try {
+    for (const path of ['pull?since=0', 'live?since=0&peer=p1']) {
+      const response = await fetch(`${base}/_zb/sync/${path}`);
+      assert.equal(response.status, 403, path);
+      assert.match((await response.json()).error, /--open/);
+    }
+  } finally {
+    close();
+  }
+});
+
+test('the zubra-sync binary takes no page requests unless started with --open', { skip: !binaryPath && 'binary not built' }, async () => {
   for (const [args, status] of [[[], 403], [['--open'], 200]]) {
     const { base, close } = await startBinary(args);
     try {
@@ -126,12 +139,15 @@ test('the zubra-sync binary takes no writes from pages unless started with --ope
       const pushed = await send('push', { changes: [change('title', 'x')] });
       assert.equal(pushed.status, status, `push ${args.join(' ') || '(closed)'}`);
       if (status === 403) assert.match((await pushed.json()).error, /start zubra-sync with --open/);
-      const p1 = await liveKey(await fetch(`${base}/_zb/sync/live?since=0&peer=p1`));
+      const live = await fetch(`${base}/_zb/sync/live?since=0&peer=p1`);
+      assert.equal(live.status, status);
+      const p1 = status === 200 ? await liveKey(live) : { key: '', close: () => {} };
       assert.equal((await send('presence', { ...room, key: p1.key })).status, status, `presence ${args.join(' ') || '(closed)'}`);
       assert.equal((await send('signal', { ...signal, key: p1.key })).status, status, `signal ${args.join(' ') || '(closed)'}`);
       p1.close();
-      const read = await (await fetch(`${base}/_zb/sync/pull?since=0`)).json();
-      assert.equal(read.changes.length, status === 200 ? 1 : 0, 'what --open took is read with --open; closed, nothing is read');
+      const response = await fetch(`${base}/_zb/sync/pull?since=0`);
+      assert.equal(response.status, status);
+      if (status === 200) assert.equal((await response.json()).changes.length, 1);
     } finally {
       close();
     }

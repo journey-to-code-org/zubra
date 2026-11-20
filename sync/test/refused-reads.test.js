@@ -30,12 +30,12 @@ test('authorize refusing every read of a collection is said once, with the colle
   assert.equal(warned.length, 1, 'once per collection');
 });
 
-test('a server given no authorize reads nothing, and says what would open a collection', async () => {
+test('without authorize reads are refused; allowReads reports collections it leaves out', async () => {
   const { sync, warned } = await server({});
-  assert.deepEqual((await pull(sync)).changes, []);
-  assert.equal(warned.length, 2, 'each collection, once');
-  assert.match(warned[0], /a page read "secrets" .* none of its 2 documents: this server was given no `authorize`, so pages may read nothing: name what they may read, createSyncServer\(\{ authorize: allowReads\(\['secrets'\]\) \}\)/);
-  assert.match(warned[1], /a page read "items" .*allowReads\(\['items'\]\)/);
+  const refused = await sync.fetch(new Request(url('/pull?since=0')));
+  assert.equal(refused.status, 403);
+  assert.match((await refused.json()).error, /takes no reads or writes from pages/);
+  assert.deepEqual(warned, [], 'the refusal is returned to the page');
   // A collection allowReads leaves out is `authorize` refusing it, as an app's own would.
   const listed = await server({ authorize: allowReads(['items']) });
   await pull(listed.sync);

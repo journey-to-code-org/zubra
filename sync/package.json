@@ -59,5 +59,18 @@
     "type": "git",
     "url": "git+https://github.com/zubra-js/zubra.git",
     "directory": "sync"
-  }
+  },
+  "homepage": "https://github.com/zubra-js/zubra/tree/main/sync#readme",
+  "bugs": {
+    "url": "https://github.com/zubra-js/zubra/issues"
+  },
+  "keywords": [
+    "zubra",
+    "web components",
+    "custom elements",
+    "local-first",
+    "offline",
+    "indexeddb",
+    "sync"
+  ]
 }

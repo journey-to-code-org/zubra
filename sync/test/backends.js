@@ -33,7 +33,7 @@ export async function startBinary(extra = []) {
     base,
     close: () => {
       child.kill();
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
 }

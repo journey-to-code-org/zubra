@@ -177,6 +177,7 @@ export function connect({ url = '/_zb/sync', interval = 2000, live = true, webrt
 
   let timer = null;
   let warned = false;
+  let warnedRead = false;
   const schedule = () => {
     clearTimeout(timer);
     timer = setTimeout(flush, 30);
@@ -219,7 +220,14 @@ export function connect({ url = '/_zb/sync', interval = 2000, live = true, webrt
     let body;
     try {
       const response = await fetch(`${base}/pull?since=${encodeURIComponent(cursor)}${scoped}`);
-      if (!response.ok) return;
+      if (!response.ok) {
+        if (response.status === 403 && !warnedRead) {
+          warnedRead = true;
+          const why = await response.json().then((body) => body?.error, () => '');
+          console.warn(`@zubra/sync: the server refused this page's reads${why ? `: ${why}` : ''}`);
+        }
+        return;
+      }
       body = await response.json();
     } catch {
       return;
