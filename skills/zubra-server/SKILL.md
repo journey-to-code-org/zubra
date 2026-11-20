@@ -46,4 +46,4 @@ The server HTML carries processing-instruction markers (`<?zb [?>`, `<?zb ]?>`, 
 
 ## Reference
 
-https://github.com/journey-to-code-org/zubra/blob/main/docs/server-rendering.md (the honest account, with the gaps), https://github.com/journey-to-code-org/zubra/blob/main/docs/reference.md#server-rendering-and-hydration, and in the repository `server/src/index.js`, `examples/helpdesk/`, `examples/meta/README.md`.
+https://github.com/zubra-js/zubra/blob/main/docs/server-rendering.md (the honest account, with the gaps), https://github.com/zubra-js/zubra/blob/main/docs/reference.md#server-rendering-and-hydration, and in the repository `server/src/index.js`, `examples/helpdesk/`, `examples/meta/README.md`.

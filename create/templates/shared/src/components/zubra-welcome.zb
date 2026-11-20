@@ -15,7 +15,7 @@
 <zubra-welcome heading="Zubra app" framework="">
   <a
     class="zw-mark"
-    href="https://github.com/journey-to-code-org/zubra"
+    href="https://github.com/zubra-js/zubra"
     target="_blank"
     rel="noreferrer"
     aria-label="Zubra on GitHub"

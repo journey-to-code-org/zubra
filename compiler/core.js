@@ -45,7 +45,7 @@ export class CompileError extends Error {
  */
 export class CompilerCrash extends Error {
   constructor(cause) {
-    super(`@zubra/compiler: the compiler stopped on this input (${cause?.message ?? cause}). Please report the input: https://github.com/journey-to-code-org/zubra/issues`, { cause });
+    super(`@zubra/compiler: the compiler stopped on this input (${cause?.message ?? cause}). Please report the input: https://github.com/zubra-js/zubra/issues`, { cause });
     this.name = 'CompilerCrash';
   }
 }

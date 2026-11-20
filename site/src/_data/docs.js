@@ -23,7 +23,7 @@ const colour = (code, language) => {
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const base = process.env.BASE ?? '/';
-const repository = process.env.GITHUB_REPOSITORY ?? 'journey-to-code-org/zubra';
+const repository = process.env.GITHUB_REPOSITORY ?? 'zubra-js/zubra';
 const github = `https://github.com/${repository}`;
 
 const escape = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);

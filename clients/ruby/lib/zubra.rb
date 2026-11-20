@@ -20,7 +20,7 @@ require "cgi"
 class Zubra
   VERSION = "0.1.0"
 
-  HOW_TO = "Download a binary from https://github.com/journey-to-code-org/zubra/releases and put it " \
+  HOW_TO = "Download a binary from https://github.com/zubra-js/zubra/releases and put it " \
            "on the PATH, or set ZUBRA_COMPILER to its path."
 
   # The compiler's message: a component that doesn't compile, or one that doesn't exist, or a

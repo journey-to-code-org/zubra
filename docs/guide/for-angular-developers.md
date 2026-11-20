@@ -101,4 +101,4 @@ The general rules, with the reasons, are in [What crosses the boundary](../what-
 - **Event names are lowercase** (`(valuechange)`, not `(valueChange)`), because they are DOM events.
 - **Validation messages are yours.** `ZubraModel` moves values, `disabled` and touched state. Angular's validators and your error templates stay in charge.
 
-**Which framework do you use alongside Zubra, and what would a page written for you need to show?** [Tell us in an issue](https://github.com/journey-to-code-org/zubra/issues/new).
+**Which framework do you use alongside Zubra, and what would a page written for you need to show?** [Tell us in an issue](https://github.com/zubra-js/zubra/issues/new).

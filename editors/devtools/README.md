@@ -15,7 +15,7 @@ It's read-only, and it follows the page: it re-reads when the selection changes 
 
 ## Try it
 
-Install it, then open the [playground](https://journey-to-code-org.github.io/zubra/playground/): its previews are development builds, so select an element in one and the Zubra pane shows it. Clicking a line selects it in the playground's editor.
+Install it, then open the [playground](https://zubra-js.github.io/zubra/playground/): its previews are development builds, so select an element in one and the Zubra pane shows it. Clicking a line selects it in the playground's editor.
 
 ## What it needs
 

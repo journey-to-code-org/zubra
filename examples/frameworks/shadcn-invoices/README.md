@@ -1,8 +1,8 @@
 # Ledgerly: shadcn/ui and Radix
 
-[![Ledgerly](../../../demos/shots/shadcn-invoices.jpg)](https://journey-to-code-org.github.io/zubra/demos/shadcn-invoices/)
+[![Ledgerly](../../../demos/shots/shadcn-invoices.jpg)](https://zubra-js.github.io/zubra/demos/shadcn-invoices/)
 
-**[Open the live demo](https://journey-to-code-org.github.io/zubra/demos/shadcn-invoices/)**, or browse [every example](https://journey-to-code-org.github.io/zubra/).
+**[Open the live demo](https://zubra-js.github.io/zubra/demos/shadcn-invoices/)**, or browse [every example](https://zubra-js.github.io/zubra/).
 
 An invoicing dashboard in React. It uses shadcn/ui for the app's chrome, the dialogs (Radix Dialog) and the theme menu (Radix DropdownMenu). Zubra components sit next to them: the invoice table, the status badges, the revenue chart and the form's status picker. One theme drives both.
 

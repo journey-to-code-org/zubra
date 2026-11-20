@@ -88,4 +88,4 @@ The general rules, with the reasons, are in [What crosses the boundary](../what-
 - **Next.js: an element given React children renders in the browser only.** React's `dangerouslySetInnerHTML` and children are exclusive, and a declarative shadow root as a React child breaks hydration. That is React's limit and Zubra can't fix it from its side. Elements without React children are server-rendered ([Server rendering, honestly](../server-rendering.md)).
 - **Event names are lowercase** underneath: `onValueChange` in the wrapper is the element's `valuechange`.
 
-**Which framework do you use alongside Zubra, and what would a page written for you need to show?** [Tell us in an issue](https://github.com/journey-to-code-org/zubra/issues/new).
+**Which framework do you use alongside Zubra, and what would a page written for you need to show?** [Tell us in an issue](https://github.com/zubra-js/zubra/issues/new).

@@ -1,6 +1,6 @@
 # {{title}}
 
-A server-rendered app using [Zubra](https://github.com/journey-to-code-org/zubra) web components: a Node server that sends pages with the components already in the HTML, and a form that runs a function on the server. No bundler and no build step.
+A server-rendered app using [Zubra](https://github.com/zubra-js/zubra) web components: a Node server that sends pages with the components already in the HTML, and a form that runs a function on the server. No bundler and no build step.
 
 ```sh
 npm install
@@ -35,4 +35,4 @@ Each component is an example to read and copy from:
 
 `zubra-welcome.zb`, `zubra-examples.zb` and `example-card.zb` are only the starter page. Delete them, take them out of `home()` in `server.js`, and delete the examples test in `test/app.test.js`. Then add your own: a new `src/components/my-thing.zb`, rendered with `page.render('my-thing', props)`. `npx zubra add --list` shows tested, accessible components you can copy in to start from.
 
-For more than one page, `@zubra/router` adds routes, layouts and a `load` per page to this same server: see the [tutorial](https://journey-to-code-org.github.io/zubra/docs/).
+For more than one page, `@zubra/router` adds routes, layouts and a `load` per page to this same server: see the [tutorial](https://zubra-js.github.io/zubra/docs/).

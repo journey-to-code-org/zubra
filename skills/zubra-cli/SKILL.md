@@ -44,4 +44,4 @@ and read one line back: `{"ok":true,"output":"<price-tag …>…</price-tag>","e
 
 ## Reference
 
-`zubra --help`; https://github.com/journey-to-code-org/zubra/blob/main/docs/reference.md#the-cli, `#sharing-components`, `#moving-in-from-react`; the request format in the repository's `src/request.rs`.
+`zubra --help`; https://github.com/zubra-js/zubra/blob/main/docs/reference.md#the-cli, `#sharing-components`, `#moving-in-from-react`; the request format in the repository's `src/request.rs`.

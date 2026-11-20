@@ -138,7 +138,7 @@ test('hooks called outside setup explain themselves', async () => {
     const { inject, createContext } = await import('@zubra/runtime');
     try { inject(createContext(1)); } catch (error) { return error.message; }
   });
-  assert.equal(message, 'zubra: inject() must be called while a component is setting up (see https://github.com/journey-to-code-org/zubra#script-state-and-hooks)');
+  assert.equal(message, 'zubra: inject() must be called while a component is setting up (see https://github.com/zubra-js/zubra#script-state-and-hooks)');
   await page.close();
 });
 

@@ -1,12 +1,12 @@
 # zubra for Ruby
 
-Render [Zubra](https://github.com/journey-to-code-org/zubra) web components from Rails, Sinatra, or any Ruby server, with no Node.js anywhere. The components are compiled by the Zubra compiler (a Rust binary) running as one long-lived `zubra serve` process; the browser hydrates the HTML your server wrote.
+Render [Zubra](https://github.com/zubra-js/zubra) web components from Rails, Sinatra, or any Ruby server, with no Node.js anywhere. The components are compiled by the Zubra compiler (a Rust binary) running as one long-lived `zubra serve` process; the browser hydrates the HTML your server wrote.
 
 It isn't on RubyGems yet. Install it from the repository, and put a compiler where it can find it (see "Finding the compiler"):
 
 ```ruby
 # Gemfile
-gem "zubra", github: "journey-to-code-org/zubra", glob: "clients/ruby/*.gemspec"
+gem "zubra", github: "zubra-js/zubra", glob: "clients/ruby/*.gemspec"
 ```
 
 ```ruby
@@ -40,7 +40,7 @@ The Railtie adds a middleware that gives each request its own page and fills in 
 
 ## Finding the compiler
 
-In order: the `compiler:` argument (`config.zubra.compiler` in Rails), `$ZUBRA_COMPILER`, then `zubra` on the `PATH`. Download a binary from the project's [releases](https://github.com/journey-to-code-org/zubra/releases).
+In order: the `compiler:` argument (`config.zubra.compiler` in Rails), `$ZUBRA_COMPILER`, then `zubra` on the `PATH`. Download a binary from the project's [releases](https://github.com/zubra-js/zubra/releases).
 
 ## When the compiler misbehaves
 

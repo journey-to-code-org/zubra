@@ -4,7 +4,7 @@
 
 Zubra is a compiler for Web Components. You write a component as HTML with `{expr}` bindings and a `<script>`. Zubra turns it into server-rendered HTML and a small custom element that hydrates that HTML. React, Vue and any other framework can then use the element without integration code.
 
-**[Try it in your browser](https://journey-to-code-org.github.io/zubra/playground/)** · [Tutorial](docs/guide/README.md) · [Reference](docs/reference.md) · [Live demos](https://journey-to-code-org.github.io/zubra/) · [Documentation site](https://journey-to-code-org.github.io/zubra/docs/)
+**[Try it in your browser](https://zubra-js.github.io/zubra/playground/)** · [Tutorial](docs/guide/README.md) · [Reference](docs/reference.md) · [Live demos](https://zubra-js.github.io/zubra/) · [Documentation site](https://zubra-js.github.io/zubra/docs/)
 
 ```sh
 npm create zubra@latest                          # a working app for your framework, or none

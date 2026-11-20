@@ -87,17 +87,17 @@ const left = items.filter((item) => !item.done).length
     </example-card>
   </div>
   <nav aria-label="Zubra documentation">
-    <a href="https://journey-to-code-org.github.io/zubra/docs/" target="_blank" rel="noreferrer">Tutorial and reference</a>
+    <a href="https://zubra-js.github.io/zubra/docs/" target="_blank" rel="noreferrer">Tutorial and reference</a>
     <a
-      href="https://journey-to-code-org.github.io/zubra/playground/"
+      href="https://zubra-js.github.io/zubra/playground/"
       target="_blank"
       rel="noreferrer"
     >Playground</a>
     <a
-      href="https://github.com/journey-to-code-org/zubra/tree/main/registry/components"
+      href="https://github.com/zubra-js/zubra/tree/main/registry/components"
       target="_blank"
       rel="noreferrer"
     >Components to copy</a>
-    <a href="https://github.com/journey-to-code-org/zubra" target="_blank" rel="noreferrer">GitHub</a>
+    <a href="https://github.com/zubra-js/zubra" target="_blank" rel="noreferrer">GitHub</a>
   </nav>
 </zubra-examples>

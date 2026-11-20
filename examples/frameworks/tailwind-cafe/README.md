@@ -1,8 +1,8 @@
 # Corner Café: Tailwind CSS 4
 
-[![Corner Café](../../../demos/shots/tailwind-cafe.jpg)](https://journey-to-code-org.github.io/zubra/demos/tailwind-cafe/)
+[![Corner Café](../../../demos/shots/tailwind-cafe.jpg)](https://zubra-js.github.io/zubra/demos/tailwind-cafe/)
 
-**[Open the live demo](https://journey-to-code-org.github.io/zubra/demos/tailwind-cafe/)**, or browse [every example](https://journey-to-code-org.github.io/zubra/).
+**[Open the live demo](https://zubra-js.github.io/zubra/demos/tailwind-cafe/)**, or browse [every example](https://zubra-js.github.io/zubra/).
 
 A café's order builder: pick a drink's size, add it, and watch the order total up. The page and every Zubra component are styled with Tailwind utility classes, and nothing else.
 

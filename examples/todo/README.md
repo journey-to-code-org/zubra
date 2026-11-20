@@ -1,8 +1,8 @@
 # To-do list
 
-[![To-do list](../../demos/shots/todo.jpg)](https://journey-to-code-org.github.io/zubra/demos/todo/)
+[![To-do list](../../demos/shots/todo.jpg)](https://zubra-js.github.io/zubra/demos/todo/)
 
-**[Open the live demo](https://journey-to-code-org.github.io/zubra/demos/todo/)**, or browse [every example](https://journey-to-code-org.github.io/zubra/).
+**[Open the live demo](https://zubra-js.github.io/zubra/demos/todo/)**, or browse [every example](https://zubra-js.github.io/zubra/).
 
 The basic example: two `.zb` components and a few lines of plain JavaScript, built with Vite.
 

@@ -1,8 +1,8 @@
 # Riverside Clinic: MUI
 
-[![Riverside Clinic](../../../demos/shots/mui-clinic.jpg)](https://journey-to-code-org.github.io/zubra/demos/mui-clinic/)
+[![Riverside Clinic](../../../demos/shots/mui-clinic.jpg)](https://zubra-js.github.io/zubra/demos/mui-clinic/)
 
-**[Open the live demo](https://journey-to-code-org.github.io/zubra/demos/mui-clinic/)**, or browse [every example](https://journey-to-code-org.github.io/zubra/).
+**[Open the live demo](https://zubra-js.github.io/zubra/demos/mui-clinic/)**, or browse [every example](https://zubra-js.github.io/zubra/).
 
 Booking a doctor's appointment in React with MUI (Material UI): the app bar, the layout grid, the form and its fields are MUI. The doctor cards and the time picker are Zubra components inside MUI's form.
 

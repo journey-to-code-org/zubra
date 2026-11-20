@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.97"
 license = "ISC"
-repository = "https://github.com/journey-to-code-org/zubra"
+repository = "https://github.com/zubra-js/zubra"
 description = "The Zubra Sync log as one binary: the @zubra/sync protocol over HTTP, with a SQLite file, and no Node.js"
 publish = false
 

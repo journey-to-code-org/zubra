@@ -2,7 +2,7 @@
 
 ![Help desk](../../demos/shots/helpdesk.jpg)
 
-This one needs a server, so it isn't in the [live demos](https://journey-to-code-org.github.io/zubra/); the commands below run it.
+This one needs a server, so it isn't in the [live demos](https://zubra-js.github.io/zubra/); the commands below run it.
 
 A ticket tracker for a support team. Customers file tickets and follow the conversation. Agents work a queue, reply, leave internal notes, change status and priority, assign tickets and watch response deadlines.
 

@@ -4,7 +4,7 @@
   "type": "library",
   "license": "ISC",
   "keywords": ["web-components", "ssr", "laravel", "blade"],
-  "homepage": "https://github.com/journey-to-code-org/zubra/tree/main/clients/php",
+  "homepage": "https://github.com/zubra-js/zubra/tree/main/clients/php",
   "require": {
     "php": ">=8.1"
   },

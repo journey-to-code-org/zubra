@@ -71,4 +71,4 @@ The general rules, with the reasons, are in [What crosses the boundary](../what-
 - **Under SvelteKit every Zubra element is `shadow`.** Svelte claims every node it hydrates, so light-DOM content can't be server-rendered there. `@zubra/server` fills the declarative shadow roots before hydration; the plugin adds `zb-props` in the server build ([Server rendering, honestly](../server-rendering.md)).
 - **Svelte renders the host tag only on the server.** What is inside the element comes from Zubra, not from Svelte's markup.
 
-**Which framework do you use alongside Zubra, and what would a page written for you need to show?** [Tell us in an issue](https://github.com/journey-to-code-org/zubra/issues/new).
+**Which framework do you use alongside Zubra, and what would a page written for you need to show?** [Tell us in an issue](https://github.com/zubra-js/zubra/issues/new).

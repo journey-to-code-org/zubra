@@ -1,6 +1,6 @@
 # {{title}}
 
-A {{framework}} app using [Zubra](https://github.com/journey-to-code-org/zubra) web components.
+A {{framework}} app using [Zubra](https://github.com/zubra-js/zubra) web components.
 
 ```sh
 npm install
@@ -35,4 +35,4 @@ Open one while `npm run dev` runs, change it and save.
 
 `zubra-welcome.zb`, `zubra-examples.zb` and `example-card.zb` are only the starter page. Delete them, take their tags and imports out of the page, and delete the examples test in `test/app.test.js`. Then add your own: a new `src/components/my-thing.zb`, imported where it's used. `npx zubra add --list` shows tested, accessible components you can copy in to start from.
 
-The [tutorial](https://journey-to-code-org.github.io/zubra/docs/) goes from here to forms, async data and server rendering.
+The [tutorial](https://zubra-js.github.io/zubra/docs/) goes from here to forms, async data and server rendering.
