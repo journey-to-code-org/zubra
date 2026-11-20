@@ -244,7 +244,7 @@ Some state should be seen by the other viewers of a document but never stored: w
 <board-view doc="">
   <div class="pad" onpointermove={(event) => (cursor = { x: event.offsetX, y: event.offsetY })}></div>
   <zb-each items={others} as="other" key={other.peer}>
-    <span class="cursor" style={`left: ${other.cursor.x}px; top: ${other.cursor.y}px`}></span>
+    <span class="cursor" style:left={`${other.cursor.x}px`} style:top={`${other.cursor.y}px`}></span>
   </zb-each>
 </board-view>
 ```

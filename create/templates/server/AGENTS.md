@@ -59,15 +59,21 @@ res.end(page.finish(`<!doctype html><html><head>…</head><body>${body}${actions
 
 ```html
 <script>
+  import { from } from '@zubra/runtime'
   import { addNote } from '../notes.js'      // server only: not sent to the browser
+
+  let list = from(saved)
 
   export async function add(formData) {
     'use server'
-    return { notes: addNote(String(formData.get('text'))) }
+    const text = String(formData.get('text') ?? '').trim()
+    if (!text) return { error: 'Write something first.' }
+    return { notes: [...addNote(text)] }
   }
 </script>
 <guest-book saved={[]}>
-  <form action={add} onaction={(event) => (list = event.detail.value.notes)}>…</form>
+  <form action={add} onaction={(event) => (list = event.detail.value.notes ?? list)}>…</form>
+  <ul><zb-each items={list} as="note"><li>{note}</li></zb-each></ul>
 </guest-book>
 ```
 
@@ -121,4 +127,4 @@ res.end(page.finish(`<!doctype html><html><head>…</head><body>${body}${actions
 - A component takes data in through props and sends it out through events. Data it needs comes from `server.js` as props, or from a `'use server'` function.
 - After changing a component: `npx zubra check src/components/*.zb`, then `npm test`.
 
-The full reference is https://github.com/zubra-js/zubra#readme, and the tutorial is https://zubra-js.github.io/zubra/docs/.
+The full reference is https://github.com/zubra-js/zubra/blob/main/docs/reference.md, and the tutorial is https://zubra-js.github.io/zubra/docs/.

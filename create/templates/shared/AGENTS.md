@@ -88,4 +88,4 @@ From a plain script: `el.count = 3` (the camelCase property) or `el.setAttribute
 - Don't edit the generated typings next to the components (`*.d.zb.ts`); they're rewritten from the `.zb` file.
 - After changing a component: `npx zubra check` on it, then `npm test`.
 
-The full reference is https://github.com/zubra-js/zubra#readme, and the tutorial is https://zubra-js.github.io/zubra/docs/.
+The full reference is https://github.com/zubra-js/zubra/blob/main/docs/reference.md, and the tutorial is https://zubra-js.github.io/zubra/docs/.

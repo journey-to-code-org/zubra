@@ -143,6 +143,16 @@ test('the server app: a Node server, a form with a server function, no bundler, 
     assert.doesNotMatch(text, /hot reload|vite|\{\{/i);
   }
   assert.match(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), /skills\/zubra-server\/SKILL\.md/);
+  // AGENTS.md's guest-book excerpt is the real component, shortened: every line of its script is a
+  // line of guest-book.zb (a comment after `//` aside), so it names what it uses (`from`, `list`).
+  const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8');
+  const excerpt = agents.slice(agents.indexOf('## A function on the server')).match(/```html\n<script>\n([\s\S]*?)\n<\/script>/)[1];
+  const real = new Set(readFileSync(join(dir, 'src/components/guest-book.zb'), 'utf8').split('\n').map((line) => line.trim()));
+  for (const line of excerpt.split('\n').map((text) => text.replace(/\s+\/\/ .*$/, '').trim()).filter(Boolean)) {
+    assert.ok(real.has(line), `AGENTS.md's guest-book excerpt has "${line}", which guest-book.zb doesn't`);
+  }
+  assert.match(excerpt, /import \{ from \} from '@zubra\/runtime'/);
+  assert.match(excerpt, /let list = from\(saved\)/);
   // In development a saved component updates the open page in place (`reload`), as the bundler
   // starters do, so the counter's comment and the welcome line, shared with them, hold here too.
   assert.match(server, /reload: !production/);
