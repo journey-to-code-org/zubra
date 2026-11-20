@@ -783,9 +783,25 @@ async function main() {
   const soon = () => { clearTimeout(timer); timer = setTimeout(update, 250); };
   source.addEventListener('input', soon);
   page.addEventListener('input', soon);
+  // Tab indents in the editors, so it must not trap the keyboard there (WCAG 2.1.2): Escape, or
+  // Ctrl+M as in CodeMirror, switches Tab between indenting and moving focus, for both editors.
+  let tabMoves = false;
+  const hint = $('#tab-hint');
+  const toggleTab = () => {
+    tabMoves = !tabMoves;
+    document.body.toggleAttribute('data-tab-moves', tabMoves);
+    hint.innerHTML = tabMoves
+      ? 'Tab moves focus · <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>M</kbd>: Tab indents'
+      : 'Tab indents · <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>M</kbd>: Tab moves focus';
+  };
   for (const area of [source, page]) {
     area.addEventListener('keydown', (event) => {
-      if (event.key !== 'Tab' || event.shiftKey || event.metaKey || event.ctrlKey) return;
+      if (event.key === 'Escape' || (event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'm')) {
+        event.preventDefault();
+        toggleTab();
+        return;
+      }
+      if (tabMoves || event.key !== 'Tab' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return;
       event.preventDefault();
       area.setRangeText('  ', area.selectionStart, area.selectionEnd, 'end');
       area.dispatchEvent(new Event('input'));
@@ -800,9 +816,25 @@ async function main() {
     drawPage();
     update();
   });
+  // The output tabs: one tab stop (the selected tab), arrows, Home and End choose (WAI-ARIA tabs).
+  const tabs = [...document.querySelectorAll('#tabs [role=tab]')];
+  const choose = (tab) => {
+    showTab(tab.dataset.tab);
+    for (const each of tabs) each.tabIndex = each === tab ? 0 : -1;
+  };
   $('#tabs').addEventListener('click', (event) => {
     const tab = event.target.closest('[role=tab]');
-    if (tab) showTab(tab.dataset.tab);
+    if (tab) choose(tab);
+  });
+  $('#tabs').addEventListener('keydown', (event) => {
+    const at = tabs.indexOf(event.target);
+    if (at < 0) return;
+    const to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1 }[event.key];
+    if (to === undefined) return;
+    event.preventDefault();
+    const tab = tabs[(to + tabs.length) % tabs.length];
+    choose(tab);
+    tab.focus();
   });
   $('#share').addEventListener('click', async () => {
     await update();
