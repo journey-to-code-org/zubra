@@ -40,4 +40,4 @@
 
 ## Reproducing
 
-The format reference is the main README of [zubra](https://github.com/zubra-js/zubra). The compiler's test suites (`cargo test`) and the browser suites (`runtime/`, `plugin/`) exercise every feature above.
+The format reference is [zubra's reference](../reference.md). The compiler's test suites (`cargo test`) and the browser suites (`runtime/`, `plugin/`) exercise every feature above.
