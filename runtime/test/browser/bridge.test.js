@@ -10,7 +10,7 @@ import { useBrowser, open, here, site, emitElement } from './harness.js';
 const CART = "import { state, computed } from '@zubra/runtime';\nexport const cart = state([]);\nexport const total = computed(() => cart.get().length * 2);\n";
 useBrowser({ 'cart-count': join(here, 'fixtures/cart-count.zb') }, { 'cart-state.js': CART });
 
-const src = join(here, '../../src');
+const src = join(here, '../../src').replaceAll('\\', '/');
 
 const REACT_APP = `
 import { memo } from 'react';

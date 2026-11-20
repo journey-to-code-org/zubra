@@ -27,44 +27,44 @@ for (const name of ['beforevaluechange', 'valuechange', 'change', 'ping']) {
 const seen = (page) => page.evaluate(() => window.seen);
 
 test('emit() dispatches a bubbling CustomEvent with its detail, from the host', async () => {
-  const { page, messages } = await open('<zb-rating></zb-rating>', { beforeModules: LISTEN, modules: ['rating'] });
-  await page.click('zb-rating .two');
-  const base = { custom: true, bubbles: true, composed: false, target: 'zb-rating' };
+  const { page, messages } = await open('<my-rating></my-rating>', { beforeModules: LISTEN, modules: ['rating'] });
+  await page.click('my-rating .two');
+  const base = { custom: true, bubbles: true, composed: false, target: 'my-rating' };
   assert.deepEqual(await seen(page), [
     { ...base, name: 'beforevaluechange', detail: 2, cancelable: true },
     { ...base, name: 'valuechange', detail: 2, cancelable: false },
     { ...base, name: 'change', detail: null, cancelable: false },
   ]);
-  assert.equal(await page.$eval('zb-rating', (rating) => rating.value), 2, 'props() writes the prop');
-  assert.equal(await page.$eval('zb-rating output', (output) => output.textContent), '2');
+  assert.equal(await page.$eval('my-rating', (rating) => rating.value), 2, 'props() writes the prop');
+  assert.equal(await page.$eval('my-rating output', (output) => output.textContent), '2');
   assert.deepEqual(messages, []);
   await page.close();
 });
 
 test('preventDefault() on a before… event stops the change', async () => {
-  const { page } = await open('<zb-rating value="1"></zb-rating>', {
+  const { page } = await open('<my-rating value="1"></my-rating>', {
     beforeModules: `${LISTEN}\ndocument.addEventListener('beforevaluechange', (event) => event.preventDefault());`,
     modules: ['rating'],
   });
-  await page.click('zb-rating .two');
+  await page.click('my-rating .two');
   assert.deepEqual((await seen(page)).map((event) => event.name), ['beforevaluechange']);
-  assert.equal(await page.$eval('zb-rating', (rating) => rating.value), 1);
+  assert.equal(await page.$eval('my-rating', (rating) => rating.value), 1);
   await page.close();
 });
 
 test("an inner element's event with the component's event name stops at the host", async () => {
-  const { page } = await open('<zb-rating></zb-rating>', {
+  const { page } = await open('<my-rating></my-rating>', {
     beforeModules: `${LISTEN}\nwindow.inner = 0;`,
     modules: ['rating'],
   });
   // The component's own listener on the inner input still runs (target phase) — here, a test one.
   await page.evaluate(() => {
-    document.querySelector('zb-rating .note').addEventListener('change', () => window.inner++);
+    document.querySelector('my-rating .note').addEventListener('change', () => window.inner++);
     // Listeners on the host itself count as outside too.
-    document.querySelector('zb-rating').addEventListener('change', () => window.inner += 100);
+    document.querySelector('my-rating').addEventListener('change', () => window.inner += 100);
   });
-  await page.fill('zb-rating .note', 'hello');
-  await page.click('zb-rating output');   // blur: the native <input> fires change
+  await page.fill('my-rating .note', 'hello');
+  await page.click('my-rating output');   // blur: the native <input> fires change
   assert.equal(await page.evaluate(() => window.inner), 1, 'the native change happened');
   assert.deepEqual(await seen(page), [], "it didn't escape the component");
   await page.close();
@@ -72,13 +72,13 @@ test("an inner element's event with the component's event name stops at the host
 
 test("a parent listens with on…={handler}; a child's event with the parent's event name stops at the parent", async () => {
   const { page, messages } = await open('<zb-survey></zb-survey>', { beforeModules: LISTEN, modules: ['survey'] });
-  await page.click('zb-rating .one');
+  await page.click('my-rating .one');
   await page.evaluate(() => document.querySelector('zb-survey').updateComplete);
   assert.equal(await page.$eval('zb-survey p', (p) => p.textContent), '1');
   assert.deepEqual((await seen(page)).map((event) => [event.name, event.target, event.detail]), [
-    ['beforevaluechange', 'zb-rating', 1],
+    ['beforevaluechange', 'my-rating', 1],
     ['valuechange', 'zb-survey', { rating: 1 }],   // the rating's own stopped at the survey
-    ['change', 'zb-rating', null],
+    ['change', 'my-rating', null],
   ]);
   assert.deepEqual(messages, []);
   await page.close();
@@ -132,7 +132,7 @@ test('.submit submits the element\'s form with validation; .mod is Ctrl here (�
   assert.equal(await output(), '1101 #000', 'submit(fn) ran fn');
   assert.equal(await page.evaluate(() => window.sent.length), 3, 'and submitted');
   // value:bind: the child's change comes back to the parent's `let`.
-  await page.click('zb-swatch .red');
+  await page.click('my-swatch .red');
   assert.equal(await output(), '1101 #f00');
   assert.deepEqual(messages, []);
   await page.close();

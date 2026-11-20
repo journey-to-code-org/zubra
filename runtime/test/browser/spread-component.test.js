@@ -15,9 +15,9 @@ const set = (page, rest) => page.evaluate(async (rest) => {
   const el = document.querySelector('spread-onto');
   el.rest = rest;
   await el.updateComplete;
-  await Promise.all([...el.querySelectorAll('zb-badge')].map((badge) => badge.updateComplete));
+  await Promise.all([...el.querySelectorAll('my-badge')].map((badge) => badge.updateComplete));
 }, rest);
-const read = (page) => page.$$eval('spread-onto zb-badge', (badges) => badges.map((badge) => ({
+const read = (page) => page.$$eval('spread-onto my-badge', (badges) => badges.map((badge) => ({
   label: badge.label,
   count: badge.count,
   text: badge.querySelector('.badge b').textContent + '/' + badge.querySelector('.badge i').textContent,
@@ -33,8 +33,8 @@ test('props go to the component as props; the other entries go to its host', asy
   assert.equal(first.label, 'sale');
   assert.equal(first.count, 3, 'a number stays a number: it is a property, not an attribute');
   assert.equal(first.text, 'sale/3');
-  assert.equal(await page.$eval('spread-onto zb-badge .badge', (badge) => badge.dataset.color), 'red', 'an object arrives as the object');
-  assert.equal(await page.$eval('spread-onto zb-badge', (badge) => badge.hasAttribute('info')), false);
+  assert.equal(await page.$eval('spread-onto my-badge .badge', (badge) => badge.dataset.color), 'red', 'an object arrives as the object');
+  assert.equal(await page.$eval('spread-onto my-badge', (badge) => badge.hasAttribute('info')), false);
   assert.equal(first.title, 'hi');
   assert.deepEqual(first.classes, ['own', 'extra']);
   assert.ok(first.attributes.includes('data-x'));
@@ -53,7 +53,7 @@ test('an explicit prop wins over the spread, however the spread changes', async 
 test('a key that goes away puts the prop back to its default, as the server renders it', async () => {
   const { page } = await open('<spread-onto></spread-onto>', { modules: ['badge', 'spread-onto'] });
   await set(page, { label: 'sale', count: 3, title: 'hi', info: { color: 'red' } });
-  assert.equal(await page.$eval('spread-onto zb-badge .badge', (badge) => badge.dataset.color), 'red');
+  assert.equal(await page.$eval('spread-onto my-badge .badge', (badge) => badge.dataset.color), 'red');
   await set(page, { count: 5 });
   const [first] = await read(page);
   assert.equal(first.count, 5);
@@ -61,7 +61,7 @@ test('a key that goes away puts the prop back to its default, as the server rend
   assert.equal(first.text, 'new/5', 'and it renders it');
   assert.equal(first.title, null, 'the removed attribute is removed');
   // An object default comes back too, as a copy: the badge reads `info.color`.
-  assert.equal(await page.$eval('spread-onto zb-badge .badge', (badge) => badge.dataset.color), 'gray');
+  assert.equal(await page.$eval('spread-onto my-badge .badge', (badge) => badge.dataset.color), 'gray');
   await set(page, {});
   assert.deepEqual((await read(page)).map((badge) => badge.text), ['new/0', 'fixed/0']);
 });
@@ -73,6 +73,6 @@ test('null is the default too, not a value', async () => {
   assert.deepEqual((await read(page)).map((badge) => [badge.label, badge.count, badge.text]), [['new', 0, 'new/0'], ['fixed', 0, 'fixed/0']]);
   // Never given, then null: still the default.
   await set(page, { info: null });
-  assert.equal(await page.$eval('spread-onto zb-badge .badge', (badge) => badge.dataset.color), 'gray');
+  assert.equal(await page.$eval('spread-onto my-badge .badge', (badge) => badge.dataset.color), 'gray');
   assert.deepEqual(messages, []);
 });

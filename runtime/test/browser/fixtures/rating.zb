@@ -17,6 +17,6 @@
   function one() { rate(1) }
   function two() { rate(2) }
 </script>
-<zb-rating value={0}>
+<my-rating value={0}>
   <button type="button" class="one" onclick={one}>1</button><button type="button" class="two" onclick={two}>2</button><output>{value}</output><input class="note">
-</zb-rating>
+</my-rating>

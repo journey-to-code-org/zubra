@@ -19,7 +19,7 @@ const WIDGET = `customElements.define('x-widget', class extends HTMLElement {
 });`;
 
 const readBadges = (page) =>
-  page.$$eval('zb-inbox zb-badge', (badges) => badges.map((badge) => ({
+  page.$$eval('zb-inbox my-badge', (badges) => badges.map((badge) => ({
     who: badge.dataset.who,
     cls: badge.className,
     label: badge.label,
@@ -34,7 +34,7 @@ async function setItems(page, items) {
     const inbox = document.querySelector('zb-inbox');
     inbox.items = items;
     await inbox.updateComplete;
-    await Promise.all([...inbox.querySelectorAll('zb-badge')].map((badge) => badge.updateComplete));
+    await Promise.all([...inbox.querySelectorAll('my-badge')].map((badge) => badge.updateComplete));
   }, items);
 }
 
@@ -51,14 +51,14 @@ test('a parent passes props as values and its content fills the child slots', as
 
 test('parent changes flow into child props and slotted content; keyed children move', async () => {
   const { page, messages } = await open('<zb-inbox></zb-inbox>', { beforeModules: WIDGET, modules: ['inbox'] });
-  await page.evaluate(() => { window.ada = document.querySelector('zb-badge[data-who=Ada]'); });
+  await page.evaluate(() => { window.ada = document.querySelector('my-badge[data-who=Ada]'); });
   await setItems(page, [{ name: 'Linus', unread: 5 }, { name: 'Ada', unread: 0 }, { name: 'Grace', unread: 1 }]);
   assert.deepEqual((await readBadges(page)).map((badge) => [badge.who, badge.text, badge.color]), [
     ['Linus', '* Linus 5 unread', 'red'],
     ['Ada', '- Ada 0 read', 'gray'],
     ['Grace', '* Grace 1 unread', 'red'],
   ]);
-  assert.equal(await page.evaluate(() => document.querySelector('zb-badge[data-who=Ada]') === window.ada), true, 'the same child element, moved');
+  assert.equal(await page.evaluate(() => document.querySelector('my-badge[data-who=Ada]') === window.ada), true, 'the same child element, moved');
   assert.equal(await page.$eval('x-widget', (widget) => widget.textContent), 'size 3');
   assert.deepEqual(messages, []);
   await page.close();
@@ -66,7 +66,7 @@ test('parent changes flow into child props and slotted content; keyed children m
 
 test('hydrates a parent and its children from nested server markup', { skip: runtimeOnly }, async () => {
   const html = compiler(join(here, 'fixtures/inbox.zb'));
-  assert.match(html, /<zb-badge class="row" data-who="Ada" label="Ada" count="3" info="\{&quot;color&quot;:&quot;red&quot;\}" data-zb-filled="default icon">/, 'the child is rendered inline, with its props on the host, and the slots it was given');
+  assert.match(html, /<my-badge class="row" data-who="Ada" label="Ada" count="3" info="\{&quot;color&quot;:&quot;red&quot;\}" data-zb-filled="default icon">/, 'the child is rendered inline, with its props on the host, and the slots it was given');
   assert.match(html, /<\?zb \[!\?><em slot="icon">\*<\/em><\?zb \]\?>/, 'slotted content is where the child puts it');
   assert.match(html, /<x-widget config="\{&quot;size&quot;:2\}" mode="plain">/);
   const { page, messages } = await open(html, {
@@ -87,12 +87,12 @@ test('hydrates a parent and its children from nested server markup', { skip: run
 
 test("an element whose children aren't server markup isn't mistaken for it", async () => {
   // A badge used directly in a page, with content that happens to resemble its template.
-  const { page, messages } = await open('<zb-badge label="Hi"><span class="badge">mine</span></zb-badge>', { modules: ['badge'] });
+  const { page, messages } = await open('<my-badge label="Hi"><span class="badge">mine</span></my-badge>', { modules: ['badge'] });
   // Content shaped like the template looks like server markup with its comments stripped; the
   // host has no data-zb-filled, so it is the page's (see slots.test.js).
-  await page.waitForSelector('zb-badge b');
-  assert.equal(await page.$eval('zb-badge b', (b) => b.textContent), 'Hi');
-  assert.equal(await page.$eval('zb-badge .badge .badge', (inner) => inner.textContent), 'mine', 'it is slotted, not hydrated');
+  await page.waitForSelector('my-badge b');
+  assert.equal(await page.$eval('my-badge b', (b) => b.textContent), 'Hi');
+  assert.equal(await page.$eval('my-badge .badge .badge', (inner) => inner.textContent), 'mine', 'it is slotted, not hydrated');
   assert.deepEqual(messages, []);
   await page.close();
 });

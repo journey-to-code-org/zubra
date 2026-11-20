@@ -23,7 +23,7 @@ useBrowser({
   'shared-state.js': "import { state } from '@zubra/runtime';\nexport const shared = state(1);\nwindow.shared = shared;\n",
 });
 
-const src = join(here, '../../src');
+const src = join(here, '../../src').replaceAll('\\', '/');
 const pageModules = {
   name: 'page-modules',
   setup(builder) {
@@ -118,13 +118,13 @@ test('removed elements are collected, even when they read a signal that outlives
     }
   });
   await settle(page);
-  assert.deepEqual(await live(page, ['zb-shared', 'zb-card', 'zb-inbox', 'zb-badge']), { 'zb-shared': 100, 'zb-card': 100, 'zb-inbox': 100, 'zb-badge': 200 });
+  assert.deepEqual(await live(page, ['zb-shared', 'zb-card', 'zb-inbox', 'my-badge']), { 'zb-shared': 100, 'zb-card': 100, 'zb-inbox': 100, 'my-badge': 200 });
   // Work while connected: the shared signal changes, rows re-render.
   await page.evaluate(() => { window.shared.set(2); });
   await settle(page);
   await page.evaluate(() => { document.getElementById('box').replaceChildren(); window.shared.set(3); });
   await settle(page);
-  assert.deepEqual(await collected(page, ['zb-shared', 'zb-card', 'zb-inbox', 'zb-badge']), { 'zb-shared': 0, 'zb-card': 0, 'zb-inbox': 0, 'zb-badge': 0 });
+  assert.deepEqual(await collected(page, ['zb-shared', 'zb-card', 'zb-inbox', 'my-badge']), { 'zb-shared': 0, 'zb-card': 0, 'zb-inbox': 0, 'my-badge': 0 });
   assert.deepEqual(messages, []);
   await page.close();
 });
@@ -134,11 +134,11 @@ for (const framework of ['React', 'Vue']) {
     const { page, messages } = await open('', { modules: ['card', 'rating', 'leak-apps'] });
     await page.evaluate((name) => { window.unmount = window[`mount${name}`](100); }, framework);
     await settle(page);
-    assert.deepEqual(await live(page, ['zb-card', 'zb-rating']), { 'zb-card': 100, 'zb-rating': 100 });
+    assert.deepEqual(await live(page, ['zb-card', 'my-rating']), { 'zb-card': 100, 'my-rating': 100 });
     await page.evaluate(() => window.unmount());
     await page.evaluate(() => { delete window.unmount; });
     await settle(page);
-    assert.deepEqual(await collected(page, ['zb-card', 'zb-rating']), { 'zb-card': 0, 'zb-rating': 0 });
+    assert.deepEqual(await collected(page, ['zb-card', 'my-rating']), { 'zb-card': 0, 'my-rating': 0 });
     assert.deepEqual(messages.filter((message) => !/You are running a development build of Vue/.test(message)), []);
     await page.close();
   });

@@ -13,7 +13,7 @@ useBrowser(
   { '@zubra/runtime/context': '/runtime/context.js' },
 );
 
-const src = join(here, '../../src');
+const src = join(here, '../../src').replaceAll('\\', '/');
 
 const REACT_APP = `
 import { useState } from 'react';

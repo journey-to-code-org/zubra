@@ -10,7 +10,7 @@ import { useBrowser, open, here, site } from './harness.js';
 
 useBrowser({ 'nav-links': join(here, 'fixtures/nav-links.zb') }, {}, { '@zubra/runtime/navigation': '/runtime/navigation.js' });
 
-const src = join(here, '../../src');
+const src = join(here, '../../src').replaceAll('\\', '/');
 
 const REACT_APP = `
 import { createRoot } from 'react-dom/client';

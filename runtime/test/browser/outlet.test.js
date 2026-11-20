@@ -10,7 +10,7 @@ import { useBrowser, open, here, site } from './harness.js';
 
 useBrowser({ 'outlet-list': join(here, 'fixtures/outlet-list.zb') });
 
-const src = join(here, '../../src');
+const src = join(here, '../../src').replaceAll('\\', '/');
 
 const REACT_APP = `
 import { createContext, useContext, useEffect, useState } from 'react';

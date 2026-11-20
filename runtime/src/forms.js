@@ -7,7 +7,7 @@
 //                     <Controller name="seats" render={({ field }) => <Stepper {...fieldProps(field)} />} />
 //   TanStack Form     <form.Field name="seats">{(field) => <Stepper {...fieldProps(field)} />}</form.Field>
 //   VeeValidate       <Stepper v-bind="vueFieldProps(useField('seats'))" />
-//   Felte             <zb-stepper use:felteControl={createField('seats')}>
+//   Felte             <my-stepper use:felteControl={createField('seats')}>
 //
 // Nothing here imports a library: each helper reads the shape the library documents. Native
 // form submission needs none of this; a Zubra control with `form-associated` is already a form
@@ -77,7 +77,7 @@ export function vueFieldProps(field, { prop = 'value' } = {}) {
  * hidden one in step with the control: each `<prop>change` is reported as input, focus leaving
  * the control as a blur, and Felte's own writes (`reset()`, `setFields()`) reach the control. Returns `{ destroy }`.
  *
- *   <zb-stepper use:felteControl={createField('seats')}></zb-stepper>
+ *   <my-stepper use:felteControl={createField('seats')}></my-stepper>
  */
 export function felteControl(node, created, { prop = 'value' } = {}) {
   const field = created?.field ? created : null;

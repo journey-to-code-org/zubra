@@ -114,3 +114,11 @@ test("a style value that isn't a single CSS value is left out, as on the server"
   assert.equal(left.length, 3, left.join('\n'));
   assert.ok(left.every((message) => /single CSS value/.test(message)), left.join('\n'));
 });
+
+test('unsafe style values are omitted and no longer retain a previous value', async () => {
+  const { page, messages } = await open('<spread-demo></spread-demo>', { modules: ['spread'] });
+  await set(page, { attrs: { style: { color: 'blue' } } });
+  await set(page, { attrs: { style: { color: 'red;}', background: 'url(https://evil.test)', width: { x: 1 }, fontSize: '2px' } } });
+  assert.equal((await link(page)).attributes.style, 'font-size: 2px;');
+  assert.equal(messages.filter((message) => message.includes("isn't a single CSS value")).length, 3);
+});

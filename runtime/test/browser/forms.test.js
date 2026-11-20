@@ -152,7 +152,7 @@ test('form hooks in a component without form-associated explain themselves', asy
     document.body.append(document.createElement('plain-thing'));
     return error;
   });
-  assert.equal(message, 'zubra: formValue() needs form-associated on the component\'s host tag (see https://github.com/zubra-js/zubra#forms)');
+  assert.equal(message, 'zubra: formValue() needs form-associated on the component\'s host tag (see https://github.com/zubra-js/zubra/blob/main/docs/reference.md#forms)');
   await page.close();
 });
 

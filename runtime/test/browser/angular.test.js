@@ -15,7 +15,7 @@ useBrowser({
   'dialog-box': join(here, 'fixtures/dialog-box.zb'),
 });
 
-const src = join(here, '../../src');
+const src = join(here, '../../src').replaceAll('\\', '/');
 
 const APP = `
 import '@angular/compiler';
@@ -47,15 +47,15 @@ Component({
   imports: [FormsModule, ReactiveFormsModule, ZubraModel],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   template: \`
-    <zb-rating id="model" zubraModel [(ngModel)]="stars" (valuechange)="changed($event)" (change)="committed()"></zb-rating>
+    <my-rating id="model" zubraModel [(ngModel)]="stars" (valuechange)="changed($event)" (change)="committed()"></my-rating>
     <p id="stars">{{ stars }}</p>
-    <zb-rating id="reactive" zubraModel [formControl]="control"></zb-rating>
+    <my-rating id="reactive" zubraModel [formControl]="control"></my-rating>
     <p id="control">{{ control.value }}</p>
     <zb-card [heading]="heading()">
       @if (title()) { <h2 slot="title">Custom</h2> }
       @for (item of items(); track item) { <p>{{ item }}</p> }
     </zb-card>
-    <zb-badge label="x" [info]="info()"></zb-badge>
+    <my-badge label="x" [info]="info()"></my-badge>
     <zb-card id="text">{{ heading() }}</zb-card>
     <zb-card id="mixed"><h2 slot="title">Named</h2>{{ heading() }}</zb-card>
     <zb-dialog-box>
@@ -90,7 +90,7 @@ before(async () => {
 
 const settle = (page) => page.evaluate(async () => {
   await window.tick();
-  await Promise.all([...document.querySelectorAll('zb-rating, zb-card, zb-badge, zb-dialog-box')].map((el) => el.updateComplete));
+  await Promise.all([...document.querySelectorAll('my-rating, zb-card, my-badge, zb-dialog-box')].map((el) => el.updateComplete));
 });
 
 const read = (page) => page.evaluate(() => {
@@ -104,7 +104,7 @@ const read = (page) => page.evaluate(() => {
     header: strip(card.querySelector('header').innerHTML),
     section: strip(card.querySelector('section').innerHTML),
     footer: card.querySelector('footer').textContent,
-    color: document.querySelector('zb-badge .badge').dataset.color,
+    color: document.querySelector('my-badge .badge').dataset.color,
   };
 });
 

@@ -6,7 +6,7 @@
   <section>
     <h1>{title}</h1>
     <zb-each items={items} as="item" key={item.name}>
-      <zb-badge
+      <my-badge
         label={item.name}
         count={item.unread}
         info={{ color: item.unread > 0 ? "red" : "gray" }}
@@ -14,7 +14,7 @@
         data-who={item.name}
       >
         <em slot="icon">{item.unread > 0 ? "*" : "-"}</em>{item.unread > 0 ? "unread" : "read"}
-      </zb-badge>
+      </my-badge>
     </zb-each>
     <x-widget config={{ size: items.length }} mode="plain"></x-widget>
   </section>
