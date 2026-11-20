@@ -154,7 +154,7 @@ Hooks are plain functions called while the script runs (once per element; nothin
 
 | Hook | |
 |---|---|
-| `state(value)`, `computed(fn)` | Signals (`Signal.State`, `Signal.Computed`) |
+| `state(value)`, `computed(fn)` | Zubra's state and computeds: read with `.get()`, write a state with `.set()` (a `Signal.State` and `Signal.Computed` of the TC39 API in signals mode) |
 | `effect(fn)`, `watch(source, (next, prev) => …)` | Run on change; `effect` may return a cleanup |
 | `onMount(fn)`, `onUnmount(fn)` | Connected / disconnected; `onMount` may return a cleanup |
 | `props()` | The element's props as an object, for custom hooks (in the script, use the names) |
@@ -620,13 +620,13 @@ Each release attaches prebuilt `zubra` binaries to its [GitHub release](https://
 | Windows x64 | `…x86_64-pc-windows-msvc.zip` |
 
 ```sh
-version=5.5.0 target=x86_64-unknown-linux-gnu   # 5.5.0 is the first release with binaries
+version=6.0.0 target=x86_64-unknown-linux-gnu   # any release from 5.5.0, the first with binaries
 curl -fsSLO "https://github.com/zubra-js/zubra/releases/download/v$version/zubra-$version-$target.tar.gz"
 curl -fsSL "https://github.com/zubra-js/zubra/releases/download/v$version/SHA256SUMS" | grep "zubra-$version-$target" | sha256sum -c -
 tar -xzf "zubra-$version-$target.tar.gz" && echo "<hi-x></hi-x>" | "zubra-$version-$target/zubra" fmt --stdin
 ```
 
-`SHA256SUMS` is uploaded last, so a release that has it has all seven archives. (Binaries are attached from the first release after this one is merged; earlier releases have none. Or `cargo install --path .` from a checkout, or the npm package.)
+`SHA256SUMS` is uploaded last, so a release that has it has all seven archives. (Releases before 5.5.0 have none. Or `cargo install --path .` from a checkout, or the npm package.)
 
 ## The CLI
 

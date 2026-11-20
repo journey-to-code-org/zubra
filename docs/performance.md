@@ -56,10 +56,10 @@ When the official results exist, they replace these tables.
 
 **Since 6.0** the default engine is Zubra's own (`runtime/src/signal.js`), and the TC39 API is signals mode (experimental). Against the API on the same effects, in Node (median of 30): creating and disposing 2,000 effects 6.6 ms to 1.5 ms, selecting one row of 1,000 0.54 ms to 0.47 ms, updating 1,000 states in one flush 0.35 ms to 0.30 ms; the engine is 1,685 B compressed against 2,716 B, and what every page loads fell from 16.1 KB to 15.1 KB. An effect there is one node the graph marks directly; on the API it is a Computed and a Watcher's links to it. This section is about 5.x, and about signals mode now.
 
-Compiled components got their reactivity from `runtime/src/signal-impl.js`, Zubra's implementation of the TC39 Signals API (the native `Signal` replaces it where a browser has one). Profiling the benchmark's create and clear found most of the runtime's own time, and most of its garbage collection, in that file and in `effect.js`. Three things cost it, all fixed without changing the API:
+In 5.x, compiled components got their reactivity from `runtime/src/signal-impl.js`, Zubra's implementation of the TC39 Signals API (the native `Signal` replaced it where a browser had one); in 6.0 that is signals mode, and the default is the engine above. Profiling the benchmark's create and clear found most of the runtime's own time, and most of its garbage collection, in that file and in `effect.js`. Three things cost it, all fixed without changing the API:
 
 - **A `WeakMap` from each signal to its internal node.** A `WeakMap` with tens of thousands of keys is a table the garbage collector walks on every collection. Each signal now holds its node in a private field, which is also the check that a method was called on the right kind of object.
-- **`Watcher.getPending()` looked at every watched signal.** Zubra's effects share one Watcher and call `getPending()` on each flush, the pattern the proposal's README shows, so every update cost something for every effect on the page. The Watcher now records computeds as they're marked dirty: O(pending), not O(watched). The one visible difference is the order, listed in `runtime/README.md`.
+- **`Watcher.getPending()` looked at every watched signal.** Zubra's effects shared one Watcher (in signals mode, still do) and called `getPending()` on each flush, the pattern the proposal's README shows, so every update cost something for every effect on the page. The Watcher now records computeds as they're marked dirty: O(pending), not O(watched). The one visible difference is the order, listed in `runtime/README.md`.
 - **Allocation:** five arrays per node made up front, and a `Set` of children per effect, though most have none. Both are now made on first use.
 
 Measured in Node (median ms, each case in a fresh process), against the polyfill and the two fastest signals libraries, which have their own APIs:
@@ -70,7 +70,7 @@ Measured in Node (median ms, each case in a fresh process), against the polyfill
 | 1 write, 1,000 watching effects, 2 re-run | 0.44–0.78 | 0.12–0.13 | 0.39–0.60 | 0.03 | 0.03 |
 | 1 state → 1,000 computeds → effects | 0.6–0.85 | 0.28–0.43 | 0.48–0.54 | 0.05–0.06 | 0.06–0.09 |
 
-The rest of the gap to alien-signals is the API's shape: an effect on the proposal is a `Computed` plus a Watcher entry, about ten objects, where alien-signals' is two. A WebAssembly core was tried too and isn't a way round it: a call into WebAssembly costs about twice a JavaScript call, and a signals core is nothing but small calls.
+The rest of the gap to alien-signals was the API's shape: an effect on the proposal is a `Computed` plus a Watcher entry, about ten objects, where alien-signals' is two. That gap is why 6.0's default engine is Zubra's own, with no Watcher (above). A WebAssembly core was tried too and isn't a way round it: a call into WebAssembly costs about twice a JavaScript call, and a signals core is nothing but small calls.
 
 In the benchmark, with `run.mjs --time --runs 9` (same machine, same run, before and after this change; differences under about 15% are noise on this machine):
 

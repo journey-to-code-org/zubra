@@ -29,7 +29,7 @@
 3. **`{expr}` bindings, evaluated statically when possible.** A deterministic subset (literals, operators, member access, template literals, arrow functions and pure built-ins such as `.map` and `.toFixed`) renders on the server. Anything else is JavaScript that runs in the browser. Partial server rendering leaves those parts as `<?zb [??>` regions.
 4. **Directives as elements.** `<zb-if>`, `<zb-each key>`, `<zb-slot>` and `<zb-await>` are template syntax a parser already understands, unlike `{#if}` blocks.
 5. **Events are inferred from `emit('name', detail)`** and named like the platform's events: lowercase with no separators (`valuechange`), `beforeX` cancelable. Two-way binding follows from naming: `value` plus `valuechange` is a model pair that each framework adapter maps to its own idiom.
-6. **One script, run once per element.** There's no re-rendering and no hook rules. Reactivity is the TC39 Signals API.
+6. **One script, run once per element.** There's no re-rendering and no hook rules. Reactivity is the TC39 Signals model on Zubra's own engine: state read with `.get()` and written with `.set()`, shaped like Svelte 5's; the TC39 Signals API itself is an experimental mode (`signals: true`), where a state is a `Signal.State`.
 
 ## What implementing it taught us
 

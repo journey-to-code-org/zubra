@@ -787,7 +787,7 @@ jobs:
 
 
   skills:
-    name: Skills (examples compile, copies in sync)
+    name: Skills and docs samples (examples compile, copies in sync)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -800,6 +800,8 @@ jobs:
           node-version: 22
       - run: cargo build --release --locked
       - run: node --test skills/test/skills.test.js
+      # The docs' component samples that are shown as compiler output, or copied whole, compile.
+      - run: node --test docs/test/samples.test.js
 
   guide-pages:
     name: Guide pages (snippets match the example apps; every entry has a tier)
