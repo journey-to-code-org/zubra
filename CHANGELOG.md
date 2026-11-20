@@ -4,7 +4,7 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
-The next release is 6.0.0: Zubra's own reactive engine is the default, and the TC39 Signals API is an experimental mode (the project's `plan/decisions/reactive-engine.md`). Components, templates and the script API don't change, and neither does compiled output: code compiled by 5.18 and later runs on either engine. What changes is only for code that relied on a state being the proposal's object; `signals: true` keeps 5.x's behaviour for that code.
+The next release is 6.0.0: Zubra's own reactive engine is the default, and the TC39 Signals API is an experimental mode (the project's `plan/decisions/reactive-engine.md`). Components, templates and the script API don't change, and neither does compiled output: code compiled by 5.18 and later runs on either engine. What changes is only for code that relied on a state being the proposal's object; `signals: true` keeps 5.x's behaviour for that code. [Migrating to 6.0](docs/migrating-to-6.0.md) lists what to look for.
 
 ### Changed
 
