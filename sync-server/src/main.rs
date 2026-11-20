@@ -359,7 +359,10 @@ fn handle(state: &State, mut request: Request) {
         return respond_json(request, extra, 404, json!({ "error": "Not found" }));
     }
     let route = &path[MOUNT.len()..];
-    if !state.open && request.method() == &Method::Get && matches!(route, "/pull" | "/live") {
+    if matches!(state.reads, Reads::Nothing)
+        && request.method() == &Method::Get
+        && matches!(route, "/pull" | "/live")
+    {
         return respond_json(request, extra, 403, json!({ "error": NOT_OPEN }));
     }
     match (request.method().clone(), route) {

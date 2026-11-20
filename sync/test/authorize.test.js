@@ -162,12 +162,24 @@ test('the zubra-sync binary lets pages read nothing unless told: --read <collect
     await log.append([change('title', 'a task'), change('amount', 1, 2, 'salaries')]);
     log.close();
     for (const [args, seen] of [[[], []], [['--read', 'tasks'], ['tasks']], [['--read', 'tasks', '--read', 'salaries'], ['tasks', 'salaries']], [['--read-all'], ['tasks', 'salaries']], [['--open'], ['tasks', 'salaries']]]) {
-      const { base, close } = await startBinary([...args, '--db', path]);
+      const { base, close, stopped } = await startBinary([...args, '--db', path]);
       try {
-        const read = await (await fetch(`${base}/_zb/sync/pull?since=0`)).json();
+        const response = await fetch(`${base}/_zb/sync/pull?since=0`);
+        if (!args.length) {
+          assert.equal(response.status, 403, 'pull (closed)');
+          assert.match((await response.json()).error, /--open/);
+          const live = await fetch(`${base}/_zb/sync/live?since=0&peer=p1`);
+          assert.equal(live.status, 403, 'live (closed)');
+          assert.match((await live.json()).error, /--open/);
+          continue;
+        }
+        assert.equal(response.status, 200, `pull ${args.join(' ')}`);
+        const read = await response.json();
         assert.deepEqual(read.changes.map((one) => one.collection), seen, args.join(' ') || '(closed)');
         // The live stream's backlog too.
-        const reader = (await fetch(`${base}/_zb/sync/live?since=0&peer=p1`)).body.getReader();
+        const live = await fetch(`${base}/_zb/sync/live?since=0&peer=p1`);
+        assert.equal(live.status, 200, `live ${args.join(' ')}`);
+        const reader = live.body.getReader();
         let text = '';
         while (!/event: changes\ndata: .*\n\n/.test(text)) text += new TextDecoder().decode((await reader.read()).value);
         reader.cancel().catch(() => {});
@@ -176,6 +188,7 @@ test('the zubra-sync binary lets pages read nothing unless told: --read <collect
         if (!args.includes('--open')) assert.equal((await fetch(`${base}/_zb/sync/push`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ changes: [change('title', 'x', 3)] }) })).status, 403);
       } finally {
         close();
+        await stopped;
       }
     }
   } finally {

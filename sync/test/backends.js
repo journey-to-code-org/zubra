@@ -16,6 +16,7 @@ export const binaryPath = [process.env.ZUBRA_SYNC, join(root, 'target/release/zu
 export async function startBinary(extra = []) {
   const dir = mkdtempSync(join(tmpdir(), 'zubra-sync-'));
   const child = spawn(binaryPath, ['--port', '0', '--db', join(dir, 'sync.db'), ...extra], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const stopped = new Promise((resolve) => child.once('exit', resolve));
   const base = await new Promise((resolve, reject) => {
     let text = '';
     child.stdout.on('data', (chunk) => {
@@ -31,6 +32,7 @@ export async function startBinary(extra = []) {
   process.once('exit', () => child.kill());
   return {
     base,
+    stopped,
     close: () => {
       child.kill();
       rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
