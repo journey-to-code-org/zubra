@@ -1,5 +1,7 @@
 # Standup
 
+![Standup board](../../demos/shots/standup.jpg)
+
 A team standup board: one card per person, edited by everyone at once, offline included. Plain Node.js, no bundler, no framework.
 
 ```sh

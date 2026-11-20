@@ -1,5 +1,7 @@
 # Garden plots: Axum
 
+![Garden plots](../../../demos/shots/axum-garden.jpg)
+
 The [Flask garden](../flask-garden) from a Rust server: the same pages, the same five `.zb` components (it `include_zb!`s the Flask example's files), and **no Node.js and no child process**. The components are checked when the binary is built, and rendered in the server's own process.
 
 ```sh
