@@ -87,10 +87,28 @@ test('the release version has its notes in CHANGELOG.md', () => {
 
 // npm's trusted publishing and provenance check the package against the repository it was built in:
 // a package whose repository.url doesn't match is refused (as a 404).
+// The packages scripts/publish.mjs publishes.
+const PUBLISHED = ['runtime', 'compiler', 'server', 'plugin', 'editors/language-server', 'create', 'sync', 'actions', 'router'];
+
 test('every published package names this repository and its folder', () => {
-  for (const path of ['compiler', 'create', 'plugin', 'runtime', 'server', 'editors/language-server']) {
+  for (const path of PUBLISHED) {
     const { repository } = json(`${path}/package.json`);
     assert.deepEqual(repository, { type: 'git', url: 'git+https://github.com/zubra-js/zubra.git', directory: path }, path);
+  }
+});
+
+// What a package's npm page shows: its README (npm says "No README data found" without one), its
+// license, a link to its folder, where to report a bug, and the words it's found by.
+test('every published package has a README, a LICENSE, a homepage, bugs and keywords', () => {
+  const publish = readFileSync(join(repo, 'scripts/publish.mjs'), 'utf8');
+  for (const path of PUBLISHED) assert.match(publish, new RegExp(`\\{ dir: '${path}'`), `${path} is published by scripts/publish.mjs`);
+  for (const path of PUBLISHED) {
+    const pkg = json(`${path}/package.json`);
+    for (const file of ['README.md', 'LICENSE']) assert.ok(readFileSync(join(repo, path, file), 'utf8').trim(), `${path}/${file}`);
+    assert.equal(pkg.homepage, `https://github.com/zubra-js/zubra/tree/main/${path}#readme`, path);
+    assert.deepEqual(pkg.bugs, { url: 'https://github.com/zubra-js/zubra/issues' }, path);
+    for (const word of ['zubra', 'web components', 'custom elements']) assert.ok(pkg.keywords?.includes(word), `${path}'s keywords have "${word}"`);
+    assert.ok(pkg.keywords.length > 3, `${path} has keywords of its own`);
   }
 });
 

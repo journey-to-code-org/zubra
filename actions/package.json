@@ -65,5 +65,17 @@
     "type": "git",
     "url": "git+https://github.com/zubra-js/zubra.git",
     "directory": "actions"
-  }
+  },
+  "homepage": "https://github.com/zubra-js/zubra/tree/main/actions#readme",
+  "bugs": {
+    "url": "https://github.com/zubra-js/zubra/issues"
+  },
+  "keywords": [
+    "zubra",
+    "web components",
+    "custom elements",
+    "server actions",
+    "forms",
+    "use server"
+  ]
 }

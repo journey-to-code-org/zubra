@@ -43,5 +43,17 @@
     "type": "git",
     "url": "git+https://github.com/zubra-js/zubra.git",
     "directory": "router"
-  }
+  },
+  "homepage": "https://github.com/zubra-js/zubra/tree/main/router#readme",
+  "bugs": {
+    "url": "https://github.com/zubra-js/zubra/issues"
+  },
+  "keywords": [
+    "zubra",
+    "web components",
+    "custom elements",
+    "router",
+    "routing",
+    "ssr"
+  ]
 }

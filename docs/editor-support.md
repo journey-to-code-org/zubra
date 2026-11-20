@@ -30,7 +30,7 @@ A pane in the Elements panel of Chrome, Edge and Firefox. Select a node: it show
 
 ## Other editors
 
-The extension is a thin client for `@zubra/language-server`. Run it with `zubra-language-server --stdio` from Neovim, Helix, Zed, Sublime LSP or any other editor that speaks LSP. It uses the compiler named in `initializationOptions.compiler` if there is one; otherwise `@zubra/compiler` when it's installed, then the command in the `ZUBRA_COMPILER` environment variable, then `zubra` on the `PATH`.
+The extension is a thin client for `@zubra/language-server`. Run it with `zubra-language-server --stdio` from Neovim, Helix, Zed, Sublime LSP or any other editor that speaks LSP. It uses the compiler named in `initializationOptions.compiler` if there is one; otherwise `@zubra/compiler` when it's installed, then the command in the `ZUBRA_COMPILER` environment variable, then (with `ZUBRA_DEV_CHECKOUT=1`, in a checkout of Zubra itself) the checkout's `cargo build` output, then `zubra` on the `PATH`.
 
 In other editors whose TypeScript support runs tsserver (Neovim's `ts_ls`, Sublime's LSP-typescript, WebStorm), the same TypeScript plugin gives `.ts` files components' types. Install `@zubra/language-server` in the project and add it to `tsconfig.json`:
 

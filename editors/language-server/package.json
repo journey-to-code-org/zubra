@@ -8,6 +8,18 @@
     "url": "git+https://github.com/zubra-js/zubra.git",
     "directory": "editors/language-server"
   },
+  "homepage": "https://github.com/zubra-js/zubra/tree/main/editors/language-server#readme",
+  "bugs": {
+    "url": "https://github.com/zubra-js/zubra/issues"
+  },
+  "keywords": [
+    "zubra",
+    "web components",
+    "custom elements",
+    "language server",
+    "lsp",
+    "typescript"
+  ],
   "type": "module",
   "bin": {
     "zubra-language-server": "server.js"

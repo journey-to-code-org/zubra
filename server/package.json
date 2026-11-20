@@ -75,5 +75,19 @@
     "type": "git",
     "url": "git+https://github.com/zubra-js/zubra.git",
     "directory": "server"
-  }
+  },
+  "homepage": "https://github.com/zubra-js/zubra/tree/main/server#readme",
+  "bugs": {
+    "url": "https://github.com/zubra-js/zubra/issues"
+  },
+  "keywords": [
+    "zubra",
+    "web components",
+    "custom elements",
+    "ssr",
+    "server rendering",
+    "express",
+    "fastify",
+    "hono"
+  ]
 }
