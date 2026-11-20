@@ -496,6 +496,38 @@ function readPage(markup, meta) {
     .filter((node) => node !== null);
 }
 
+// What a preview using @zubra/sync stores, it asks the playground to keep: the sandboxed frame
+// has no IndexedDB of its own (an opaque origin has no storage), and no BroadcastChannel shared
+// with the other previews, so the playground also passes each change on to them. Set before the
+// component starts.
+const SYNC_STORE = `import { configure as configureSync, receive as receiveSync } from '@zubra/sync';
+let relaying = false;
+const pendingStore = new Map();
+let storeAsks = 0;
+const askStore = (op, collection, key, fields) => new Promise((resolve) => {
+  const id = ++storeAsks;
+  pendingStore.set(id, resolve);
+  parent.postMessage({ zubraStore: { id, op, collection, key, fields } }, '*');
+});
+window.addEventListener('message', ({ source, data }) => {
+  if (source !== parent) return;
+  const reply = data?.zubraStoreReply;
+  if (reply && pendingStore.has(reply.id)) {
+    pendingStore.get(reply.id)(reply.value);
+    pendingStore.delete(reply.id);
+  }
+  // Another preview's change, already kept: show it here without storing it again.
+  const changed = data?.zubraStoreChanged;
+  if (changed) {
+    relaying = true;
+    try { receiveSync(changed.collection, changed.key, changed.fields); } finally { relaying = false; }
+  }
+});
+configureSync({ store: {
+  get: (collection, key) => askStore('get', collection, key),
+  set: (collection, key, fields) => (relaying ? Promise.resolve() : askStore('set', collection, key, fields)),
+} });`;
+
 const document_ = (body, script) => `<!doctype html><meta charset="utf-8">
 <style>
 /* The frame follows the playground's scheme and has no background of its own, so the preview pane
@@ -509,7 +541,13 @@ body { margin: 0; padding: 1rem 1.1rem; font: 15px system-ui, sans-serif; color:
 <script type="importmap">${importMap()}</script>
 <body>${body}</body>
 <script type="module">
+// The frame is sandboxed (an opaque origin), so it tells the playground what it needs to know.
 window.addEventListener('error', (event) => parent.postMessage({ zubraPreviewError: String(event.message) }, '*'));
+// The Zubra DevTools extension's "open in editor": the playground selects the line in the source.
+window.addEventListener('zubra:open', (event) => {
+  event.preventDefault();
+  parent.postMessage({ zubraOpen: { line: Number(event.detail?.line) } }, '*');
+});
 // A form that posts to a 'use server' function has no server here: say what would be sent.
 document.addEventListener('submit', (event) => {
   const form = event.target;
@@ -526,6 +564,7 @@ document.addEventListener('submit', (event) => {
   }
   note.textContent = \`POST \${action} (\${fields || 'no fields'}). With @zubra/actions on a server, the function runs there, and its result comes back as the form's "action" event.\`;
 }, true);
+${/['"]@zubra\/sync['"]/.test(script) ? SYNC_STORE : ''}
 ${script}
 window.previewReady = true;
 </script>`;
@@ -586,34 +625,36 @@ createApp({ render: () => readPage(page, Component.zubra).map(toVue) }).mount('#
   },
 };
 
-// The Zubra DevTools extension reads `__ZUBRA_DEVTOOLS__` from the page it inspects, and the
-// components run in the preview frames, each with its own. This page's hook passes the
-// extension's calls on to the frame the selected node is in, so the pane works here, including
-// with extension versions that only look at the top page.
-const frameHooks = () => [...document.querySelectorAll('#previews iframe')]
-  .map((frame) => { try { return frame.contentWindow?.__ZUBRA_DEVTOOLS__; } catch { return null; } })
-  .filter(Boolean);
-globalThis.__ZUBRA_DEVTOOLS__ = {
-  version: 1,
-  connect() {
-    for (const hook of frameHooks()) hook.connect();
-    return true;
-  },
-  get ready() {
-    const hooks = frameHooks();
-    return hooks.length > 0 && hooks.every((hook) => hook.ready);
-  },
-  inspect(node) {
-    const hook = node?.ownerDocument?.defaultView?.__ZUBRA_DEVTOOLS__;
-    return hook && hook !== globalThis.__ZUBRA_DEVTOOLS__ ? hook.inspect(node) : { version: 1, component: null };
-  },
-  open(file, line, column) {
-    selectLine(line);
-    return Promise.resolve(true);
-  },
-  get updates() {
-    return frameHooks().reduce((sum, hook) => sum + (hook.updates ?? 0), 0);
-  },
+// The Zubra DevTools extension reads `__ZUBRA_DEVTOOLS__` from the page it inspects. The
+// components run in the preview frames, each with its own hook; the frames are sandboxed (a
+// shared link's code runs there, not on this site's origin), so this page can't reach into them,
+// and the extension inspects each frame itself. Its "open in editor" comes back as a message.
+
+// The previews' @zubra/sync store, kept here (see SYNC_STORE): @zubra/sync's own IndexedDB layout
+// (database `zubra-sync`, one record per document, fields merged on write), on this origin.
+let syncDb = null;
+const syncDocs = (mode, work) => (syncDb ??= new Promise((resolve, reject) => {
+  const request = indexedDB.open('zubra-sync', 1);
+  request.onupgradeneeded = () => request.result.createObjectStore('docs');
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error);
+})).then((db) => new Promise((resolve, reject) => {
+  const transaction = db.transaction('docs', mode);
+  let result;
+  work(transaction.objectStore('docs'), (value) => (result = value));
+  transaction.oncomplete = () => resolve(result);
+  transaction.onerror = () => reject(transaction.error);
+}));
+const keepForPreview = ({ op, collection, key, fields }) => {
+  if (typeof collection !== 'string' || typeof key !== 'string') return Promise.resolve(undefined);
+  if (op === 'get') return syncDocs('readonly', (docs, done) => { const request = docs.get([collection, key]); request.onsuccess = () => done(request.result); });
+  if (op === 'set' && fields && typeof fields === 'object') {
+    return syncDocs('readwrite', (docs) => {
+      const request = docs.get([collection, key]);
+      request.onsuccess = () => docs.put({ ...request.result, ...fields }, [collection, key]);
+    });
+  }
+  return Promise.resolve(undefined);
 };
 
 /** Select line `line` (1-based) of the source and scroll it into view. */
@@ -637,14 +678,11 @@ function showPreviews(code) {
     heading.textContent = PREVIEWS[kind].label;
     const frame = document.createElement('iframe');
     frame.title = `${PREVIEWS[kind].label} preview`;
+    // The component may come from a shared link: it runs in an opaque origin, with scripts,
+    // forms and dialogs, but nothing of this site's (its storage, its cookies, this page's DOM).
+    // It reports errors and "open in editor" by postMessage (see document_).
+    frame.sandbox = 'allow-scripts allow-forms allow-modals';
     frame.srcdoc = PREVIEWS[kind].doc(code, page.value);
-    // The DevTools extension's "open in editor": select the line in the source here.
-    frame.addEventListener('load', () => {
-      frame.contentWindow.addEventListener('zubra:open', (event) => {
-        event.preventDefault();
-        selectLine(event.detail.line);
-      });
-    });
     section.append(heading, frame);
     return section;
   }));
@@ -814,6 +852,23 @@ async function main() {
     }
   });
   window.addEventListener('message', (event) => {
+    // Only the preview frames' messages.
+    const frames = [...document.querySelectorAll('#previews iframe')].map((frame) => frame.contentWindow);
+    if (!frames.includes(event.source)) return;
+    const line = event.data?.zubraOpen?.line;
+    if (Number.isInteger(line) && line > 0) selectLine(line);
+    const ask = event.data?.zubraStore;
+    if (ask) {
+      keepForPreview(ask).then(
+        (value) => {
+          event.source.postMessage({ zubraStoreReply: { id: ask.id, value } }, '*');
+          if (ask.op !== 'set') return;
+          const { collection, key, fields } = ask;
+          for (const other of frames) if (other !== event.source) other?.postMessage({ zubraStoreChanged: { collection, key, fields } }, '*');
+        },
+        () => event.source.postMessage({ zubraStoreReply: { id: ask.id, value: undefined } }, '*'),
+      );
+    }
     if (event.data?.zubraPreviewError) {
       const error = $('#error');
       error.hidden = false;
