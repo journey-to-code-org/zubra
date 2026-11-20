@@ -268,6 +268,10 @@ pub fn convert_element(
             "no tag: the module needs `customElements.define(\"my-tag\", …)` or `export const tag = \"my-tag\"`",
         ));
     };
+    if let Some(problem) = crate::convert::tag_problem(&tag) {
+        return Err(Diagnostic::new(span_at(source, class.span.start), problem)
+            .with_help("the tag names the .zb file it's written to: use a custom element name such as `my-tag`"));
+    }
 
     // ---- the class: props, form association, #setup()
     let mut props: Vec<Prop> = Vec::new();
