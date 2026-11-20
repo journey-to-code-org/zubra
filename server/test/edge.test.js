@@ -232,7 +232,7 @@ test('mistakes say what to do', { skip }, () => {
   assert.deepEqual(edge.names.sort(), ['a', 'forms/b'], 'a key may carry its extension');
   assert.throws(() => edge.render('nope'), /no component "nope" in the components given to createZubra\(\) \(have: a, forms\/b\)/);
   const broken = createEdge({ wasm: wasm(), components: { bad: '<x-bad><p></x-bad>' } });
-  assert.throws(() => broken.render('bad'), /closing tag <\/x-bad> does not match <p>/);
+  assert.throws(() => broken.render('bad'), /<p> is never closed/);
 });
 
 test('components are in the order a folder walk finds them, a folder where its name falls', { skip }, () => {

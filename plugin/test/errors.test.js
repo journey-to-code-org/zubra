@@ -1,7 +1,8 @@
 // How a component's compile error and warnings reach the developer through Vite: in the overlay
 // with the file, line and frame (also when the typings' compile is the one that fails), each said
 // once, without the plugin's own stack frames or a doubled `error:`/`warning:`.
-import { test, after } from 'node:test';
+import { test, before, after } from 'node:test';
+import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -13,6 +14,10 @@ import { splitWarnings } from '../src/index.js';
 const here = dirname(fileURLToPath(import.meta.url));
 const compiler = process.env.ZUBRA_COMPILER ?? join(here, '../../target/debug/zubra');
 const work = join(here, '.tmp', 'errors');
+// The CLI this checkout builds, as plugin.test.js has it (the files run side by side, so each builds).
+before(() => {
+  if (!process.env.ZUBRA_COMPILER) execFileSync('cargo', ['build', '--quiet'], { cwd: join(here, '../..'), stdio: 'inherit' });
+});
 after(() => rmSync(work, { recursive: true, force: true }));
 
 const BROKEN = '<script>\n  let = = 2\n</script>\n<my-card><p>hi</p></my-card>\n';
