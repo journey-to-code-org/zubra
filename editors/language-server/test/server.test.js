@@ -97,7 +97,7 @@ after(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-const PAGE = "<script>\n  import './badge.zb'\n</script>\n<zb-page title=\"x\" items={[]}>\n  <my-badge lable={1}></my-badge>\n</zb-page>\n";
+const PAGE = "<script>\n  import './badge.zb'\n</script>\n<my-page title=\"x\" items={[]}>\n  <my-badge lable={1}></my-badge>\n</my-page>\n";
 
 test('diagnostics as you type, at the right place, with the fix in the message', async () => {
   const uri = pathToFileURL(join(dir, 'page.zb')).href;
@@ -115,7 +115,7 @@ test('diagnostics as you type, at the right place, with the fix in the message',
 
 test('type errors from the project\'s TypeScript, when a TypeScript component opens and is saved', { timeout: 60_000, skip: !existsSync(join(repo, 'compiler/node_modules/typescript')) && 'needs npm ci in compiler/' }, async () => {
   const uri = pathToFileURL(join(dir, 'typed.zb')).href;
-  const text = "<script lang=\"ts\">\n  interface Item { name: string }\n  const items: Item[] = []\n</script>\n<zb-typed>\n  <zb-each items={items} as=\"item\"><p>{item.nmae}</p></zb-each>\n</zb-typed>\n";
+  const text = "<script lang=\"ts\">\n  interface Item { name: string }\n  const items: Item[] = []\n</script>\n<my-typed>\n  <zb-each items={items} as=\"item\"><p>{item.nmae}</p></zb-each>\n</my-typed>\n";
   writeFileSync(join(dir, 'typed.zb'), text);
   notify('textDocument/didOpen', { textDocument: { uri, languageId: 'zubra', version: 1, text } });
   const typed = async () => {
@@ -150,9 +150,9 @@ test('TypeScript in a component: hover, completion and go to definition, in the 
     '  const items: Item[] = []',
     '  const total = items.length',
     '</script>',
-    '<zb-ts-features>',
+    '<my-ts-features>',
     '  <zb-each items={items} as="item"><p>{item.name} {total}</p></zb-each>',
-    '</zb-ts-features>',
+    '</my-ts-features>',
     '',
   ].join('\n');
   notify('textDocument/didOpen', { textDocument: { uri, languageId: 'zubra', version: 1, text } });
@@ -193,9 +193,9 @@ test('TypeScript in a component with CRLF line endings: positions as the editor 
     '  const label = "a"',
     '  const count = 2',
     '</script>',
-    '<zb-ts-crlf>',
+    '<my-ts-crlf>',
     '  <p>{label}{count}</p>',
-    '</zb-ts-crlf>',
+    '</my-ts-crlf>',
     '',
   ];
   const text = lines.join('\r\n');
@@ -210,10 +210,10 @@ test('TypeScript in a component with CRLF line endings: positions as the editor 
 
 test('completion: directives and imported components, their props and events', async () => {
   const uri = pathToFileURL(join(dir, 'complete.zb')).href;
-  const text = "<script>\n  import './badge.zb'\n</script>\n<zb-page heading=\"\">\n  <zb-\n  <my-badge \n  <p>{}</p>\n</zb-page>\n";
+  const text = "<script>\n  import './badge.zb'\n</script>\n<my-page heading=\"\">\n  <zb-\n  <my-badge \n  <p>{}</p>\n</my-page>\n";
   notify('textDocument/didOpen', { textDocument: { uri, languageId: 'zubra', version: 1, text } });
   const labels = async (line, character) => (await call('textDocument/completion', { textDocument: { uri }, position: { line, character } })).map((item) => item.label);
-  assert.deepEqual((await labels(4, 6)).sort(), ['zb-await', 'my-badge', 'zb-case', 'zb-catch', 'zb-each', 'zb-else', 'zb-if', 'zb-pending', 'zb-slot', 'zb-switch', 'zb-then']);
+  assert.deepEqual((await labels(4, 6)).sort(), ['zb-await', 'zb-case', 'zb-catch', 'zb-each', 'zb-else', 'zb-if', 'zb-pending', 'zb-slot', 'zb-switch', 'zb-then']);
   assert.deepEqual(await labels(5, 12), ['label', 'count', 'onpick', 'zb-if', 'zb-else-if', 'zb-else']);
   assert.deepEqual(await labels(6, 6), ['heading'], 'props in expressions');
   const items = await call('textDocument/completion', { textDocument: { uri }, position: { line: 5, character: 12 } });
@@ -238,12 +238,12 @@ test('Format Document: the whole file as zubra fmt lays it out, with the editor\
   const init = await call('textDocument/formatting', { textDocument: { uri: 'file:///nowhere.zb' }, options: { tabSize: 2, insertSpaces: true } });
   assert.deepEqual(init, [], 'not an open document');
   const uri = pathToFileURL(join(dir, 'messy.zb')).href;
-  const text = '<zb-messy>\n<p>\nhi   {name}\n</p>\n      <input   type = "text"/>\n</zb-messy>';
+  const text = '<my-messy>\n<p>\nhi   {name}\n</p>\n      <input   type = "text"/>\n</my-messy>';
   notify('textDocument/didOpen', { textDocument: { uri, languageId: 'zubra', version: 1, text } });
   const edits = await call('textDocument/formatting', { textDocument: { uri }, options: { tabSize: 4, insertSpaces: true } });
   assert.equal(edits.length, 1);
   assert.deepEqual(edits[0].range, { start: { line: 0, character: 0 }, end: { line: 5, character: 11 } });
-  assert.equal(edits[0].newText, '<zb-messy>\n    <p>\n        hi   {name}\n    </p>\n    <input type="text" />\n</zb-messy>\n');
+  assert.equal(edits[0].newText, '<my-messy>\n    <p>\n        hi   {name}\n    </p>\n    <input type="text" />\n</my-messy>\n');
 
   const tabs = await call('textDocument/formatting', { textDocument: { uri }, options: { tabSize: 4, insertSpaces: false } });
   assert.match(tabs[0].newText, /^\t<p>$/m);
@@ -251,25 +251,25 @@ test('Format Document: the whole file as zubra fmt lays it out, with the editor\
   notify('textDocument/didChange', { textDocument: { uri, version: 2 }, contentChanges: [{ text: edits[0].newText }] });
   assert.deepEqual(await call('textDocument/formatting', { textDocument: { uri }, options: { tabSize: 4, insertSpaces: true } }), [], 'already formatted: no edits');
 
-  notify('textDocument/didChange', { textDocument: { uri, version: 3 }, contentChanges: [{ text: '<zb-messy>\n<p>\n</zb-messy>' }] });
+  notify('textDocument/didChange', { textDocument: { uri, version: 3 }, contentChanges: [{ text: '<my-messy>\n<p>\n</my-messy>' }] });
   assert.deepEqual(await call('textDocument/formatting', { textDocument: { uri }, options: { tabSize: 2, insertSpaces: true } }), [], 'a file that doesn\'t parse is left alone');
 });
 
 test('the analysis knows where the cursor is', () => {
-  const text = '<script>const a = "<b"</script>\n<zb-x a="1 {b}" c={d}><zb-if te</zb-x>';
+  const text = '<script>const a = "<b"</script>\n<my-x a="1 {b}" c={d}><zb-if te</my-x>';
   assert.equal(contextAt(text, 20).kind, 'script');
   assert.deepEqual(contextAt(text, text.indexOf('te</') + 2), { kind: 'attribute', tag: 'zb-if', prefix: 'te' });
   assert.deepEqual(hostOf(text).props, ['a', 'c']);
   assert.deepEqual(completions(text, text.indexOf('te</') + 2, []).map((item) => item.label), ['test']);
   // Any other element can take a condition (4.1).
-  const plain = '<zb-x a="1"><p zb-</p></zb-x>';
+  const plain = '<my-x a="1"><p zb-</p></my-x>';
   assert.deepEqual(completions(plain, plain.indexOf('zb-</') + 3, []).map((item) => item.label), ['zb-if', 'zb-else-if', 'zb-else']);
   assert.deepEqual(tagAt(text, text.indexOf('zb-if') + 2), { name: 'zb-if', start: text.indexOf('zb-if'), end: text.indexOf('zb-if') + 5 });
 });
 
 // ---- Extract to component ---------------------------------------------------------------------
 
-const LIST = "<!-- café: a list -->\n<script>\n  let items = [{ id: 1, name: \"ada\" }]\n  let count = 0\n  function remove() { count = count + 1 }\n</script>\n<zb-list>\n  <ul>\n    <zb-each items={items} as=\"item\" key={item.id}>\n      <li onclick={remove}>{item.name} {count}</li>\n    </zb-each>\n  </ul>\n  <button onclick={() => count++}>more</button>\n</zb-list>\n";
+const LIST = "<!-- café: a list -->\n<script>\n  let items = [{ id: 1, name: \"ada\" }]\n  let count = 0\n  function remove() { count = count + 1 }\n</script>\n<my-list>\n  <ul>\n    <zb-each items={items} as=\"item\" key={item.id}>\n      <li onclick={remove}>{item.name} {count}</li>\n    </zb-each>\n  </ul>\n  <button onclick={() => count++}>more</button>\n</my-list>\n";
 // ---- Format Selection --------------------------------------------------------------------------
 
 function rangeOf(text, from, to) {
@@ -296,19 +296,19 @@ test('Extract to component: a code action with the new file and the edits, after
   assert.equal(actions.length, 1);
   const [action] = actions;
   assert.equal(action.kind, 'refactor.extract');
-  assert.equal(action.title, 'Extract to component <zb-list-part>');
+  assert.equal(action.title, 'Extract to component <my-list-part>');
   const [create, fresh, current] = action.edit.documentChanges;
   assert.equal(create.kind, 'create');
-  assert.ok(create.uri.endsWith('/zb-list-part.zb'));
+  assert.ok(create.uri.endsWith('/my-list-part.zb'));
   assert.equal(fresh.textDocument.uri, create.uri);
   const file = fresh.edits[0].newText;
-  assert.match(file, /<zb-list-part count items>/);
+  assert.match(file, /<my-list-part count items>/);
   assert.match(file, /onclick=\{\(\) => emit\("remove"\)\}/);
   const parent = applyEdits(LIST, current.edits);
-  assert.match(parent, /<zb-list-part count=\{count\} items=\{items\} onremove=\{remove\}><\/zb-list-part>/);
-  assert.match(parent, /import '\.\/zb-list-part\.zb'/);
+  assert.match(parent, /<my-list-part count=\{count\} items=\{items\} onremove=\{remove\}><\/my-list-part>/);
+  assert.match(parent, /import '\.\/my-list-part\.zb'/);
   assert.match(parent, /café/, 'text before the edit is untouched');
-  assert.match(parent, /\n  <zb-list-part count=\{count\}[^\n]*><\/zb-list-part>\n  <button/, 'exactly the selection was replaced');
+  assert.match(parent, /\n  <my-list-part count=\{count\}[^\n]*><\/my-list-part>\n  <button/, 'exactly the selection was replaced');
   assert.ok(parent.includes('<button onclick={() => count++}>more</button>'));
 });
 

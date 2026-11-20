@@ -56,13 +56,13 @@ test('type errors in templates, child props and handlers land on their .zb lines
   let unread = 3
   function cleared(event: CustomEvent<{ cleared: boolean }>) { if (event.detail.cleared) unread = 0 }
 </script>
-<zb-inbox>
+<my-inbox>
   <my-badge count={unread + total} onclear={cleared}></my-badge>
   <my-badge count={"many"} onclear={(event) => event.detail.clearedd}></my-badge>
   <ul><zb-each items={messages} as="message"><li>{message.subjet}</li></zb-each></ul>
   <button onclick={(event) => event.clientXX}>x</button>
   <zb-if test={unread > 0}><p>{unread.toFixed(0)}</p></zb-if>
-</zb-inbox>
+</my-inbox>
 `,
   });
   const { diagnostics, checked } = checkTypes([join(root, 'src')], { root });
@@ -85,7 +85,7 @@ test('a clean project has no errors, and nothing is left beside the components',
 });
 
 test('one component, with the components it imports, and unsaved text in place of the file', { skip }, () => {
-  const inbox = "<script lang=\"ts\">\n  import './badge.zb'\n</script>\n<zb-inbox><my-badge count={1}></my-badge></zb-inbox>\n";
+  const inbox = "<script lang=\"ts\">\n  import './badge.zb'\n</script>\n<my-inbox><my-badge count={1}></my-badge></my-inbox>\n";
   const root = project({ 'src/badge.zb': badge.replace('{count}', '{count.nope}'), 'src/inbox.zb': inbox });
   const file = join(root, 'src/inbox.zb');
   // Only what was asked for is reported: badge.zb's own error isn't.
@@ -114,10 +114,10 @@ const where = (root, diagnostics) => diagnostics.map(({ file, line, column, code
 
 test('positions after characters outside ASCII are where the editor counts them', { skip }, () => {
   const root = project({
-    'src/utf.zb': '<script lang="ts">\n  const label = "😀😀😀 é"\n  const n = 2\n</script>\n<zb-utf><p>héllo 😀 {n.toFixedd(2)} {label}</p></zb-utf>\n',
+    'src/utf.zb': '<script lang="ts">\n  const label = "😀😀😀 é"\n  const n = 2\n</script>\n<my-utf><p>héllo 😀 {n.toFixedd(2)} {label}</p></my-utf>\n',
   });
   const { diagnostics } = checkTypes([join(root, 'src')], { root });
-  // `toFixedd` is at column 24: `<zb-utf><p>héllo 😀 {n.` is 23 UTF-16 units (25 bytes).
+  // `toFixedd` is at column 24: `<my-utf><p>héllo 😀 {n.` is 23 UTF-16 units (25 bytes).
   assert.deepEqual(where(root, diagnostics), ['src/utf.zb:5:24 TS2551']);
 });
 
@@ -137,7 +137,7 @@ test('run from anywhere: errors are placed in the component, whatever the workin
 
 test('the template as the runtime reads it: bindings, signals, const enums, window events, switches', { skip }, () => {
   const root = project({
-    'src/kid.zb': '<script lang="ts">\n  declare const open: boolean\n</script>\n<zb-kid open:model={false}><p>{open}</p></zb-kid>\n',
+    'src/kid.zb': '<script lang="ts">\n  declare const open: boolean\n</script>\n<my-kid open:model={false}><p>{open}</p></my-kid>\n',
     'src/sizes.ts': 'export const enum Size { Small = 1, Large = 2 }\n',
     'src/parent.zb': `<script lang="ts">
   import './kid.zb'
@@ -148,13 +148,13 @@ test('the template as the runtime reads it: bindings, signals, const enums, wind
   const store = { get() { return 1 }, size: 2 }
   const mode: "a" | "b" = "a"
 </script>
-<zb-parent>
-  <zb-kid open:bind={on}></zb-kid>
-  <zb-kid open:bind={label}></zb-kid>
+<my-parent>
+  <my-kid open:bind={on}></my-kid>
+  <my-kid open:bind={label}></my-kid>
   <p>{store.size} {Size.Large} {Local.A}</p>
   <zb-window onhashchange={(e) => e.newURL} onstorage={(e) => e.key}></zb-window>
   <zb-switch value={mode.nope}><zb-case is="a">a</zb-case><zb-case is="q">q</zb-case></zb-switch>
-</zb-parent>
+</my-parent>
 `,
   });
   const { diagnostics } = checkTypes([join(root, 'src/parent.zb')], { root });
@@ -169,20 +169,20 @@ test('the template as the runtime reads it: bindings, signals, const enums, wind
 test('props: a text default, Props with extends and methods, a keyword name, a .zb.tsx child, a typo in a type', { skip }, () => {
   const root = project({
     // (Its JSX isn't what's checked here.)
-    'src/kid.zb.tsx': '// @ts-nocheck\nexport default function ZbJsx({ size = 1 }: { size?: number }) { return <p>{size}</p> }\n',
+    'src/kid.zb.tsx': '// @ts-nocheck\nexport default function MyJsx({ size = 1 }: { size?: number }) { return <p>{size}</p> }\n',
     'src/props.zb': `<script lang="ts">
   import './kid.zb.tsx'
   interface Base { label: string }
   interface Props extends Base { size: number; tone?: 'warm' | 'cool'; pick(): void }
   const n = 1
 </script>
-<zb-props size="big" tone="hot" label="x" pick={() => {}}>
+<my-props size="big" tone="hot" label="x" pick={() => {}}>
   <p>{n.nope}</p>
-  <zb-jsx size={"2"}></zb-jsx>
-</zb-props>
+  <my-jsx size={"2"}></my-jsx>
+</my-props>
 `,
-    'src/keyword.zb': '<script lang="ts">\n  const n = 1\n</script>\n<zb-keyword default={1} new="x"><p>{n.nope}</p></zb-keyword>\n',
-    'src/typo.zb': '<script lang="ts">\n  declare const size: Sizee\n</script>\n<zb-typo size={1}><p>{size}</p></zb-typo>\n',
+    'src/keyword.zb': '<script lang="ts">\n  const n = 1\n</script>\n<my-keyword default={1} new="x"><p>{n.nope}</p></my-keyword>\n',
+    'src/typo.zb': '<script lang="ts">\n  declare const size: Sizee\n</script>\n<my-typo size={1}><p>{size}</p></my-typo>\n',
   });
   // A project with `.zb.tsx` components sets `jsx`.
   writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({
@@ -202,7 +202,7 @@ test('props: a text default, Props with extends and methods, a keyword name, a .
 test('files stay inside the generated folder, and an editor\'s stopped check is cleaned up', { skip }, () => {
   const root = project({
     'shared/b.zb': badge,
-    'app/src/a.zb': "<script lang=\"ts\">\n  import '../../shared/b.zb'\n</script>\n<zb-a><my-badge count={1}></my-badge></zb-a>\n",
+    'app/src/a.zb': "<script lang=\"ts\">\n  import '../../shared/b.zb'\n</script>\n<my-a><my-badge count={1}></my-badge></my-a>\n",
   });
   const app = join(root, 'app');
   writeFileSync(join(app, 'tsconfig.json'), JSON.stringify({ extends: '../tsconfig.json' }));

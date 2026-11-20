@@ -166,7 +166,7 @@ test('zubra fmt formats in place, checks, and reads standard input', () => {
   assert.equal(result.stdout, '<x-a>\n\t<p>a</p>\n</x-a>\n');
   result = spawnSync(process.execPath, [cli, 'fmt', '--stdin'], { cwd: dir, env, encoding: 'utf8', input: '<x-a>\n<p>\n</x-a>\n' });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /closing tag/);
+  assert.match(result.stderr, /never closed/);
 });
 
 test('zubra types writes the typings a build with dts: { dir } writes, for the app\'s framework', () => {

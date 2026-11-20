@@ -7,8 +7,9 @@ import { Signal, State, Computed } from '../src/signal.js';
 import { Signal as ProductionSignal } from '../dist/production/signal.js';
 
 // (test/tools/production.test.js runs these files again with src/ resolved to dist/production,
-// where the development-only names aren't: there the production test below is what applies.)
-const development = !import.meta.resolve('../src/signal.js').includes('/dist/production/');
+// where the development-only names aren't, and ZUBRA_ENGINE=signals resolves src/signal.js to the
+// TC39 engine, which has them: there the production test below is what applies.)
+const development = import.meta.resolve('../src/signal.js').endsWith('/src/signal.js');
 const POINTER = /TC39 Signals API.*engine: 'signals'.*docs\/migrating-to-6\.0\.md/;
 
 test('in development, Watcher, watched, unwatched and the introspection functions throw and point to signals mode', { skip: !development }, () => {

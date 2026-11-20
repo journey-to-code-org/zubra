@@ -128,7 +128,7 @@ test('a .ts file gets a component\'s typings, and their changes when it\'s saved
 
 test('a component that doesn\'t compile imports as any, and a missing one is TypeScript\'s error', { timeout: 60_000 }, async (t) => {
   const root = project({
-    'src/broken.zb': '<script lang="ts">\n  const x =\n</script>\n<zb-broken></zb-broken>\n',
+    'src/broken.zb': '<script lang="ts">\n  const x =\n</script>\n<my-broken></my-broken>\n',
     'src/main.ts': "import Broken from './broken.zb';\nimport Missing from './missing.zb';\nnew Broken();\n",
   });
   const { send, stop } = start(root);
