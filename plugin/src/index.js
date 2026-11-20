@@ -77,13 +77,23 @@ function dependencies(path, seen = new Set()) {
  * into the live elements (keeping their state). An update that changes the element's interface
  * (its props, events, shadow or form setting) reloads the page instead.
  */
-function hot(code) {
-  // On the first line, so line numbers in errors stay the compiler's.
-  return `globalThis.__ZUBRA_HOT__ = true; ${code}
+function hot(code, warnings = '') {
+  // On the first line, so line numbers in errors stay the compiler's. The compiler's warnings
+  // also go to the browser's console, where someone looking at the page will see them.
+  return `globalThis.__ZUBRA_HOT__ = true; ${warnings ? `console.warn(${JSON.stringify(warnings)}); ` : ''}${code}
 if (import.meta.hot) {
   import.meta.hot.accept((next) => {
     // (A reload, not invalidate(): a framework wrapper above accepts its own updates.)
     if (!next || next.default?.hotReloaded === false) location.reload();
+  });
+  // A save that didn't compile put the error in the overlay and updated nothing (hotUpdate), so
+  // the page still has the last version that worked. Vite reloads the page when the first update
+  // after a load finds an overlay up, which would throw away what the page holds, so the overlay
+  // is closed before an update. (A page loaded while something was broken still reloads: Vite
+  // can't apply an update to a module the page never ran. Each module listens: Vite drops a
+  // module's listeners when it's replaced.)
+  import.meta.hot.on('vite:beforeUpdate', () => {
+    for (const overlay of document.querySelectorAll('vite-error-overlay')) overlay.close();
   });
 }
 `;
@@ -210,19 +220,23 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
    */
   function fail(context, error, id) {
     const text = String(error.message ?? error);
-    const at = text.match(/-->\s+(.+?):(\d+):(\d+)/);
-    const message = text.split('\n')[0].replace(/^error:\s*/, '');
-    if (!at) context.error(text);
-    else {
-      context.error({
-        message: `${message}\n\n${text}`,
-        id,
-        loc: { file: at[1], line: Number(at[2]), column: Number(at[3]) },
-        frame: text.split('\n').slice(1).join('\n'),
-        plugin: 'zubra',
-      });
-    }
+    const found = located(text, id);
+    if (!found) context.error(text);
+    else context.error(found);
     throw new Error(text);
+  }
+
+  /** A compiler error's text as Vite's overlay takes it: the message, where, and the source line. Null without a place. */
+  function located(text, id) {
+    const at = text.match(/-->\s+(.+?):(\d+):(\d+)/);
+    if (!at) return null;
+    return {
+      message: `${text.split('\n')[0].replace(/^error:\s*/, '')}\n\n${text}`,
+      id,
+      loc: { file: at[1], line: Number(at[2]), column: Number(at[3]) },
+      frame: text.split('\n').slice(1).join('\n'),
+      plugin: 'zubra',
+    };
   }
 
   // Each component's tag and prop names, for `zb-props` (by path, while its file is unchanged).
@@ -532,7 +546,7 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
         }
       }
       if (server) return serverRendering ? output.code + serverRenderer(path, compilerModule, runtime) : output.code;
-      return dev && meta.framework === 'vite' ? hot(output.code) : output.code;
+      return dev && meta.framework === 'vite' ? hot(output.code, output.warnings) : output.code;
     },
 
     rollup: {
@@ -572,6 +586,21 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
       },
       configureServer() {
         dev = true;
+      },
+      // A saved component that doesn't compile: the error goes to the overlay from here, and no
+      // module is updated. Left to the module's own request, the browser's fetch of it fails and
+      // Vite reloads the page, so a typo threw away what the page held (a count, a half-filled
+      // form). The fix, once saved, is an ordinary hot update.
+      hotUpdate(options) {
+        if (options.type !== 'update' || !COMPONENT.test(options.file) || options.file.includes('/node_modules/')) return;
+        try {
+          compile(options.file, '--emit', 'js', '--keep-imports', '--runtime', runtime);
+        } catch (error) {
+          const text = String(error.message ?? error);
+          // (Once, from the browser's environment: the terminal says what the overlay says.)
+          if (this.environment?.name === 'client') this.environment.logger.error(text, { timestamp: true });
+          throw Object.assign(new Error(text), located(text, options.file) ?? {}, { stack: '' });
+        }
       },
       // Svelte and Solid use the elements directly: in their server builds, the hosts get
       // `zb-props` (see props.js), for @zubra/server's injectShadowRoots().
