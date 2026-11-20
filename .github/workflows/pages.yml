@@ -10,10 +10,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Each job says what it needs. Only deploy can write to Pages or mint an OIDC token: build runs
+# installs and the site's build scripts, so it gets read access only.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -22,6 +22,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read # to ask whether Pages is enabled (the step below)
     outputs:
       pages: ${{ steps.pages.outputs.enabled }}
     steps:
@@ -41,12 +44,13 @@ jobs:
         with:
           toolchain: "1.97"
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # No Swatinem/rust-cache: what this job builds is deployed, so it restores no cache
+      # (Rust's or npm's) that another workflow could have written.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           # setup-node 5+ caches npm by itself once a package.json names npm as its
-          # packageManager; this job deploys or publishes, so it never restores a cache.
+          # packageManager; turned off for the same reason.
           package-manager-cache: false
       - run: npm run build
         working-directory: compiler
@@ -73,6 +77,9 @@ jobs:
     needs: build
     if: needs.build.outputs.pages == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      pages: write # to deploy to Pages
+      id-token: write # to verify the deployment's origin
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
