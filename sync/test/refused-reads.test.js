@@ -2,7 +2,7 @@
 // development the server says so once, to whoever runs it; the page is told nothing more.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createSyncServer, allowAnyone } from '../src/server.js';
+import { createSyncServer, allowAnyone, allowReads } from '../src/server.js';
 
 let n = 0;
 const at = () => `${String(++n).padStart(15, '0')}-00000-dev1`;
@@ -30,8 +30,21 @@ test('authorize refusing every read of a collection is said once, with the colle
   assert.equal(warned.length, 1, 'once per collection');
 });
 
+test('a server given no authorize reads nothing, and says what would open a collection', async () => {
+  const { sync, warned } = await server({});
+  assert.deepEqual((await pull(sync)).changes, []);
+  assert.equal(warned.length, 2, 'each collection, once');
+  assert.match(warned[0], /a page read "secrets" .* none of its 2 documents: this server was given no `authorize`, so pages may read nothing: name what they may read, createSyncServer\(\{ authorize: allowReads\(\['secrets'\]\) \}\)/);
+  assert.match(warned[1], /a page read "items" .*allowReads\(\['items'\]\)/);
+  // A collection allowReads leaves out is `authorize` refusing it, as an app's own would.
+  const listed = await server({ authorize: allowReads(['items']) });
+  await pull(listed.sync);
+  assert.equal(listed.warned.length, 1);
+  assert.match(listed.warned[0], /"secrets" .*`authorize` refused every read/);
+});
+
 test("the server's scope leaving a collection out is said as that", async () => {
-  const { sync, warned } = await server({ scope: () => ({ items: true, secrets: 'mine/' }) });
+  const { sync, warned } = await server({ authorize: allowReads(), scope: () => ({ items: true, secrets: 'mine/' }) });
   await pull(sync);
   assert.equal(warned.length, 1);
   assert.match(warned[0], /a page read "secrets" .* none of its 2 documents: the server's `scope` for that request leaves them all out/);
@@ -70,7 +83,7 @@ test('the live stream read from the start says the same, once', async () => {
   assert.match(warned[0], /a page read "secrets" \(GET \/_zb\/sync\/live\)/);
 });
 
-test('`warn: false`, and production by default, say nothing', async () => {
+test('`warn: false`, and production (NODE_ENV unset included), say nothing', async () => {
   const off = createSyncServer({ warn: false, authorize: ({ write }) => !write && false });
   await off.write('secrets', 'a', { left: 2 });
   assert.deepEqual((await pull(off)).changes, []);
@@ -79,11 +92,14 @@ test('`warn: false`, and production by default, say nothing', async () => {
   const env = process.env.NODE_ENV;
   console.warn = (message) => said.push(message);
   try {
-    process.env.NODE_ENV = 'production';
-    const production = createSyncServer({ authorize: () => false });
-    await production.write('secrets', 'a', { left: 2 });
-    await pull(production);
-    assert.deepEqual(said, []);
+    for (const value of ['production', undefined, 'test']) {
+      if (value === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = value;
+      const production = createSyncServer({ authorize: () => false });
+      await production.write('secrets', 'a', { left: 2 });
+      await pull(production);
+      assert.deepEqual(said, [], `NODE_ENV ${value}`);
+    }
     // And in development, with no `warn` given, it goes to the console.
     process.env.NODE_ENV = 'development';
     const development = createSyncServer({ authorize: () => false });

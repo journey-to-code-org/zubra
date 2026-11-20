@@ -697,7 +697,12 @@ export function createCore({ reload, request, files, fromPackage = () => false, 
     const message = error instanceof Error ? error.message : String(error);
     // Where it was thrown: the stack's frames, without its first line (the message again).
     const frames = error instanceof Error && typeof error.stack === 'string' ? error.stack.split('\n').filter((line) => /^\s+at /.test(line)).join('\n') : '';
-    const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Error</title></head><body><pre>${escapeText(message)}</pre>${frames ? `<pre>${escapeText(frames)}</pre>` : ''}${reloading(options, [])}</body></html>`;
+    // The heading names the file when the message points at one (a compiler error does:
+    // ` --> /app/components/x.zb:3:5`), the error's kind otherwise. Readable on a phone, in dark
+    // mode too, and long lines wrap.
+    const file = /(?:^|\n)\s*--> (?:.*[\\/])?([^\\/\n]+?):\d+:\d+/.exec(message)?.[1];
+    const heading = file ? `Error in ${file}` : error instanceof Error && error.name ? error.name : 'Error';
+    const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeText(heading)}</title><style>:root{color-scheme:light dark}body{font-family:system-ui,sans-serif;margin:1.5rem}h1{font-size:1.25rem}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style></head><body><h1>${escapeText(heading)}</h1><pre>${escapeText(message)}</pre>${frames ? `<pre>${escapeText(frames)}</pre>` : ''}${reloading(options, [])}</body></html>`;
     return { status: 500, type: 'text/html; charset=utf-8', body };
   }
 

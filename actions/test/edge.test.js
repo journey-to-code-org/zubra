@@ -82,13 +82,14 @@ test('both read the result cookie back the same way, once', async () => {
 test("the script: the Node entry serves it; the edge entry only when given its source", async () => {
   const get = () => new Request('http://shop/_zb/actions.js');
   assert.equal(await edge.fetch(get()), null, 'left to static assets');
-  const client = readFileSync(new URL('../src/client.js', import.meta.url), 'utf8');
+  // (The Node entry is in production here, the default: it serves the minified build.)
+  const client = readFileSync(new URL('../dist/production/client.js', import.meta.url), 'utf8');
   const withClient = createEdge({ actions: {}, client });
   assert.deepEqual(await summary(await withClient.fetch(get())), await summary(await node.fetch(get())));
   // The form script likewise.
   const forms = () => new Request('http://shop/_zb/enhance-forms.js');
   assert.equal(await edge.fetch(forms()), null, 'left to static assets');
-  const withForms = createEdge({ actions: {}, forms: readFileSync(new URL('../src/enhance-forms.js', import.meta.url), 'utf8') });
+  const withForms = createEdge({ actions: {}, forms: readFileSync(new URL('../dist/production/enhance-forms.js', import.meta.url), 'utf8') });
   assert.deepEqual(await summary(await withForms.fetch(forms())), await summary(await node.fetch(forms())));
   assert.equal(withForms.formsScript(), node.formsScript());
 });

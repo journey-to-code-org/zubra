@@ -13,10 +13,16 @@ export interface ActionsOptions {
   onError?: (error: unknown, request: Request) => void;
   /**
    * Serve the browser scripts minified, and refuse to start when a component doesn't compile
-   * (in development that component is left out with a warning, and the rest are served).
-   * Default: true when `NODE_ENV` is `production`.
+   * (in development that component is left out with a warning, and the rest are served), and
+   * let browsers keep the scripts for an hour (`no-cache` in development). Default: true unless
+   * `NODE_ENV` is `development` (an unset NODE_ENV is production), as in `@zubra/server`.
    */
   production?: boolean;
+  /**
+   * Send `/_zb/actions.js` and `/_zb/enhance-forms.js` in Brotli or gzip to a request that takes
+   * one, each compressed once at start. Default false, for a host or proxy that compresses already.
+   */
+  compress?: boolean;
   /**
    * The largest post read, files and fields together, in bytes: 10 MB by default, `Infinity` for
    * no limit. A bigger one gets `{ error: 'Too large' }` (status 413) and the function doesn't run.

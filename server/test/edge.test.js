@@ -9,6 +9,10 @@ import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { createZubra as createNode } from '../src/index.js';
 import { createZubra as createEdge } from '../src/edge.js';
+
+// The Node entry these compare with is in development (NODE_ENV=development; since 6.0 an unset
+// NODE_ENV is production), serving the runtime file by file as the edge entry does.
+process.env.NODE_ENV = 'development';
 import { zubra as honoEdge } from '../src/hono-edge.js';
 
 const here = dirname(fileURLToPath(import.meta.url));

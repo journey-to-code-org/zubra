@@ -45,6 +45,25 @@ test('development with `reload`: the page has the script, with the nonce, so it 
   assert.throws(() => zubra.errorPage(failure(), { nonce: '"><script>' }), /nonce/, 'a nonce that cannot be one fails, as for a page');
 });
 
+test('development: readable on a phone and in dark mode, with a heading that names the file or the error', () => {
+  const zubra = createZubra({ components, production: false });
+  const { body } = zubra.errorPage(new TypeError('x is not a function'));
+  assert.match(body, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
+  assert.match(body, /color-scheme:light dark/);
+  assert.match(body, /pre\{white-space:pre-wrap/);
+  assert.match(body, /<title>TypeError<\/title>.*<h1>TypeError<\/h1><pre>x is not a function<\/pre>/s);
+  // A component that doesn't compile: the heading is its file.
+  writeFileSync(join(components, 'broken-one.zb'), '<broken-one>\n  <p>{oops(</p>\n</broken-one>\n');
+  try {
+    let thrown;
+    try { createZubra({ components, production: false }).page().render('broken-one', {}); } catch (error) { thrown = error; }
+    assert.ok(thrown, 'it fails');
+    assert.match(zubra.errorPage(thrown).body, /<h1>Error in broken-one\.zb<\/h1>/);
+  } finally {
+    rmSync(join(components, 'broken-one.zb'));
+  }
+});
+
 test('production: "Something went wrong", as plain text, and nothing of the error', () => {
   const failed = createZubra({ components, production: true, reload: true }).errorPage(failure());
   assert.deepEqual(failed, { status: 500, type: 'text/plain; charset=utf-8', body: 'Something went wrong' });

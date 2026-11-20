@@ -23,7 +23,16 @@ const freePort = () => new Promise((resolve) => {
 });
 
 before(async () => {
-  node = createApp({ store: createStore() });
+  // The Node app as it runs in development, serving the runtime file by file as the Worker's
+  // static assets do (since 6.0 an unset NODE_ENV is production, which sends it as one file).
+  const environment = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'development';
+  try {
+    node = createApp({ store: createStore() });
+  } finally {
+    if (environment === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = environment;
+  }
   const port = await freePort();
   const child = spawn('npx', ['wrangler', 'dev', '--local', '--port', String(port), '--ip', '127.0.0.1'], {
     cwd: root,

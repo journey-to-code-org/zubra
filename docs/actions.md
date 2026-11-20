@@ -50,7 +50,7 @@ const response = await actions.fetch(request);
 
 Or an adapter: `@zubra/actions/hono` (`app.use(await actions(options))`), `@zubra/actions/express` (mount it before any body parser), `@zubra/actions/fastify` (`app.register(actions, options)`).
 
-Put `actions.script()` on pages with action forms. It's a small module that sends those forms with `fetch` instead of navigating. In production (`NODE_ENV=production`, or `createActions({ production: true })`) it is served minified, about half the bytes.
+Put `actions.script()` on pages with action forms. It's a small module that sends those forms with `fetch` instead of navigating. In production, the default (development is `NODE_ENV=development` or `createActions({ production: false })`), it is served minified, about half the bytes, and cached for an hour; `createActions({ compress: true })` sends it in Brotli or gzip.
 
 ### Without a disk: Cloudflare Workers
 
