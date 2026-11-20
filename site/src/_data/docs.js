@@ -16,6 +16,8 @@ import nav from './nav.js';
 loadLanguages(['markup', 'css', 'javascript', 'jsx', 'typescript', 'tsx', 'bash', 'diff']);
 // A fence's language, as Prism names it. `.zb` is HTML with braces, which Prism's markup grammar colours well enough.
 const GRAMMAR = { html: 'markup', zb: 'markup', vue: 'markup', svelte: 'markup', sh: 'bash', js: 'javascript', ts: 'typescript' };
+// A fence's language, as a code block's accessible name says it.
+const LANGUAGE = { zb: '.zb', html: 'HTML', css: 'CSS', js: 'JavaScript', javascript: 'JavaScript', jsx: 'JSX', ts: 'TypeScript', typescript: 'TypeScript', tsx: 'TSX', sh: 'shell', bash: 'shell', json: 'JSON', diff: 'diff', vue: 'Vue', svelte: 'Svelte', astro: 'Astro', rust: 'Rust', toml: 'TOML', yaml: 'YAML' };
 const colour = (code, language) => {
   const name = GRAMMAR[language] ?? language;
   return Prism.languages[name] ? Prism.highlight(code, Prism.languages[name], name) : '';
@@ -90,12 +92,26 @@ function render(page) {
       }
     });
   });
+  // A code block or a table can be wider than the page and scroll sideways: it takes focus so
+  // the keyboard can scroll it (axe's scrollable-region-focusable), and is named for what it is.
+  // (The layout's script takes the tab stop off again where nothing scrolls.)
+  const fence = md.renderer.rules.fence;
+  md.renderer.rules.fence = (tokens, at, options, env, self) => {
+    const language = tokens[at].info.trim().split(/\s+/)[0];
+    const label = language ? `Code, ${LANGUAGE[language] ?? language}` : 'Code';
+    return fence(tokens, at, options, env, self).replace(/^<pre>/, `<pre tabindex="0" role="group" aria-label="${escape(label)}" data-scrolls>`);
+  };
+  md.renderer.rules.table_open = () => '<div class="table-scroll" tabindex="0" role="region" aria-label="Table" data-scrolls>\n<table>\n';
+  md.renderer.rules.table_close = () => '</table>\n</div>\n';
   return md.render(readFileSync(join(repo, page.file), 'utf8'));
 }
 
-const guide = nav[0].pages.map((entry) => bySource.get(entry.file));
+const guide = nav[0].pages.filter((entry) => entry.step !== false).map((entry) => bySource.get(entry.file));
+const migrating = pages.find((page) => page.file === 'docs/migrating-to-6.0.md');
 const rendered = pages.map((page) => {
-  const html = render(page);
+  let html = render(page);
+  // The docs' first page points 5.x users at the migration guide, under its heading.
+  if (page.slug === '' && migrating) html = html.replace('</h1>', `</h1>\n<p class="moving">Moving from 5.x? <a href="${urlOf(migrating)}">Migrating to 6.0</a></p>`);
   const guideAt = guide.indexOf(page);
   return {
     ...page,

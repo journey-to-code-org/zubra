@@ -150,3 +150,33 @@ test('the landing page\'s Zubra source wraps its comments instead of scrolling s
   assert.equal(scroll, client, 'nothing to scroll to');
   await page.close();
 });
+
+test('the docs on a phone: the header wraps instead of widening the page, and only what scrolls takes a tab stop', async () => {
+  const page = await browser.newPage({ viewport: { width: 375, height: 800 } });
+  await page.goto(new URL('docs/reference/', site.url).href);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 375);
+  for (const name of ['Playground', 'Demos', 'GitHub']) {
+    const box = await page.getByRole('navigation', { name: 'Site' }).getByRole('link', { name }).boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= 375, `${name} is on screen`);
+  }
+  const boxes = await page.$$eval('[data-scrolls]', (els) => els.map((el) => [el.scrollWidth > el.clientWidth + 1, el.tabIndex]));
+  assert.ok(boxes.some(([scrolls]) => scrolls) && boxes.some(([scrolls]) => !scrolls));
+  for (const [scrolls, tabIndex] of boxes) assert.equal(tabIndex, scrolls ? 0 : -1);
+  await page.close();
+});
+
+test('linked code in the docs is at least 4.5:1 on its background, in both themes', async () => {
+  for (const colorScheme of ['light', 'dark']) {
+    const page = await browser.newPage({ colorScheme });
+    await page.goto(new URL('docs/', site.url).href);
+    const ratio = await page.$eval('.doc a code', (code) => {
+      const channels = (colour) => colour.match(/[\d.]+/g).slice(0, 3).map(Number);
+      const luminance = (rgb) => rgb.map((c) => ((c /= 255) <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+      const style = getComputedStyle(code);
+      const [high, low] = [luminance(channels(style.color)), luminance(channels(style.backgroundColor))].sort((a, b) => b - a);
+      return (high + 0.05) / (low + 0.05);
+    });
+    assert.ok(ratio >= 4.5, `${colorScheme}: ${ratio.toFixed(2)}`);
+    await page.close();
+  }
+});
