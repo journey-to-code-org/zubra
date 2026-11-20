@@ -316,8 +316,11 @@ test('dev server: components compile on demand; editing one updates it in place,
   const environment = process.env.NODE_ENV;
   process.env.NODE_ENV = 'development';
   const root = app('react');
+  // What the terminal is told (Vite's logger), silently.
+  const logged = [];
+  const customLogger = { info() {}, warn() {}, warnOnce() {}, clearScreen() {}, hasErrorLogged: () => false, hasWarned: false, error: (message) => logged.push(String(message)) };
   const server = await createViteServer({
-    root, configFile: false, logLevel: 'silent', plugins: [zubra({ compiler }), react()],
+    root, configFile: false, customLogger, plugins: [zubra({ compiler }), react()],
     server: { port: 0, host: '127.0.0.1' },
   });
   await server.listen();
@@ -358,8 +361,10 @@ test('dev server: components compile on demand; editing one updates it in place,
     await page.waitForFunction(() => window.stale !== true && window.ready === true, null, { timeout: 15000 });
     assert.equal(await page.$eval('zb-card:not(#from-html) footer', (footer) => footer.textContent), 'React footer, edited');
 
-    // A compile error shows in Vite's overlay, with the source line and where it is.
+    // A compile error shows in Vite's overlay, with the source line and where it is, and the
+    // page stays as it was (no reload, so what it held is kept); saving the fix updates it in place.
     await new Promise((resolve) => setTimeout(resolve, 1000));
+    await page.evaluate(() => { window.kept = true; });
     const good = readFileSync(card, 'utf8');
     writeFileSync(card, good.replace('<footer>', '<footer onclick={oops(}>'));
     const overlay = await page.waitForFunction(() => document.querySelector('vite-error-overlay')?.shadowRoot?.textContent, null, { timeout: 15000 });
@@ -368,7 +373,32 @@ test('dev server: components compile on demand; editing one updates it in place,
     assert.match(text, /card\.zb:\d+:\d+/);
     assert.match(text, /onclick=\{oops\(\}/, 'the code frame');
     await new Promise((resolve) => setTimeout(resolve, 1000));
+    assert.equal(await page.evaluate(() => window.kept), true, 'a broken component does not reload the page');
+    assert.ok(logged.some((line) => /unterminated \{ expression/.test(line) && /card\.zb:\d+:\d+/.test(line)), 'the terminal is told too');
+    assert.equal(await page.$eval('zb-card:not(#from-html) footer', (footer) => footer.textContent), 'React footer, edited', 'and the component is still there');
+    writeFileSync(card, good.replace('{heading} footer, edited', '{heading} footer, fixed'));
+    await page.waitForFunction(() => document.querySelector('zb-card:not(#from-html) footer')?.textContent === 'React footer, fixed', null, { timeout: 15000 });
+    assert.equal(await page.evaluate(() => window.kept), true, 'the fix is a hot update too');
+    assert.equal(await page.evaluate(() => document.querySelector('vite-error-overlay')), null, 'and it clears the overlay');
+
+    // A compiler warning reaches the browser's console as well as the terminal.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const warned = new Promise((resolve) => page.on('console', (message) => message.type() === 'warning' && /className/.test(message.text()) && resolve(message.text())));
+    writeFileSync(card, good.replace('<footer>', '<footer className="x">'));
+    assert.match(await Promise.race([warned, new Promise((resolve) => setTimeout(() => resolve('no warning'), 15000))]), /`className` is React's name/);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     writeFileSync(card, good);
+
+    // A page loaded while a component is broken never had it: the fix reloads that page, as Vite does.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    writeFileSync(card, good.replace('<footer>', '<footer onclick={oops(}>'));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await page.goto(url);
+    await page.waitForFunction(() => document.querySelector('vite-error-overlay'), null, { timeout: 15000 });
+    await page.evaluate(() => { window.loadedBroken = true; });
+    writeFileSync(card, good);
+    await page.waitForFunction(() => window.loadedBroken === undefined && window.ready === true, null, { timeout: 15000 });
+    await page.waitForFunction(() => document.querySelector('zb-card:not(#from-html) footer')?.textContent === 'React footer, edited', null, { timeout: 15000 });
 
     // Edit the badge (a child of the inbox) so its slot moves: the inbox is recompiled too.
     const badge = join(root, 'components/badge.zb');
