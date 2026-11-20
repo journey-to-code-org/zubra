@@ -28,12 +28,14 @@ export interface ZubraOptions {
   /** Compile for the Zubra DevTools in builds too, not only in Vite's dev server. Default: `$ZUBRA_DEVTOOLS === '1'`. */
   devtools?: boolean;
   /**
-   * Signals mode (experimental): the runtime's reactivity on the TC39 Signals API in place of
-   * Zubra's own engine. `state()` then returns a real `Signal.State`, the runtime's `Signal` export
-   * is the proposal's whole API (`Signal.subtle.Watcher` and its introspection), and a browser's
-   * native `Signal` is used when it has one. For interoperating with other Signals libraries and
-   * tools. Default: `false`.
+   * The reactive engine. `'zubra'` (the default): Zubra's own. `'signals'` (experimental), signals
+   * mode: the TC39 Signals API in its place. `state()` then returns a real `Signal.State`, the
+   * runtime's `Signal` export is the proposal's whole API (`Signal.subtle.Watcher` and its
+   * introspection), and a browser's native `Signal` is used when it has one. For interoperating
+   * with other Signals libraries and tools. Any other value is an error.
    */
+  engine?: 'zubra' | 'signals';
+  /** @deprecated `engine: 'signals'`, under its name in 6.0.0-rc.0; the plugin warns. */
   signals?: boolean;
   /**
    * Folders of components, an app's (`'./src/components'`, from `root`) or a package's

@@ -78,6 +78,8 @@ With Vite, a component's `<style>` is a CSS module in Vite's pipeline, so PostCS
 
 ## Options
 
+An option name the plugin doesn't know is warned about, with the nearest one it does (`signal` → `engine: 'signals'`), and an `engine` that isn't one of the two is an error.
+
 ```js
 zubra({
   compiler: '/path/to/zubra',    // default: $ZUBRA_COMPILER, then @zubra/compiler, then `zubra` on PATH
@@ -93,6 +95,12 @@ zubra({
                                // that uses one of their tags gets the import written for it (see below)
   root: process.cwd(),         // where your own components are (default: Vite's root, or the current folder):
                                // a package's component with one of their tags gets yours (docs/guide/04-composition.md)
+  devtools: false,             // compile for the Zubra DevTools in builds too, not only in Vite's dev server
+                               // (default: $ZUBRA_DEVTOOLS === '1'), with the runtime's development build
+  engine: 'zubra',             // the reactive engine: 'zubra' (the default) or 'signals', the TC39 Signals API
+                               // (experimental; see docs/migrating-to-6.0.md). `signals: true` is its old name
+  compilerModule: '@zubra/compiler',
+                               // the module server builds render with
 })
 ```
 

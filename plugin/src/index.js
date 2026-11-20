@@ -29,6 +29,7 @@ import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync, statSy
 import { addProps, zubraImports } from './props.js';
 import { kindOf, tagsIn, withImports } from './auto-import.js';
 import { solidOf } from './solid.js';
+import { engineOf, unknownOptions } from './options.js';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createRequire } from 'node:module';
 
@@ -136,9 +137,12 @@ const SIGNALS_ENGINE = /[\\/]runtime[\\/](?:src|dist[\\/]production)[\\/]signal-
 /** Signals mode's engine, beside the runtime module that imports the engine. */
 function signalsEngine(importer) {
   const path = join(dirname(importer.split('?')[0]), 'signal-tc39.js');
-  if (!existsSync(path)) throw new Error(`zubra: signals: true needs @zubra/runtime 6.0 or later (no ${path})`);
+  if (!existsSync(path)) throw new Error(`zubra: engine: 'signals' needs @zubra/runtime 6.0 or later (no ${path})`);
   return path;
 }
+
+/** What the plugin takes (`signals` is `engine: 'signals'`'s old name): the README's Options. */
+const OPTIONS = ['compiler', 'framework', 'dts', 'runtime', 'ssr', 'hydrate', 'compilerModule', 'devtools', 'engine', 'signals', 'autoImport', 'root'];
 
 export const unplugin = createUnplugin((options = {}, meta = {}) => {
   // The compiler: a CLI when one is given (option or $ZUBRA_COMPILER); otherwise the WebAssembly
@@ -175,9 +179,11 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
   // An app that never renders on a server: components compiled without what takes over server
   // markup, so the runtime's hydrate.js stays out of the bundle.
   const clientOnly = options.hydrate === false;
-  // Signals mode (experimental): @zubra/runtime's engine on the TC39 Signals API
-  // (`signal-tc39.js`) in place of Zubra's own (`signal.js`), wherever the runtime imports it.
-  const signals = options.signals === true;
+  // `engine: 'signals'`, signals mode (experimental): @zubra/runtime's engine on the TC39 Signals
+  // API (`signal-tc39.js`) in place of Zubra's own (`signal.js`), wherever the runtime imports it.
+  // (`signals: true` is its name in 6.0.0-rc.0; anything but the two engines is an error.)
+  const signals = engineOf(options, '@zubra/unplugin', console.warn) === 'signals';
+  for (const message of unknownOptions(options, OPTIONS, '@zubra/unplugin')) console.warn(message);
 
   /** CLI flags → a request for the WebAssembly compiler. */
   function asRequest(args) {
