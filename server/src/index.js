@@ -20,6 +20,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { StringDecoder } from 'node:string_decoder';
 import * as nodeStream from 'node:stream';
+import { createHash } from 'node:crypto';
 import { brotliCompressSync, gzipSync, constants as zlib } from 'node:zlib';
 const { Transform } = nodeStream;
 import { findCompiler } from './compiler.js';
@@ -289,33 +290,34 @@ export function createZubra({ components = 'components', packages = [], prefix =
     }
     const served = core.serve(new URL(req.url, 'http://x').pathname);
     if (!served) return false;
-    const path = new URL(req.url, 'http://x').pathname;
-    const { body, headers } = compress ? encoded(served, path, req.headers?.['accept-encoding']) : { body: served.body, headers: {} };
+    const { body, headers } = compress ? encoded(served, req.headers?.['accept-encoding']) : { body: served.body, headers: {} };
     res.writeHead(served.status, { 'content-type': served.type, 'cache-control': core.cacheControlOf(served), ...headers });
     res.end(body);
     return true;
   }
 
   // `compress`: what `handle` and `fetch` answer goes out in Brotli or gzip when the request
-  // says it reads one. A file is compressed once and kept, by its path, for as long as it is
-  // the same text. Files that stay as they are until a restart get the smallest encoding
+  // says it reads one. A file is compressed once and kept by its content, not by the path it was
+  // asked for under: one file has no end of spellings (`%7A` is `z`), and compressing each anew,
+  // synchronously, would let anyone keep the server busy with one request after another. Files that stay as they are until a restart get the smallest encoding
   // (Brotli 11 takes about 36 ms for the runtime's base, once); ones an edit may change (in
   // development, or with `cache: false`) a quick one.
   const lasting = cache && !changed;
   const kept = new Map();
-  const same = (a, b) => (typeof a === 'string' ? a === b : typeof b !== 'string' && a.equals(b));
-  function encoded(served, path, accepts) {
+  function encoded(served, accepts) {
     const { body } = served;
     if (Buffer.byteLength(body) < SMALLEST) return { body, headers: {} };
     // `vary` on the plain answer too: a shared cache must not hand it to a browser that asked for Brotli, or the reverse.
     const headers = { vary: 'accept-encoding' };
     const encoding = encodingFor(accepts);
     if (!encoding) return { body, headers };
-    let entry = kept.get(path);
-    if (!entry || !same(entry.body, body)) {
-      // A path can be spelled without end (`%7A` for `z`), so what is kept has a limit.
+    const key = createHash('sha256').update(body).digest('base64');
+    let entry = kept.get(key);
+    if (!entry) {
+      // What the server can answer differs without end in development (`reload`'s answers), so
+      // what is kept has a limit.
       if (kept.size >= KEPT_MOST) kept.clear();
-      kept.set(path, (entry = { body }));
+      kept.set(key, (entry = {}));
     }
     entry[encoding] ??= encoding === 'br'
       ? brotliCompressSync(body, { params: { [zlib.BROTLI_PARAM_QUALITY]: lasting ? 11 : 4, [zlib.BROTLI_PARAM_SIZE_HINT]: Buffer.byteLength(body) } })
@@ -333,7 +335,7 @@ export function createZubra({ components = 'components', packages = [], prefix =
     if (reload && path === RELOAD) return reloadStream();
     const served = core.serve(path);
     if (!served) return null;
-    const { body, headers } = encoded(served, path, request.headers.get('accept-encoding'));
+    const { body, headers } = encoded(served, request.headers.get('accept-encoding'));
     return new Response(body, { status: served.status, headers: { 'content-type': served.type, 'cache-control': core.cacheControlOf(served), ...headers } });
   }
 

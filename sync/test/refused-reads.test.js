@@ -96,3 +96,48 @@ test('`warn: false`, and production by default, say nothing', async () => {
     else process.env.NODE_ENV = env;
   }
 });
+
+test('a stream read from the start holds one page at a time, and still says it right across pages', async () => {
+  // A log read from storage page by page (as the SQL logs are): each page's changes are made
+  // when it is read. Five pages of 1000. While the stream reads them, the earlier pages are
+  // the stream's to let go: what `warn` needs is a count per collection, not the changes
+  // themselves (security audit 4: a large log read from the start by a few streams at once
+  // was held whole by each).
+  const { queryObjects } = await import('node:v8');
+  class Change {
+    constructor(at) {
+      // `secrets` in the first four pages, refused; `later` there too, refused but for one
+      // document in the last page; `items` only in the last page, and shown.
+      this.collection = at === 4999 ? 'later' : at >= 4000 ? 'items' : at % 2 ? 'secrets' : 'later';
+      this.key = `k${at}`;
+      this.field = 'v';
+      this.value = at;
+      this.clock = `${String(at + 1).padStart(15, '0')}-00000-dev1`;
+    }
+  }
+  const PAGES = 5;
+  let alive = null;
+  const log = {
+    async append() {},
+    async after(cursor, limit = 1000) {
+      const from = Number(cursor);
+      if (from >= PAGES * 1000) return { changes: [], cursor: from };
+      // While the last page is read: how many changes of the earlier pages are still held.
+      if (from === (PAGES - 1) * 1000) alive = queryObjects(Change, { format: 'count' });
+      return { changes: Array.from({ length: Math.min(limit, PAGES * 1000 - from) }, (_, i) => new Change(from + i)), cursor: from + Math.min(limit, PAGES * 1000 - from) };
+    },
+    head: async () => PAGES * 1000,
+  };
+  const warned = [];
+  const sync = createSyncServer({ log, warn: (message) => warned.push(message), authorize: ({ collection, key, write }) => !write && (collection === 'items' || key === 'k4999') });
+  const response = await sync.fetch(new Request(url('/live?since=0&peer=p1')));
+  const reader = response.body.getReader();
+  let text = '';
+  while ((text.match(/event: changes/g) ?? []).length < PAGES) text += new TextDecoder().decode((await reader.read()).value);
+  await reader.cancel();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.ok(alive !== null && alive <= 2000, `while reading the last page, ${alive} changes of the earlier ones were still held`);
+  assert.equal(warned.length, 1, 'secrets, refused across four pages, is said once');
+  assert.match(warned[0], /a page read "secrets" \(GET \/_zb\/sync\/live\) and was sent none of its 1000 or more documents: `authorize` refused every read/);
+  assert.doesNotMatch(warned.join('\n'), /"items"|"later"/, 'a collection shown in some page, the last included, is not said');
+});

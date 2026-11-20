@@ -100,7 +100,9 @@ test("the server starter's own test passes, in JavaScript and with --typescript"
   for (const typescript of [false, true]) {
     const dir = starter(typescript ? 'server-ts' : 'server', typescript);
     try {
-      execFileSync(process.execPath, ['--test', 'test/app.test.js'], { cwd: dir, stdio: 'pipe', encoding: 'utf8', env: { ...process.env, NODE_ENV: '' } });
+      // (Without the runner's NODE_TEST_CONTEXT, which a nested `node --test` would take as being
+      // run by a parent, and exit 0 whatever its tests did.)
+      execFileSync(process.execPath, ['--test', 'test/app.test.js'], { cwd: dir, stdio: 'pipe', encoding: 'utf8', env: { ...process.env, NODE_ENV: '', NODE_TEST_CONTEXT: undefined } });
     } catch (error) {
       throw new Error(`the server starter's test failed:\n${error.stdout}${error.stderr}`);
     } finally {

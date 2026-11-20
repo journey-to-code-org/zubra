@@ -22,7 +22,9 @@ test("npm create zubra -- --framework astro: the starter's own test passes", () 
   try {
     execFileSync(process.execPath, ['--test', 'test/app.test.js'], {
       cwd: dir, stdio: 'pipe', encoding: 'utf8',
-      env: { ...process.env, ZUBRA_COMPILER: process.env.ZUBRA_COMPILER ?? join(repo, 'target/debug/zubra') },
+      // (Without the runner's NODE_TEST_CONTEXT: a nested `node --test` that has it exits 0
+      // whatever its tests did.)
+      env: { ...process.env, ZUBRA_COMPILER: process.env.ZUBRA_COMPILER ?? join(repo, 'target/debug/zubra'), NODE_TEST_CONTEXT: undefined },
     });
   } catch (error) {
     throw new Error(`the Astro starter's test failed:\n${error.stdout}${error.stderr}`);
