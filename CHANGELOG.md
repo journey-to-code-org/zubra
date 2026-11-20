@@ -4,6 +4,22 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Changed
+
+- **6.x is a long-term-support line, and the docs say so.** `docs/stability.md` has the promise: everything Stable (the `.zb` format, the compiled ABI `abi: 5`, the CLI's commands, flags and exit codes, the typings and manifest, the hydration markers, every Stable npm entry) is frozen until 7.0; 6.0.x is fixes only; a 6.x minor adds or changes something Supported, with a reason here; Experimental pieces may change in any release; a Stable item 7.0 removes warns in at least two 6.x minors first; and 6.x gets security and critical fixes for 18 months after 6.0.0. The pre-adoption stage ends with 6.0.0. The README's status and Stability section, `SECURITY.md` and `AGENTS.md` follow it. Found by the pre-6.0 audit.
+- **Every published package has a README, a homepage, bugs and keywords on npm.** `@zubra/compiler`, `@zubra/server`, `@zubra/language-server` and `create-zubra` had no README, so their pages said "No README data found"; each now says what it is, how to install it, and a minimal example that runs. `runtime/test/tools/versions.test.js` checks all nine. Found by the pre-6.0 audit.
+- **`prettier-plugin-zubra` is Experimental and not published.** It was listed as Supported and recommended, but it isn't on npm and depends on the compiler's folder; `docs/editor-support.md` says how to install it from a checkout, and it has a LICENSE. Found by the pre-6.0 audit.
+- **The React TypeScript starter type-checks component imports in `.tsx` files.** Its `tsconfig.json` has `"jsx": "react-jsx"` and `allowArbitraryExtensions`, so `tsc` reads the typings the build plugin writes beside each component, where an import was `any` and a wrong prop passed. Found by the pre-6.0 audit.
+
+### Fixed
+
+- **A starter's `npm test` without Playwright's Chromium fails at once and says `npx playwright install chromium`.** The bundler starters built the app and opened its server before launching the browser, outside the `try`, so a missing browser left the server open and `npm test` never ended. Found by the pre-6.0 audit.
+- **The runtime's error messages link to the reference** (`docs/reference.md#forms`), not the README's top, where the sections no longer are. A test checks each section a message names is a heading of the reference. Found by the pre-6.0 audit.
+- **`@zubra/compiler`'s "zubra.wasm is missing" error names `ZUBRA_COMPILER`**, the native compiler it uses instead, and `AGENTS.md` says which package finds a compiler how. Found by the pre-6.0 audit.
+- **Samples that didn't compile**: Sync's presence cursor (`style:left`/`style:top`, where `style={…}` takes an object) and the server starter's guest-book excerpt in its `AGENTS.md` (`list` was never declared). `docs/test/samples.test.js` compiles the first and checks guide 8's output against the compiler; `create/test` checks the second against the real component. Found by the pre-6.0 audit.
+- **The PHP client's install instructions work**: a `path` repository from a checkout, since a `vcs` repository can't find `clients/php/composer.json`. Found by the pre-6.0 audit.
+- **Docs that still described 5.x**: state as a TC39 `Signal.State` (it is Zubra's state, `.get()`/`.set()`, and a `Signal.State` in signals mode), guide 8's compiled module (regenerated: it has `hydrating: $hydrate`), the 5.x engine in the present tense, "the README" as the reference, the README's and `AGENTS.md`'s lists of packages, the runtime README's sizes (measured at 6.0), the registry's count (26), and the starters' links to the reference and the router's page. Found by the pre-6.0 audit.
+
 ## 6.0.0-rc.0 — 2026-11-20
 
 A release candidate for 6.0.0, on npm's `next` tag: `npm install @zubra/runtime@next @zubra/compiler@next` (and the same for the other packages) tries it, and a plain `npm install` keeps 5.23. The VS Code extension stays on 5.23.0 until 6.0.0.
