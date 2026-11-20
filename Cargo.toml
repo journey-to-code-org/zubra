@@ -32,6 +32,7 @@ oxc_str = "0.157"
 oxc_syntax = "0.157"
 regress = { version = "0.12", features = ["utf16"] }
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+smallvec = "1.16"
 
 [workspace]
 members = [".", "wasm", "sync-server", "macros"]
