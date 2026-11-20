@@ -16,6 +16,7 @@
 import { createCompiler } from '@zubra/compiler/wasm';
 import * as runtimeLists from '@zubra/runtime/modules';
 import { createCore, parseAttributes, propsFrom, SOURCE_EXTENSION } from './core.js';
+import { engineOf, unknownOptions } from './options.js';
 
 export { parseAttributes, propsFrom };
 
@@ -40,12 +41,24 @@ function normalize(path) {
  * runtime's base as one file, `<prefix>/runtime/zubra.js`, and the files beside it that their
  * components name; serve `@zubra/runtime`'s `dist/split` there (where `dist/production` would
  * otherwise go). `dist/bundled`, from before the split, still works there: `zubra.js` is then
- * the whole core and the files beside it only pass its names on. `signals: true` (experimental):
- * the runtime you serve has the TC39 engine, `dist/production` with its `signal-tc39.js` served as
- * `signal.js`; not with `bundle`.
+ * the whole core and the files beside it only pass its names on. `engine: 'signals'`
+ * (experimental; `'zubra'` is the default): the runtime you serve has the TC39 engine,
+ * `dist/production` with its `signal-tc39.js` served as `signal.js`; not with `bundle`.
+ * (`signals: true`, its name in 6.0.0-rc.0, still works.)
  */
-export function createZubra({ wasm, compiler = wasm ? createCompiler(wasm) : null, components = {}, prefix = '/_zubra', cache = true, devtools = false, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, production = true, onError, streamTimeout, signals = false, minify = production && !devtools } = {}) {
-  if (signals && bundle) throw new Error("@zubra/server/edge: signals: true can't go with bundle: true, whose files hold Zubra's engine. Serve @zubra/runtime's dist/production, with signal-tc39.js as signal.js");
+export function createZubra(options = {}) {
+  const say = options.warn ?? console.warn;
+  const engine = engineOf(options, '@zubra/server/edge', options.production === false ? say : null);
+  for (const message of unknownOptions(options, OPTIONS, '@zubra/server/edge')) say(message);
+  const { engine: _engine, ...rest } = options;
+  return create({ ...rest, signals: engine === 'signals' });
+}
+
+/** What the edge's `createZubra()` takes (`signals` is `engine: 'signals'`'s old name). */
+const OPTIONS = ['wasm', 'compiler', 'components', 'prefix', 'cache', 'devtools', 'imports', 'warn', 'gaps', 'clientModules', 'inline', 'preload', 'bundle', 'production', 'onError', 'streamTimeout', 'engine', 'signals', 'minify'];
+
+function create({ wasm, compiler = wasm ? createCompiler(wasm) : null, components = {}, prefix = '/_zubra', cache = true, devtools = false, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, production = true, onError, streamTimeout, signals = false, minify = production && !devtools } = {}) {
+  if (signals && bundle) throw new Error("@zubra/server/edge: engine: 'signals' can't go with bundle: true, whose files hold Zubra's engine. Serve @zubra/runtime's dist/production, with signal-tc39.js as signal.js");
   if (!compiler) throw new Error("@zubra/server/edge: createZubra() needs the compiler's WebAssembly module (`wasm`), or a `compiler` from createCompiler()");
   const sources = new Map(); // path → source
   const files = new Map(); // name → path
