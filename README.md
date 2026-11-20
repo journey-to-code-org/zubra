@@ -13,7 +13,7 @@ npm create zubra@latest -- --framework server    # a server-rendered app: a Node
 
 The app it writes has a starter page of small components to read and copy from (a counter, a list, a form control, async data, slots), a dev server that updates components in place, a browser test and an `AGENTS.md` for coding agents ([what's in it](docs/guide/starter-app.md)).
 
-**Status: 5.x, stable within the major.** The `.zb` format, the CLI and the runtime's public API have no breaking changes before 6.0. The number counts breaking changes, not years in use: Zubra has no users in production yet and follows new standards as they land, so majors have come close together. [Stability](docs/stability.md) says what that means and gives every package a tier.
+**Status: 6.x, long-term support.** 6.0.0 starts a long-term-support line: everything [Stability](docs/stability.md) marks Stable (the `.zb` format, the compiled ABI, the CLI, the typings and manifest, the hydration markers and the Stable npm entries) is frozen for 6.x and changes only in a major, not before 7.0, and 6.x gets security and critical fixes for 18 months after 6.0.0. The number counts breaking changes, not years in use: majors came close together before 6.0, while Zubra followed new standards as they landed. Coming from 5.x? [Migrating to 6.0](docs/migrating-to-6.0.md): most apps need no change.
 
 ## A component
 
@@ -145,14 +145,18 @@ Each sibling is a separate install that the compiler reports by name when a comp
 - **[The guide](docs/guide/README.md)**: a tutorial from a first component to server rendering, forms and local state, with pages for React, Vue, Svelte and Angular developers.
 - **[The reference](docs/reference.md)**: every rule of the format and the tools. [Writing a component](docs/reference.md#writing-a-component), [JSX components](docs/reference.md#jsx-components), [Directives](docs/reference.md#directives), [Classes, styles, events and references](docs/reference.md#classes-styles-events-and-references), [Script, state and hooks](docs/reference.md#script-state-and-hooks), [Async data](docs/reference.md#async-data), [Slots](docs/reference.md#slots), [Styles](docs/reference.md#styles), [Events](docs/reference.md#events), [Components using components](docs/reference.md#components-using-components), [Forms](docs/reference.md#forms), [Context](docs/reference.md#context), [Server rendering and hydration](docs/reference.md#server-rendering-and-hydration), [Using components in an app](docs/reference.md#using-components-in-an-app), [Sharing components](docs/reference.md#sharing-components), [Moving in from React](docs/reference.md#moving-in-from-react), [Editors and tooling without Rust](docs/reference.md#editors-and-tooling-without-rust), [One file, no runtime: `--emit element`](docs/reference.md#one-file-no-runtime---emit-element), [Describing components to tools](docs/reference.md#describing-components-to-tools), [Safety](docs/reference.md#safety), [Install the CLI without Node or Rust](docs/reference.md#install-the-cli-without-node-or-rust), [The CLI](docs/reference.md#the-cli), [Standards](docs/reference.md#standards).
 - **Topics**: [server rendering](docs/server-rendering.md), [Actions](docs/actions.md), [Sync](docs/sync.md), [the router](docs/router.md), [TypeScript](docs/typescript.md), [security](docs/security.md), [performance](docs/performance.md), [browser support](docs/browser-support.md), [editor support](docs/editor-support.md) and [the framework matrix](docs/framework-matrix.md).
+- **[Stability](docs/stability.md)**: what 6.x promises, and every package's tier. **[Migrating to 6.0](docs/migrating-to-6.0.md)**: the move from 5.x.
 - `CHANGELOG.md` for what each release changed.
 
 ## Stability
 
-5.x freezes, until 6.0:
+6.x is a long-term-support line. Until 7.0, nothing Stable breaks:
 - the authoring formats (`.zb`: script semantics, host tag and flags, `{expr}`, directives, slots, keys, imports, `emit`; JSX components);
-- the CLI's commands and options, and the outputs' behaviour;
-- the runtime's documented exports.
+- the compiled ABI (`abi: 5`), the hydration markers, and the typings and Custom Elements Manifest the compiler writes;
+- the CLI's commands, flags and exit codes;
+- every npm entry marked Stable, including the runtime's documented exports.
+
+Patch releases (6.0.x) are bug and security fixes only; a minor (6.x.0) adds, or changes something Supported, with a reason in `CHANGELOG.md`; Experimental pieces (signals mode, `@zubra/runtime/track`, `@zubra/runtime/outlet`, `@zubra/unplugin/rspack`) may change in any release. [Stability](docs/stability.md) has the whole promise and every package's tier, and [Migrating to 6.0](docs/migrating-to-6.0.md) the move from 5.x.
 
 The generated JavaScript's internal shape (`$define()`'s arguments, parts) is not public API. It is versioned (`abi`): a runtime refuses modules compiled for an `abi` it can't read with an error that says to recompile, instead of misbehaving.
 
@@ -164,7 +168,13 @@ Browser support: `docs/browser-support.md`.
 - `runtime/`: `@zubra/runtime`, with the React, Vue and Angular adapters and the server registry.
 - `plugin/`: `@zubra/unplugin`, with the Astro integration.
 - `compiler/`: `@zubra/compiler`, the compiler as WebAssembly; `wasm/` is its Rust shim.
+- `server/`: `@zubra/server`, components rendered by Express, Fastify, Hono, any template engine and edge workers.
+- `actions/`, `sync/`, `router/`: the siblings `@zubra/actions` (`'use server'`), `@zubra/sync` (`'use collection'`) and `@zubra/router` (`'use route'`).
+- `sync-server/`: `zubra-sync`, the Sync log as one Rust binary, for servers that aren't Node.
+- `clients/`: the Python, Ruby and PHP packages that render components from those servers.
+- `macros/`: `include_zb!`, a component compiled at `cargo build` and embedded in a Rust server (experimental, not published).
 - `editors/`: the language server, the VS Code extension and the browser DevTools extension.
+- `prettier-plugin/`: `prettier-plugin-zubra`, which formats `.zb` files (experimental, not on npm yet).
 - `create/`: `create-zubra`, the starter (`npm create zubra`), with a template per framework and the example components, `AGENTS.md` and browser test they share (`templates/shared/`).
 - `playground/`: the in-browser playground.
 - `demos/`: the demo gallery: `demos/build.mjs` builds the landing page, the documentation site, the playground and every static example under one base path, `.github/workflows/pages.yml` publishes it to GitHub Pages, and `demos/shots/` holds every example's screenshot (`demos/screenshots.mjs` for the static ones; the others' tests take theirs with `ZUBRA_SHOTS`).
@@ -184,6 +194,14 @@ cargo clippy --all-targets --locked -- -D warnings
 (cd runtime && npm run test:tools)       # manifest schema, TypeScript checks, size budgets
 (cd plugin && npm ci && npm test)        # real apps: React, Vue, Svelte, Solid, Lit, Astro, Tailwind; Rollup, webpack, esbuild
 (cd compiler && npm test)                # render API (and, with zubra.wasm built, parity with the CLI)
+(cd server && npm ci && npm test)        # @zubra/server: Express, Fastify, Hono, template engines, the edge
+(cd actions && npm ci && npm test)       # 'use server': the contract, the adapters, with and without JavaScript
+(cd router && npm ci && npm test)        # 'use route': the table, layouts, load, pages in Chromium
+(cd sync && npm ci && npm test)          # 'use collection': reloads, tabs, devices, in Chromium
+(cd sync && npm run test:binary)         # the same, against zubra-sync (cargo build -p zubra-sync first)
+(cd prettier-plugin && npm ci && npm test)  # the Prettier plugin
+(cd clients/python && python -m unittest discover -s tests)  # and clients/ruby, clients/php: see each README
+node --test docs/test/*.test.js          # the docs: framework pages' snippets, stability tiers
 (cd create && npm test)                  # the starter's command line
 node --test "registry/test/*.test.js"    # the registry's components: keyboard and screen-reader behaviour
 (cd examples/frameworks && npm ci && npm test)  # the framework apps, and every starter's own browser test
