@@ -105,6 +105,24 @@ test('a returned redirect tells the enhanced path where to go, #fragment and all
   assert.equal(response.headers.get('zb-location'), 'http://localhost/elsewhere#done');
 });
 
+// Found by the pre-6.0 audit: an action redirecting to a visitor's `next` handed the script a
+// `javascript:` URL to navigate to.
+test('only an http(s) redirect becomes zb-location', async () => {
+  const to = (location) =>
+    createActionsCore({ routes: routesFrom({ '/_zb/action/x/go': () => new Response(null, { status: 303, headers: { location } }) }) })
+      .fetch(new Request('http://localhost/_zb/action/x/go', { method: 'POST', headers: { origin: 'http://localhost', accept: 'application/json' }, body: new URLSearchParams() }));
+  for (const location of ['javascript:alert(1)', 'JavaScript:alert(1)', ' javascript:alert(1)', 'java\tscript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'vbscript:x', 'http://[bad']) {
+    const response = await to(location);
+    assert.equal(response.headers.get('zb-location'), null, location);
+    assert.equal(response.status, 303, `${location}: the plain redirect, which nothing follows`);
+  }
+  for (const location of ['/done#top', 'https://pay.example/checkout', 'http://localhost/x']) {
+    const response = await to(location);
+    assert.equal(response.status, 204, location);
+    assert.equal(response.headers.get('zb-location'), location);
+  }
+});
+
 test('the client script is served, and the page gets a tag for it', async () => {
   const response = await actions.fetch(new Request('http://localhost/_zb/actions.js'));
   assert.match(response.headers.get('content-type'), /javascript/);

@@ -400,9 +400,18 @@ function rewriteImports(code, to) {
  * A path starting `//` or `/\` is another site to a browser, so it's written with one slash;
  * an absolute URL elsewhere (a `next` from the query string) is refused, and so is any scheme
  * that isn't http(s). `redirect(next)` after a sign-in can't send anyone off the site.
+ * A control character (C0 or DEL) anywhere is refused: browsers drop tab, LF and CR from a URL,
+ * so `/\t/evil.example` would arrive as `//evil.example`, another site.
  */
 function checkedLocation({ location, external }, url) {
-  if (/^[/\\]/.test(location)) return '/' + location.replace(/^[/\\]+/, '');
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(location)) throw new RouteError(`redirect() to ${JSON.stringify(location)}: a URL with a control character is refused`);
+  if (/^[/\\]/.test(location)) {
+    const path = '/' + location.replace(/^[/\\]+/, '');
+    // Read the way a browser reads it: still this site, or it's refused.
+    if (new URL(path, url).origin !== url.origin) throw new RouteError(`redirect() to ${JSON.stringify(location)}: not a path on this site`);
+    return path;
+  }
   let target;
   try {
     target = new URL(location, url);

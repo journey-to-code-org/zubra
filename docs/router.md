@@ -90,7 +90,7 @@ It returns the page's props, and may also return or answer with:
 |---|---|
 | `title` | The document's `<title>`. A page's wins over its layout's |
 | `notFound()` | The 404 page, with a 404 |
-| `redirect('/cart')` | 303 to there; `redirect(to, 301)` or `redirect(to, { status, external })` otherwise. It stays on this site: `//elsewhere` is read as the path `/elsewhere`, and another origin or a non-http scheme is a 500 unless `external: true` says it means to leave (never a script URL) |
+| `redirect('/cart')` | 303 to there; `redirect(to, 301)` or `redirect(to, { status, external })` otherwise. It stays on this site: `//elsewhere` (or `/\elsewhere`) is read as the path `/elsewhere`, and another origin or a non-http scheme is a 500 unless `external: true` says it means to leave (never a script URL). A location holding a control character (tab, LF, CR, any C0 or DEL) is a 500 too: browsers drop tab and newlines from a URL, so `/\t/evil.example` would arrive as `//evil.example` |
 | `show('sign-in', { next })` | Another component at the same URL, in place of this one. `{ status: 403 }` as a third argument sets the response's |
 
 `show()` is for a sign-in form or a "this page is for farmers" notice: the address stays what was asked for.

@@ -224,6 +224,39 @@ test("redirect() stays on the site unless it says it's leaving", async () => {
   assert.deepEqual(redirect('/a', 302, { external: true }), redirect('/a', { status: 302, external: true }));
 });
 
+// Found by the pre-6.0 audit: browsers drop tab, LF and CR from a URL, so a Location of
+// `/\t/evil.example/login` arrives as `//evil.example/login`, another site.
+test('redirect() refuses a control character, over real HTTP', { timeout: 15_000 }, async () => {
+  const server = createServer(router.listener);
+  await new Promise((done) => server.listen(0, '127.0.0.1', done));
+  server.unref();
+  const { port } = server.address();
+  const raw = (target) =>
+    new Promise((done) => {
+      let out = '';
+      const socket = connect(port, '127.0.0.1', () => socket.write(`GET ${target} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n`));
+      socket.setTimeout(3000, () => socket.destroy());
+      socket.on('data', (chunk) => (out += chunk));
+      socket.on('close', () => done(out));
+    });
+  const go = async (where) => {
+    const answer = await raw(`/go?to=${encodeURIComponent(where)}`);
+    return [Number(answer.match(/^HTTP\/1\.1 (\d+)/)?.[1]), answer.match(/\r\nlocation: ([^\r\n]*)/i)?.[1] ?? null];
+  };
+  try {
+    assert.deepEqual(await go('//evil.example/login'), [303, '/evil.example/login'], 'the slash form still works');
+    errors.length = 0;
+    for (const where of ['/\t/evil.example/login', '/\n/evil.example/login', '/\r/evil.example/login', '/\t\\evil.example/login', '\\\t\\evil.example', '/x\x00', '/x\x7f', 'http://localhost/\t/x']) {
+      const [status, location] = await go(where);
+      assert.equal(status, 500, JSON.stringify(where));
+      assert.equal(location, null, JSON.stringify(where));
+    }
+    assert.match(String(errors[0]?.message), /control character/);
+  } finally {
+    server.close();
+  }
+});
+
 test("a HEAD doesn't use up an action's one-use answer", async () => {
   answer = { value: 'SAVED' };
   const head = await get('/me', {}, 'HEAD');

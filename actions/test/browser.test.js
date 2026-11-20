@@ -68,3 +68,32 @@ test('without JavaScript: a real post, back to the page, the server renders the 
   assert.equal(await page.$('#outcome'), null);
   await context.close();
 });
+
+// Found by the pre-6.0 audit: the script navigated to any zb-location, `javascript:` included.
+// The answer is faked here (a server from before the fix, or a proxy), so this is the client alone,
+// as written and as built for production.
+test('with JavaScript: only an http(s) zb-location is followed', async () => {
+  for (const build of ['src', 'dist/production']) {
+    const page = await browser.newPage();
+    const warnings = [];
+    page.on('console', (message) => message.type() === 'warning' && warnings.push(message.text()));
+    await page.route('**/_zb/actions.js', (route) => route.fulfill({ contentType: 'text/javascript', path: fileURLToPath(new URL(`../${build}/client.js`, import.meta.url)) }));
+    let zbLocation = 'javascript:window.__pwned=1';
+    await page.route('**/_zb/action/**', (route) => route.fulfill({ status: 204, headers: { 'zb-location': zbLocation } }));
+    await page.goto(`${base}/login`);
+    await page.waitForFunction(() => customElements.get('login-form'));
+    for (const hostile of ['javascript:window.__pwned=1', ' JavaScript:window.__pwned=1', 'data:text/html,<script>parent.__pwned=1</script>']) {
+      zbLocation = hostile;
+      warnings.length = 0;
+      await page.click('button[type=submit]');
+      await page.waitForFunction(() => !document.querySelector('form[aria-busy]'));
+      await page.waitForTimeout(100);
+      assert.equal(await page.evaluate(() => window.__pwned), undefined, `${build}: ${hostile}`);
+      assert.equal(page.url(), `${base}/login`, `${build}: ${hostile}`);
+      assert.match(warnings.join('\n'), /not navigating/, `${build}: ${hostile}`);
+    }
+    zbLocation = '/elsewhere#done';
+    await Promise.all([page.waitForURL(`${base}/elsewhere#done`), page.click('button[type=submit]')]);
+    await page.close();
+  }
+});
