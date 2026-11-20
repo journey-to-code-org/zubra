@@ -179,3 +179,40 @@ test('the server app: a Node server, a form with a server function, no bundler, 
   assert.match(readFileSync(join(typed, 'README.md'), 'utf8'), /^npm run check {3}# type-checks the components[^\n]*\nnpm test {8}# starts the server/m);
   assert.match(readFileSync(join(typed, 'AGENTS.md'), 'utf8'), /`npm run check` type-checks every component/);
 });
+
+// A starter's own `npm test` without Playwright's Chromium: it fails at once, says how to install
+// it, and leaves nothing running (an open server kept `npm test` waiting forever). Run against a
+// Playwright whose launch() fails, as it does when the browser isn't installed.
+for (const framework of ['react', 'server']) {
+  test(`${framework}: the app's test fails fast, with the fix, when Chromium isn't installed`, () => {
+    const dir = join(work(), 'app');
+    create(dir, framework);
+    const playwright = join(dir, 'node_modules/playwright');
+    mkdirSync(playwright, { recursive: true });
+    writeFileSync(join(playwright, 'package.json'), '{ "name": "playwright", "type": "module", "main": "index.js" }');
+    writeFileSync(join(playwright, 'index.js'), "export const chromium = { launch: async () => { throw new Error(\"Executable doesn't exist\"); } };\n");
+    if (framework === 'server') {
+      // The server's own imports (@zubra/server, @zubra/actions) aren't installed here: a plain one.
+      writeFileSync(join(dir, 'server.js'), "import { createServer } from 'node:http';\nexport const server = createServer((req, res) => res.end());\n");
+    } else {
+      // Nothing to build: the test must stop before it builds.
+      writeFileSync(join(dir, 'test/build.js'), "export async function buildApp() { throw new Error('built before the browser started'); }\n");
+    }
+    const started = Date.now();
+    let output = '';
+    let status = 0;
+    try {
+      // (Without the test runner's NODE_TEST_CONTEXT, which would make it report to this one.)
+      const { NODE_TEST_CONTEXT, ...env } = process.env;
+      execFileSync(process.execPath, ['--test', 'test/app.test.js'], { cwd: dir, env, encoding: 'utf8', stdio: 'pipe', timeout: 60_000 });
+    } catch (error) {
+      ({ status } = error);
+      output = `${error.stdout}${error.stderr}`;
+      assert.notEqual(error.signal, 'SIGTERM', `npm test was still running after a minute:\n${output}`);
+    }
+    assert.notEqual(status, 0, 'the test failed');
+    assert.match(output, /npx playwright install chromium/);
+    assert.doesNotMatch(output, /built before the browser started/);
+    assert.ok(Date.now() - started < 30_000, `it took ${Date.now() - started} ms`);
+  });
+}
