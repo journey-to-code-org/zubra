@@ -46,3 +46,15 @@ test('resolveId keeps a variant that is already chosen, with no importer to go b
   assert.equal(await plugin.resolveId.call({}, path, undefined), `${path}?zubra=react`, 'otherwise the project\'s framework');
   assert.equal(await plugin.resolveId.call({}, './x.js', '/app/App.tsx'), null, 'not a component');
 });
+
+test('framework: vanilla (or element, none, plain) gives plain files the element', async () => {
+  const { unplugin } = await import('../src/index.js');
+  const { resolve } = await import('node:path');
+  const path = resolve(new URL('../../runtime/test/browser/fixtures/card.zb', import.meta.url).pathname);
+  for (const framework of ['vanilla', 'element', 'none', 'plain']) {
+    const plugin = unplugin.raw({ framework }, { framework: 'vite' });
+    assert.equal(await plugin.resolveId.call({}, path, undefined), `${path}?zubra=element`, framework);
+  }
+  const react = unplugin.raw({ framework: 'react' }, { framework: 'vite' });
+  assert.equal(await react.resolveId.call({}, path, undefined), `${path}?zubra=react`);
+});

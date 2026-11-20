@@ -35,11 +35,12 @@ Every npm package entry and command below has a tier; `docs/test/stability.test.
 |---|---|---|
 | The `.zb` format and `.zb.jsx` / `.zb.tsx` front ends | Stable | The README's rules are the reference |
 | The compiled ABI (`abi: 5`) | Stable | The runtime still runs `abi: 2` and `abi: 3` output (through `$define`) and `abi: 4` output (through `$element`), filling in what they don't name; `since-4.test.js` runs 5.18.0's output |
-| CLI commands, flags and exit codes | Stable | Except the commands marked below |
+| CLI commands, flags and exit codes | Stable | Both CLIs, native and npm, from one table (`src/cli.rs`); exit codes 0, 1 and 2 as in [the reference](reference.md#the-cli). Except the commands marked below |
+| Diagnostic codes (`ZB2001`) | Stable | [docs/diagnostics.md](diagnostics.md) lists every one; a code is never reused or renumbered |
 | The Custom Elements Manifest and typings the compiler writes | Stable | |
 | Hydration markers (processing instructions) | Stable | The runtime still reads 4.x comment markers |
 | The `zubra request` / `zubra serve` JSON protocol | Supported | What the server clients speak |
-| The compiler's error and warning text | Supported | Tools should read `--format json` codes, not the prose |
+| The compiler's error and warning text | Supported | Tools should read the codes (`--format json`'s `code`, the language server's `Diagnostic.code`), not the prose |
 
 The compiled ABI runs one way: a runtime runs what its own and older compilers wrote, not what a later one writes. So an app's `@zubra/compiler` is never a later release than its `@zubra/runtime`; install the two, and `@zubra/server`, at one version. From the release after 5.19.0 npm enforces it: `@zubra/compiler` has an optional peer on `@zubra/runtime` no older than itself, so installing a compiler ahead of the runtime is refused (`ERESOLVE`) where it used to succeed, and the compiler alone still installs no runtime. 5.19.0 and earlier have no such peer (pinning the runtime alone leaves the compiler on the latest), which is what `@zubra/server`'s warning at start is for.
 

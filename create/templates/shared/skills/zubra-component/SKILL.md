@@ -10,7 +10,7 @@ A Zubra component is one `.zb` file: a `<script>`, a `<style>`, and a template w
 1. **Decide whether it's a leaf.** A component takes data in through props and sends it out through events; it may hold children through slots. If it would need the app's store, router, context or component types, it's a container: write that in the app's framework and put Zubra components inside it. (https://github.com/zubra-js/zubra/blob/main/docs/what-crosses-the-boundary.md has the full list.)
 2. **Name the element with a hyphen** (`star-rating`, not `rating`), and put the file at `src/components/<tag>.zb` unless the project has another convention.
 3. **Write the host tag with every prop**, each with its default, then the script, then the template. Follow the format below.
-4. **Run `zubra check <file>`** (`npx zubra check` without a Rust toolchain). It prints each error with a caret and a suggested fix; `--format json` gives the same as data (Rust CLI only). Done when it prints `no errors`.
+4. **Run `zubra check <file>`** (`npx zubra check` without a Rust toolchain). It prints each error with a caret and a suggested fix; `--format json` gives the same as data, each with its stable code (`ZB2001`). Done when it prints `no errors`.
 5. **If the component is server-rendered, run `zubra check --server <file>`** and move anything it names (a `Date`, an `Intl` call, a `window` read) into `onMount` or behind `hydrated()`, so the server HTML is complete.
 6. **Write the test** the project's other components have (a browser test from `npm create zubra`, or `node --test` with the project's harness), covering each prop, each event and keyboard use.
 

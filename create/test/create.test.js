@@ -106,8 +106,14 @@ test('command line: arguments, and a run without a terminal', () => {
   assert.match(readFileSync(join(cwd, 'zb-app/index.html'), 'utf8'), /<hello-counter/);
   // --typescript says how to check.
   const typed = execFileSync(process.execPath, [new URL('../index.js', import.meta.url).pathname, 'typed', '--framework', 'vanilla', '--typescript'], { cwd, encoding: 'utf8' });
-  assert.match(typed, /A Zubra app \(No framework \(plain HTML and JavaScript\), TypeScript\) is in typed/);
+  assert.match(typed, /A Zubra app \(Vanilla: no framework \(plain HTML and JavaScript\), TypeScript\) is in typed/);
   assert.match(typed, /npm run check {3}type-checks the components/);
+  // No framework is `vanilla`; `element`, `none` and `plain` are its other names.
+  for (const alias of ['element', 'none', 'plain']) {
+    const made = execFileSync(process.execPath, [new URL('../index.js', import.meta.url).pathname, alias, '--framework', alias], { cwd, encoding: 'utf8' });
+    assert.match(made, /A Zubra app \(Vanilla: no framework/, alias);
+    assert.equal(readFileSync(join(cwd, alias, 'index.html'), 'utf8'), readFileSync(join(cwd, 'zb-app/index.html'), 'utf8').replaceAll('zb-app', alias));
+  }
 });
 
 test("no starter component has a registry component's name, so `zubra add` never finds its file taken", () => {

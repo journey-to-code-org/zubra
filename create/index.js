@@ -18,7 +18,7 @@ import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 
 export const FRAMEWORKS = {
-  vanilla: 'No framework (plain HTML and JavaScript)',
+  vanilla: 'Vanilla: no framework (plain HTML and JavaScript)',
   react: 'React',
   vue: 'Vue',
   svelte: 'Svelte',
