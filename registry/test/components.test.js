@@ -27,6 +27,19 @@ const settle = (page) => page.evaluate(async () => {
   await new Promise((resolve) => setTimeout(resolve, 20));
   await Promise.all([...document.querySelectorAll('*')].filter((el) => el.updateComplete).map((el) => el.updateComplete));
 });
+/** WCAG contrast between two CSS colours, resolved by the page (any syntax: hsl, lch, var() already applied). */
+async function contrast(page, a, b) {
+  const [x, y] = await page.evaluate((colours) => colours.map((colour) => {
+    const canvas = Object.assign(document.createElement('canvas'), { width: 1, height: 1 });
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.fillStyle = colour;
+    context.fillRect(0, 0, 1, 1);
+    return [...context.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+  }), [a, b]);
+  const luminance = (rgb) => rgb.map((c) => (c /= 255) <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+  const [high, low] = [luminance(x), luminance(y)].sort((m, n) => n - m);
+  return (high + 0.05) / (low + 0.05);
+}
 const formData = (page) => page.evaluate(() => Object.fromEntries(new FormData(document.querySelector('form'))));
 const done = async (page, messages) => {
   assert.deepEqual(messages, []);
@@ -82,20 +95,62 @@ test('money-input: a labelled field; typed amounts are numbers, formatted on blu
   await done(p, messages);
 });
 
-test('star-rating: a named group of named buttons; keyboard picks; required; reset', async () => {
-  const { page: p, messages, events } = await page('star-rating', '<form><star-rating name="stars" label="Your rating" required></star-rating><button type="reset">Reset</button></form>', ['valuechange']);
-  const group = p.getByRole('group', { name: 'Your rating' });
-  assert.equal(await group.getByRole('button').count(), 5);
-  await group.getByRole('button', { name: '4 of 5' }).focus();
-  await p.keyboard.press('Enter');
+test('star-rating: a named radio group with one tab stop; arrows, Home and End move the rating; required; reset', async () => {
+  const { page: p, messages, events } = await page('star-rating', '<button>Before</button><form><star-rating name="stars" label="Your rating" required></star-rating><button type="reset">Reset</button></form>', ['valuechange']);
+  const group = p.getByRole('radiogroup', { name: 'Your rating' });
+  assert.equal(await group.getAttribute('aria-required'), 'true');
+  assert.equal(await group.getByRole('radio').count(), 5);
+  // One tab stop: the first star while there's no rating.
+  await p.getByRole('button', { name: 'Before' }).focus();
+  await p.keyboard.press('Tab');
+  assert.equal(await p.evaluate(() => document.activeElement.getAttribute('aria-label')), '1 of 5');
+  await p.keyboard.press('Space');
   await settle(p);
-  assert.equal(await group.getByRole('button', { name: '4 of 5' }).getAttribute('aria-pressed'), 'true');
-  assert.deepEqual(await events(), [['valuechange', 4]]);
+  assert.equal(await group.getByRole('radio', { name: '1 of 5' }).getAttribute('aria-checked'), 'true');
+  for (const [key, stars] of [['ArrowRight', 2], ['ArrowUp', 3], ['ArrowLeft', 2], ['End', 5], ['ArrowRight', 5], ['ArrowDown', 4], ['Home', 1], ['ArrowLeft', 1], ['End', 5], ['ArrowLeft', 4]]) {
+    await p.keyboard.press(key);
+    await settle(p);
+    assert.equal(await p.evaluate(() => document.activeElement.getAttribute('aria-label')), `${stars} of 5`, key);
+    assert.equal(await group.getByRole('radio', { checked: true }).getAttribute('aria-label'), `${stars} of 5`, key);
+  }
+  assert.deepEqual(await group.getByRole('radio').evaluateAll((stars) => stars.map((star) => star.tabIndex)), [-1, -1, -1, 0, -1]);
+  assert.deepEqual((await events()).map(([, stars]) => stars), [1, 2, 3, 2, 5, 4, 1, 5, 4]);
   assert.equal((await formData(p)).stars, '4');
+  // Tab leaves the group in one step.
+  await p.keyboard.press('Tab');
+  assert.equal(await p.evaluate(() => document.activeElement.textContent), 'Reset');
+  // An unlit star is at least 3:1 against the surface.
+  const unlit = await group.getByRole('radio', { name: '5 of 5' }).evaluate((star) => getComputedStyle(star).color);
+  assert.ok(await contrast(p, unlit, '#ffffff') >= 3, unlit);
+  // Targets are at least 24×24 CSS pixels.
+  for (const box of await group.getByRole('radio').evaluateAll((stars) => stars.map((star) => star.getBoundingClientRect()))) {
+    assert.ok(box.width >= 24 && box.height >= 24, `${box.width}×${box.height}`);
+  }
   await p.getByRole('button', { name: 'Reset' }).click();
   await settle(p);
   assert.equal(await p.evaluate(() => document.querySelector('star-rating').value), 0);
   assert.equal(await p.evaluate(() => document.querySelector('star-rating').checkValidity()), false);
+  await done(p, messages);
+});
+
+test('star-rating: readonly keeps its one tab stop and its value; disabled leaves the tab order', async () => {
+  const { page: p, messages, events } = await page('star-rating', '<star-rating id="shown" label="Average" value="3" readonly></star-rating><fieldset disabled><star-rating id="off" label="Off" value="2"></star-rating></fieldset>', ['valuechange']);
+  const shown = p.getByRole('radiogroup', { name: 'Average' });
+  assert.equal(await shown.getAttribute('aria-readonly'), 'true');
+  await shown.getByRole('radio', { name: '3 of 5' }).focus();
+  await p.keyboard.press('ArrowRight');
+  await p.keyboard.press('End');
+  await settle(p);
+  assert.equal(await p.evaluate(() => document.activeElement.getAttribute('aria-label')), '3 of 5');
+  await shown.getByRole('radio', { name: '5 of 5' }).click();
+  await settle(p);
+  assert.equal(await shown.getByRole('radio', { checked: true }).getAttribute('aria-label'), '3 of 5');
+  const off = p.getByRole('radiogroup', { name: 'Off' });
+  assert.equal(await off.getAttribute('aria-disabled'), 'true');
+  assert.deepEqual(await off.getByRole('radio').evaluateAll((stars) => stars.map((star) => star.tabIndex)), [-1, -1, -1, -1, -1]);
+  await off.getByRole('radio', { name: '4 of 5' }).click({ force: true });
+  await settle(p);
+  assert.deepEqual(await events(), []);
   await done(p, messages);
 });
 
@@ -267,12 +322,16 @@ test('streak-grid: a named group of day buttons; arrow keys move by day and week
 
 test('flip-card: a toggle button named by the face showing; Space and Enter flip it', async () => {
   const { page: p, messages, events } = await page('flip-card', '<flip-card><span slot="front">Capital of France?</span><span slot="back">Paris</span></flip-card>', ['flippedchange']);
-  const card = p.getByRole('button', { name: /Capital of France\?/ });
+  // Named by exactly the face's text; the hint is its description.
+  const card = p.getByRole('button', { name: 'Capital of France?', exact: true });
   assert.equal(await card.getAttribute('aria-pressed'), 'false');
+  assert.equal(await card.evaluate((el) => el.getRootNode().getElementById(el.getAttribute('aria-describedby'))?.textContent), 'Click or press Space to flip');
+  const hint = await card.evaluate((el) => getComputedStyle(el.getRootNode().querySelector('.hint')).color);
+  assert.ok(await contrast(p, hint, '#ffffff') >= 4.5, hint);
   await card.focus();
   await p.keyboard.press('Space');
   await settle(p);
-  assert.equal(await p.getByRole('button', { name: /Paris/ }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await p.getByRole('button', { name: 'Paris', exact: true }).getAttribute('aria-pressed'), 'true');
   await p.keyboard.press('Enter');
   assert.deepEqual(await events(), [['flippedchange', true], ['flippedchange', false]]);
   await done(p, messages);
@@ -329,6 +388,13 @@ test('chat-message: your messages, mentions of you and your reactions are marked
   await tools.getByRole('button', { name: 'React 🎉' }).click();
   await tools.getByRole('button', { name: 'Reply' }).click();
   assert.deepEqual(await events(), [['reacttoggle', '🎉'], ['reply', null]]);
+  // White initials are at least 4.5:1 on every author's colour (the hue comes from the name).
+  for (const author of ['Grace Hopper', 'Ada Lovelace', 'Alan Turing', 'Bo', 'Cy', 'Di', 'Ed', 'Flo', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kim', 'Lu']) {
+    await p.evaluate((name) => { document.querySelector('chat-message').message = { id: '1', author: name, text: 'Hi', time: 0, reactions: {}, replyTo: null }; }, author);
+    await settle(p);
+    const [ink, fill] = await p.$eval('chat-message .avatar', (el) => [getComputedStyle(el).color, getComputedStyle(el).backgroundColor]);
+    assert.ok(await contrast(p, ink, fill) >= 4.5, `${author}: ${fill}`);
+  }
   await done(p, messages);
 });
 
@@ -494,6 +560,11 @@ test('dropdown-menu: a menu button; arrows and typing move; picking returns focu
   assert.equal(await focused(), 'Edit');
   await p.keyboard.press('ArrowUp'); // loops
   assert.equal(await focused(), 'Delete');
+  // The focused item has an outline at least 3:1 against the menu, not only a faint background.
+  const ring = await p.evaluate(() => { const style = getComputedStyle(document.activeElement); return { width: style.outlineWidth, color: style.outlineColor, style: style.outlineStyle, menu: getComputedStyle(document.activeElement.parentElement).backgroundColor }; });
+  assert.equal(ring.style, 'solid');
+  assert.equal(ring.width, '2px');
+  assert.ok(await contrast(p, ring.color, ring.menu) >= 3, ring.color);
   await p.keyboard.press('Enter');
   await settle(p);
   assert.equal(await menu.isVisible(), false);

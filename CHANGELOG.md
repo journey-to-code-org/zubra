@@ -4,6 +4,11 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+### Changed
+
+- **The registry's `star-rating` is a radio group with one tab stop.** It was five `aria-pressed` buttons, five tab stops, while the registry promises one tab stop and arrow keys for radio-like groups. Now it is `role="radiogroup"` named by `label`, with `role="radio"` stars and `aria-checked`, a roving tabindex (the chosen star, or the first while there's none), Right and Up for one more star, Left and Down for one fewer, Home and End for one and all; `aria-required` and `aria-readonly` follow `required` and `readonly`, and a disabled control (its own `disabled`, or a disabled `<fieldset>`) is `aria-disabled` and leaves the tab order. Props, the `valuechange` event and the form value are unchanged. Stars are at least 24×24 px, and an unlit star is 3.5:1 on white (it was 1.8:1). A copy you added with `zubra add` before keeps the old roles until you run `zubra add star-rating --force`. Found by the pre-6.0 audit.
+- **Registry components meet WCAG 2.2 AA under axe.** `dropdown-menu`'s focused item had only a background 1.1:1 against the menu; it now has a 2px outline in `--accent` when focused from the keyboard. `flip-card`'s hint was 3.3:1 (now `--muted`'s default, `#667085`, 5:1), and the hint was part of the card's accessible name, so a speech user saying the face's text didn't match it: the name is the face's text and the hint is its description (`aria-describedby`). `chat-message`'s white initials on `hsl(h 55% 40%)` were 3.4:1 for green names; the avatar is `lch(46% 40 h)`, at least 4.8:1 on every hue. axe (WCAG 2.0 to 2.2 A and AA, and its experimental rules) finds nothing in any registry component. Found by the pre-6.0 audit.
+
 ## 6.0.0-rc.0 — 2026-11-20
 
 A release candidate for 6.0.0, on npm's `next` tag: `npm install @zubra/runtime@next @zubra/compiler@next` (and the same for the other packages) tries it, and a plain `npm install` keeps 5.23. The VS Code extension stays on 5.23.0 until 6.0.0.
