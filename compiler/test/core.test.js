@@ -176,3 +176,15 @@ test('markup nested past the limit is a CompileError, and the compiler goes on a
   }
   assert.throws(() => compiler.renderToString(path, { files: { [path]: `<x-deep>${nested(300)}</x-deep>` } }), /nested more than 256/);
 });
+
+// Without zubra.wasm (a checkout that hasn't run `npm run build`), the error names both ways out:
+// the WebAssembly build, and ZUBRA_COMPILER, the only other compiler this package uses.
+test('without zubra.wasm or ZUBRA_COMPILER, the error says how to give it a compiler', { skip: node.available() ? 'zubra.wasm is built' : false }, async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { ZUBRA_COMPILER, ...env } = process.env;
+  const script = "import('./index.js').then((m) => { try { m.request({ command: 'version' }); } catch (error) { console.log(error.message); } })";
+  const message = execFileSync(process.execPath, ['-e', script], { cwd: join(here, '..'), env, encoding: 'utf8' });
+  assert.match(message, /zubra\.wasm is missing/);
+  assert.match(message, /npm run build/);
+  assert.match(message, /ZUBRA_COMPILER/);
+});
