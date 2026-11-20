@@ -313,6 +313,8 @@ function @glide(elements, change) {
   if (globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return change();
   const before = new Map(elements.map((element) => [element, element.getBoundingClientRect()]));
   change();
+  // Every read first, then every write: a read after a write lays the page out again.
+  const moves = [];
   for (const [element, was] of before) {
     if (!element.isConnected) continue;
     const now = element.getBoundingClientRect();
@@ -320,21 +322,24 @@ function @glide(elements, change) {
     const y = was.top - now.top;
     if (!x && !y) continue;
     if (element.hasAttribute("data-leaving")) {
-      // Held where it was on screen as it leaves, even if its container moved.
-      element.style.top = `${parseFloat(element.style.top) + y}px`;
-      element.style.left = `${parseFloat(element.style.left) + x}px`;
+      moves.push({ element, x, y, leaving: true });
       continue;
     }
     const style = getComputedStyle(element);
     const time = /^\s*([\d.]+)(ms|s)\s*$/.exec(style.getPropertyValue("--zb-move-duration"));
     const duration = time ? Number(time[1]) * (time[2] === "s" ? 1000 : 1) : 250;
     if (!duration) continue;
+    moves.push({ element, x, y, duration, easing: style.getPropertyValue("--zb-move-easing").trim() || "cubic-bezier(0.2, 0, 0, 1)" });
+  }
+  for (const { element, x, y, leaving, duration, easing } of moves) {
+    if (leaving) {
+      // Held where it was on screen as it leaves, even if its container moved.
+      element.style.top = `${parseFloat(element.style.top) + y}px`;
+      element.style.left = `${parseFloat(element.style.left) + x}px`;
+      continue;
+    }
     // "add": on top of the element's own transform.
-    element.animate([{ transform: `translate(${x}px, ${y}px)` }, { transform: "none" }], {
-      duration,
-      easing: style.getPropertyValue("--zb-move-easing").trim() || "cubic-bezier(0.2, 0, 0, 1)",
-      composite: "add",
-    });
+    element.animate([{ transform: `translate(${x}px, ${y}px)` }, { transform: "none" }], { duration, easing, composite: "add" });
   }
 }
 
