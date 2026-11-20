@@ -44,7 +44,7 @@ const stars = ref(1);
 | another `.zb` component | the custom element class |
 | any other file | the project's framework (detected from the React or Vue Vite plugin), or the element class when there is none |
 
-Every variant defines the custom element, so `<zb-rating>` also works in plain HTML. Add `?element`, `?react` or `?vue` to an import to choose explicitly. `tag` is also exported.
+Every variant defines the custom element, so `<my-rating>` also works in plain HTML. Add `?element`, `?react` or `?vue` to an import to choose explicitly. `tag` is also exported.
 
 - **React**: props are set as properties; `on<Event>` in any casing listens for the component's events (`onValueChange` for `valuechange`); `value` + `onValueChange` is the controlled pattern. Children go into the component's slots (`slot="name"` for named slots) and stay live as React updates them.
 - **Vue**: props are set as DOM properties before the element starts; events are Vue events (`@valuechange`); every `<prop>` + `<prop>change` pair supports `v-model:<prop>`, and `v-model` binds `value`. Named slots (`<template #title>`) become `slot="title"` content.

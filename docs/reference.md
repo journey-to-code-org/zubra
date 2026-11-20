@@ -22,7 +22,7 @@ A component can also be a function in a `.zb.jsx` or `.zb.tsx` file. It compiles
 ```jsx
 // rating.zb.jsx
 /** A two-star rating. */
-export default function ZbRating({ value = 0, onValueChange }) {
+export default function MyRating({ value = 0, onValueChange }) {
   let hovered = null                         // state: assigning it updates the DOM
   const shown = hovered ?? value             // derived from props and state: stays in sync
   function rate(stars) {
@@ -41,7 +41,7 @@ export default function ZbRating({ value = 0, onValueChange }) {
 }
 ```
 
-- **The function's name is the tag**: `ZbRating` is `<zb-rating>` (custom elements need a hyphen, so `Rating` is an error). Return the host itself (`<zb-rating shadow>…</zb-rating>`) to set `shadow` or `form-associated`.
+- **The function's name is the tag**: `MyRating` is `<my-rating>` (custom elements need a hyphen, so `Rating` is an error). Return the host itself (`<my-rating shadow>…</my-rating>`) to set `shadow` or `form-associated`.
 - **Destructured parameters are props**, with their defaults; one without a default is required. **`on<Name>` parameters are events**: calling `onValueChange(x)` fires `valuechange` with `detail: x`, so React users pass `onValueChange` and everyone else listens for `valuechange`. **`children`** is the default slot; `<zb-slot name="…">` declares named ones.
 - **The body runs once per element**, not on every change. A top-level `let` is state, a top-level `const` that reads props or state is derived, and everything in the returned JSX is a fine-grained binding.
 - **In the JSX**: `cond && <X/>` and `cond ? <A/> : <B/>` are conditionals, `list.map((item, i) => <li key={item.id}>…</li>)` is a keyed list, imported components are used by name (`import Badge from './badge.zb'`, then `<Badge label="x" />`), and `className`, `htmlFor` and `onClick` mean `class`, `for` and `onclick`. Any JavaScript expression works, as in `.zb` templates.
@@ -50,6 +50,8 @@ export default function ZbRating({ value = 0, onValueChange }) {
 `plan/decisions/jsx-components.md` in the project docs records the design.
 
 ## Directives
+
+The `zb-` prefix is reserved for Zubra's own elements: the directives below, and `<zb-outlet>` and `<zb-context>`, which `@zubra/runtime` defines. Since 6.0 any other `<zb-…>` element in a template is an error, with the nearest of them as help (`<zb-iff>` gets "did you mean `<zb-if>`?"), so name your own components with another prefix (`<app-card>`, `<my-card>`).
 
 - `<zb-if test={…}>`, with `<zb-else-if test={…}>` and an optional final `<zb-else>` inside it. For one element, the condition can be an attribute: `<p zb-if={…}>`, with `zb-else-if={…}` and `zb-else` on the siblings right after it. Both forms compile to the same thing. The `zb-` attribute prefix is reserved: any other `zb-` attribute is an error.
 - **Markup in braces**, in the three forms that are directives: `{a && <p>…</p>}` is a `zb-if`, `{a ? <b>…</b> : <i>…</i>}` a `zb-if` with a `zb-else` (either side may be text, an expression or `null`), and `{list.map((item, i) => <li key={item.id}>…</li>)}` a `zb-each`, keyed by the element's `key`. The markup inside is the template's HTML, one element per brace. Other markup in braces, and markup in an attribute's braces, are errors that say what to write instead.
@@ -77,12 +79,12 @@ CSS animates content coming in on its own: `@starting-style` gives a transition 
   .toast[data-leaving] { opacity: 0; translate: 0 8px; }       /* going out */
   li { --zb-move-duration: 300ms; --zb-move-easing: ease-out; } /* gliding */
 </style>
-<zb-x open={false} items={[]}>
+<my-x open={false} items={[]}>
   <p class="toast" zb-if={open} zb-animate>Saved</p>
   <ul>
     <zb-each items={items} as="item" key={item.id} animate><li>{item.name}</li></zb-each>
   </ul>
-</zb-x>
+</my-x>
 ```
 
 - **Leaving.** When a branch goes away, its elements stay where they are with the `data-leaving` attribute and `inert` (no clicks or focus on the way out), and are removed once the transitions and animations that attribute starts have ended. With none, they go at once; an infinite animation inside (a spinner) isn't waited for. The branch replacing it is rendered beside it, so the two can cross-fade. A whole `zb-if` chain animates, and `zb-switch` is one.
@@ -101,7 +103,7 @@ The same behaviour is `leave(nodes, { float })` and `glide(elements, change)` in
   let panel = null                                         // ref={panel} assigns the element
   function save() { … }
 </script>
-<zb-panel tone="teal" size={12}>
+<my-panel tone="teal" size={12}>
   <zb-document onkeydown.escape={() => (open = false)}></zb-document>
   <section ref={panel} class="panel" class:open class:big={size > 20}
            style:--tone={tone} style:font-size={size + "px"}>
@@ -110,7 +112,7 @@ The same behaviour is `leave(nodes, { float })` and `glide(elements, change)` in
     </form>
   </section>
   <zb-if test={size > 20}>Big<zb-else-if test={size > 10}>Medium</zb-else-if><zb-else>Small</zb-else></zb-if>
-</zb-panel>
+</my-panel>
 ```
 
 - **`class:name={…}`** adds the class while the value is truthy; bare `class:open` reads `open`. `class={{ open, big: size > 20 }}` is the same as one toggle per entry. They combine with a static `class`, and with a computed one, whose classes are then added and removed token by token.
@@ -136,12 +138,12 @@ The same behaviour is `leave(nodes, { float })` and `glide(elements, change)` in
   }
   onMount(() => console.log('connected'))
 </script>
-<zb-counter label="Clicks">
+<my-counter label="Clicks">
   <button type="button" onclick={increment}>{label}: {count} ({doubled})</button>
-</zb-counter>
+</my-counter>
 ```
 
-- **A prop's name is the prop**, in the script as in the template: read `label`, assign `label = …` (the element updates as if it were set from outside). So the script can't declare a name a prop has. A default taken from the script uses another name: `<zb-card title={titleDefault}>`.
+- **A prop's name is the prop**, in the script as in the template: read `label`, assign `label = …` (the element updates as if it were set from outside). So the script can't declare a name a prop has. A default taken from the script uses another name: `<my-card title={titleDefault}>`.
 - **A top-level `let` is state.** Reading it in the template, in a `computed` or an effect tracks it, and assigning it (`count++`, `count = 0`, `count += 2`) updates what reads it. Its initial value renders on the server.
 - **Mutating state works too**: `items.push(x)`, `items.splice(i, 1)`, `items[0].done = true`, `form.email = "…"`, `delete form.email`. A `let` holding an array or a plain object holds a reactive proxy of it, which tracks each property separately, so `items[0].done = true` updates only what read it, and nested arrays and objects are wrapped as they're read. Class instances, `Map`, `Set`, `Date`, DOM nodes and functions aren't wrapped. The proxy is the same object each time and works as the original does (`Array.isArray`, `JSON.stringify`, spread, every method), but it isn't the original: `raw(items)` from `@zubra/runtime` gives that back, for `structuredClone`, `postMessage` or a library that compares by identity. Props aren't wrapped (they're the parent's); `let draft = from(items)` is a mutable copy that follows one.
 - **`let left = from(seconds)`** (from `@zubra/runtime`) is state that follows a prop until it's assigned, and starts over when the prop changes: a timer's time left resets when its length does. `let running = from(seconds, false)` starts as `false` instead, again whenever `seconds` changes. A plain `let left = seconds` reads the prop once. `zubra convert` writes `from()` for React's `useState(prop)` plus an effect that resets it.
@@ -180,13 +182,13 @@ Everything a component's script creates is disposed with the element, so you rar
   const p = props()
   const user = resource(({ signal }) => fetch(`/api/users/${p.userId}`, { signal }).then((r) => r.json()))
 </script>
-<zb-user user-id="1">
+<my-user user-id="1">
   <zb-await value={user}>
     <zb-pending><p>Loading…</p></zb-pending>
     <zb-then as="data"><h2>{data.name}</h2></zb-then>
     <zb-catch as="error"><p class="error">{error.message} <button onclick={retry}>Try again</button></p></zb-catch>
   </zb-await>
-</zb-user>
+</my-user>
 ```
 
 - **The fetcher re-runs** when a signal it read changes (here the `userId` prop). In a `.zb` script (and a `.zb.jsx` or `.zb.tsx` component) that holds for reads that run later too: props, state and a signal's `.get()` read after an `await`, or in a callback such as a `.then()`, whether or not the fetcher is async. The compiler passes them through the run's `track()`, from `@zubra/runtime/track` (experimental, about 0.6 KB gzipped; a compiled module imports it only when a fetcher has such a read, so an import map needs that entry, and `@zubra/server` adds it). Elsewhere, a read after the first `await` is followed only through `track()`: `resource(tracked(async ({ signal, track }) => …))`. A new run aborts the previous one through the `AbortSignal` it was given, and so does the element's removal. An answer that arrives after a newer run started is dropped. While a new run is pending, `value` keeps the previous result.
@@ -211,10 +213,10 @@ Everything a component's script creates is disposed with the element, so you rar
   import { hasSlot } from '@zubra/runtime'
   const hasFooter = hasSlot('footer')
 </script>
-<zb-card>
+<my-card>
   <zb-slot></zb-slot>
   <zb-if test={hasFooter}><footer><zb-slot name="footer"></zb-slot></footer></zb-if>
-</zb-card>
+</my-card>
 ```
 
   The server answers it too, from the slots it was given, so the footer is in the server's HTML (and works without JavaScript) when there's content for it. That holds for a whole `const x = hasSlot('name')` with the name written out; a name in a variable is the browser's to answer.
@@ -224,13 +226,13 @@ Everything a component's script creates is disposed with the element, so you rar
 A slot can't be inside `zb-each`, so a list can't take one piece of content per item that way. An **outlet** asks the app to render it: `<zb-outlet name="row" item={item}>` marks the place, and the app's framework renders into it through a portal, so what it renders keeps the app's context, state and handlers. From React, a `render<Name>` prop fills the outlets of that name:
 
 ```html
-<zb-row-list items={[]}>
+<my-row-list items={[]}>
   <ul>
     <zb-each items={items} as="item" key={item.id}>
       <li><zb-outlet name="row" item={item}></zb-outlet></li>
     </zb-each>
   </ul>
-</zb-row-list>
+</my-row-list>
 ```
 
 ```jsx
@@ -246,13 +248,13 @@ The list keeps its keys and order; a keyed move keeps each row's React state, an
   :host { display: block }
   h2 { color: var(--card-accent, crimson) }
 </style>
-<zb-card heading="">
+<my-card heading="">
   <h2>{heading}</h2>
   <zb-slot></zb-slot>
-</zb-card>
+</my-card>
 ```
 
-- **Scoped with the platform's own `@scope`.** In light DOM, a component's `<style>` applies to its own elements and stops at content callers put in its slots. The runtime and the HTML output mark each slotted element `data-zb-slotted="zb-card"`, and the stylesheet is `@scope (zb-card) to ([data-zb-slotted="zb-card"])`. The marker names the component, so a parent's content placed in a child's slot is still the parent's to style, as with shadow DOM. The marker is removed when content leaves the slot. In shadow DOM the shadow root does the scoping and the CSS is used as written. `:host` means the host either way, so one stylesheet works with or without `shadow`. So does `::slotted()`: in light DOM, `.list > ::slotted(li)` is rewritten to `.list > :where([data-zb-slotted="zb-card"]):is(li)` in a scope with no lower boundary, so a layout component can place what it's given (the slotted elements themselves, not their descendants, with no more specificity than `li`, as in shadow DOM). `::slotted()` attached to a slot (`slot::slotted(li)`) is left as written; the `<zb-slot>` isn't in the light DOM to match. `::part()` works the same way: a rule like `zb-meter::part(label)` in a component that imports a light-DOM `<zb-meter>` becomes `@scope (zb-meter) to ([data-zb-slotted]) { [part~="label"] { … } }`, which reaches the child's own elements with that part and stops at content slotted into it. A shadow-DOM child keeps the real `::part()`. One limit: slotted content is marked only when the child has a `<style>` of its own, so with an unstyled child, a `part` attribute on your own content slotted into it is matched too.
+- **Scoped with the platform's own `@scope`.** In light DOM, a component's `<style>` applies to its own elements and stops at content callers put in its slots. The runtime and the HTML output mark each slotted element `data-zb-slotted="my-card"`, and the stylesheet is `@scope (my-card) to ([data-zb-slotted="my-card"])`. The marker names the component, so a parent's content placed in a child's slot is still the parent's to style, as with shadow DOM. The marker is removed when content leaves the slot. In shadow DOM the shadow root does the scoping and the CSS is used as written. `:host` means the host either way, so one stylesheet works with or without `shadow`. So does `::slotted()`: in light DOM, `.list > ::slotted(li)` is rewritten to `.list > :where([data-zb-slotted="my-card"]):is(li)` in a scope with no lower boundary, so a layout component can place what it's given (the slotted elements themselves, not their descendants, with no more specificity than `li`, as in shadow DOM). `::slotted()` attached to a slot (`slot::slotted(li)`) is left as written; the `<zb-slot>` isn't in the light DOM to match. `::part()` works the same way: a rule like `my-meter::part(label)` in a component that imports a light-DOM `<my-meter>` becomes `@scope (my-meter) to ([data-zb-slotted]) { [part~="label"] { … } }`, which reaches the child's own elements with that part and stops at content slotted into it. A shadow-DOM child keeps the real `::part()`. One limit: slotted content is marked only when the child has a `<style>` of its own, so with an unstyled child, a `part` attribute on your own content slotted into it is matched too.
 - **`host-reset`** (with `shadow`) is for components on pages you don't control: embeds and extensions' widgets. The host is in the page, so a page's `* { … !important }` matches it and beats `:host`, and fonts and colours inherit into the shadow root. `host-reset` starts the host from `all: initial` and makes the component's own top-level `:host` declarations `!important`, which wins across the shadow boundary.
 - **Utilities and app CSS win.** The CSS goes in the `components` cascade layer, and the sheet declares Tailwind's layer order (`theme, base, components, utilities`). Utility classes override a component's defaults, base and reset styles come before them, and unlayered page CSS overrides both, whichever stylesheet loads first. `<style layer="…">` picks another layer; `<style layer="none">` leaves the CSS unlayered.
 - **Page CSS still applies in light DOM.** Tailwind, Bootstrap or your own global classes work on a component's elements as on any element. A parent's styles can also reach into a light-DOM child's elements, as page CSS does; use `shadow` when a component needs full isolation. That cuts both ways: a page rule for a common class name (`.table`, `.card`, `.active`) also matches an element inside the component that has that class, and because the component's CSS is in the `components` layer, an unlayered page rule wins whatever its specificity. A page whose `.table { height: 100% }` styles its own layout will also size a component's `<button class="card table">`. For a component that goes on pages you don't write, name its internal classes for the component, or make variants attributes (`data-size={size}`, styled as `[data-size=table]`) rather than generic class names.
@@ -281,7 +283,7 @@ Light-DOM components need no setup: utility classes in templates are just classe
     emit('valuechange', stars)
   }
 </script>
-<zb-rating value={0}> … </zb-rating>
+<my-rating value={0}> … </my-rating>
 ```
 
 - **Nothing is declared by hand.** Each `emit("name", detail)` call declares an event. The compiler binds `emit` to each element, so handlers and timers can call it at any time. The name must be a string literal, and `emit` must be called directly (not passed around), so the compiler sees every event.
@@ -300,13 +302,13 @@ Light-DOM components need no setup: utility classes in templates are just classe
 <script>
   import './badge.zb'
 </script>
-<zb-inbox items={[]}>
+<my-inbox items={[]}>
   <zb-each items={items} as="item" key={item.name}>
-    <zb-badge label={item.name} info={{ color: item.unread > 0 ? "red" : "gray" }}>
+    <my-badge label={item.name} info={{ color: item.unread > 0 ? "red" : "gray" }}>
       <em slot="icon">{item.unread}</em>new mail
-    </zb-badge>
+    </my-badge>
   </zb-each>
-</zb-inbox>
+</my-inbox>
 ```
 
 - **Importing a `.zb` file** makes its tag a known child, loaded relative to the importing file. Cycles, a component imported twice, and a component importing itself are errors.
@@ -488,7 +490,7 @@ Angular needs `CUSTOM_ELEMENTS_SCHEMA` and nothing else for props (`[heading]="x
 @Component({
   imports: [FormsModule, ZubraModel],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
-  template: `<zb-rating zubraModel [(ngModel)]="stars"></zb-rating>`,
+  template: `<my-rating zubraModel [(ngModel)]="stars"></my-rating>`,
 })
 ```
 

@@ -16,7 +16,7 @@ const middleware = zubra({ wasm, components: { 'price-tag': priceTag } });
 
 `@zubra/runtime` is not served by the Worker: put it in your static assets under `<prefix>/runtime/` (`dist/split` with `bundle: true`, `dist/production` without), or point the import map at a CDN with `imports`. A page then loads the runtime's base and only the files its components name. Two things load the whole script API instead (the base and five small files): a `<script type="module">` of your own that imports `@zubra/runtime`, and `@zubra/sync`'s modules where they come from your static assets, since the Worker can't rewrite files it doesn't serve.
 
-Signals mode (experimental, the TC39 Signals API as the runtime's engine): serve `dist/production` with its `signal-tc39.js` in place of `signal.js`, and pass `createZubra({ signals: true })`, which refuses `bundle: true` (its files hold Zubra's own engine).
+Signals mode (experimental, the TC39 Signals API as the runtime's engine): serve `dist/production` with its `signal-tc39.js` in place of `signal.js`, and pass `createZubra({ engine: 'signals' })`, which refuses `bundle: true` (its files hold Zubra's own engine).
 
 ## Proven
 

@@ -9,7 +9,7 @@ so that how every app updates doesn't depend on a Stage 1 API (see [Engines](#en
 | Module | Shaped like | Status |
 |---|---|---|
 | `src/signal.js` | Zubra's reactive engine: the [TC39 Signals](https://github.com/tc39/proposal-signals) model (`Signal.State`, `Signal.Computed`, `untrack`) without the proposal's Watcher and introspection | Done. The default |
-| `src/signal-tc39.js` | Signals mode (experimental): the TC39 Signals API itself, the native `globalThis.Signal` when present, otherwise `src/signal-impl.js` | Done. Opt-in: `signals: true` |
+| `src/signal-tc39.js` | Signals mode (experimental): the TC39 Signals API itself, the native `globalThis.Signal` when present, otherwise `src/signal-impl.js` | Done. Opt-in: `engine: 'signals'` |
 | `src/effect.js` | Not a proposal: the Signals proposal leaves effects to libraries. Built on the engine's reactions and microtasks | Done |
 | `src/element.js` parts (`walk`/`bind`) | [DOM Parts](https://github.com/WICG/webcomponents/blob/gh-pages/proposals/DOM-Parts.md): a template plus the locations of its dynamic parts | Done: text, attributes, properties, events, `zb-if`/`zb-each` regions (keyed rows move with `moveBefore()`), slots; paths count elements and comments only, and a region counts once |
 | `src/element.js` `define` | Custom elements, light DOM by default, shadow opt-in | Done: signal-backed props, typed attributes, pre-upgrade capture, hydration without re-rendering, pause on detach |
@@ -67,8 +67,9 @@ contract. Two engines implement it:
   `subtle.untrack`/`subtle.currentComputed`, so `new Signal.State(0)` works on either engine.
 - **Signals mode** (`src/signal-tc39.js`, experimental): the TC39 Signals API, native or
   `src/signal-impl.js`. `state()` returns a real `Signal.State`, and `Signal` is the proposal's
-  whole API. An app opts in with `signals: true` in `@zubra/unplugin`, `@zubra/server` or
-  `buildRuntime()`, each of which puts this file where `signal.js` would be.
+  whole API. An app opts in with `engine: 'signals'` in `@zubra/unplugin`, `@zubra/server` or
+  `buildRuntime()`, each of which puts this file where `signal.js` would be (`signals: true`,
+  its name in 6.0.0-rc.0, still works, with a warning).
 
 Every suite runs on both: `ZUBRA_ENGINE=signals` runs the unit tests (through a module hook,
 `node --import ./test/engine/register.js`) and the browser tests in signals mode, and CI has a job
