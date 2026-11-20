@@ -28,6 +28,10 @@ pub struct Unsupported;
 
 type Result<T> = std::result::Result<T, Unsupported>;
 
+/// A call's arguments: most calls have one or two (`slice(0, 1)`, `toFixed(2)`, an arrow's
+/// item and index), kept inline instead of in a list of their own.
+type Args = smallvec::SmallVec<[Val; 2]>;
+
 /// A value: JSON, `undefined`, an arrow function, or a regular expression literal.
 #[derive(Clone, Debug)]
 pub enum Val {
@@ -716,8 +720,8 @@ impl Evaluator<'_, '_> {
         self.eval(expression)
     }
 
-    fn arguments(&mut self, arguments: &[Argument<'_>]) -> Result<Vec<Val>> {
-        let mut values = Vec::with_capacity(arguments.len());
+    fn arguments(&mut self, arguments: &[Argument<'_>]) -> Result<Args> {
+        let mut values = Args::with_capacity(arguments.len());
         for argument in arguments {
             match argument {
                 // `Math.max(...points)`: an array's items as arguments.
@@ -784,7 +788,7 @@ impl Evaluator<'_, '_> {
         }
     }
 
-    fn apply(&mut self, closure: &Closure, arguments: Vec<Val>) -> Result<Val> {
+    fn apply(&mut self, closure: &Closure, arguments: Args) -> Result<Val> {
         if closure.block {
             return self.run_block(closure, arguments);
         }
@@ -837,7 +841,7 @@ impl Evaluator<'_, '_> {
         };
         self.apply(
             closure,
-            vec![Val::json(item.clone()), Val::json(Value::from(position))],
+            smallvec::smallvec![Val::json(item.clone()), Val::json(Value::from(position))],
         )
     }
 
@@ -873,8 +877,11 @@ impl Evaluator<'_, '_> {
                 for (position, item) in items.into_iter().enumerate() {
                     let item = item.map_or(Val::Undefined, Val::Json);
                     out.push(
-                        self.apply(closure, vec![item, Val::json(Value::from(position))])?
-                            .into_json()?,
+                        self.apply(
+                            closure,
+                            smallvec::smallvec![item, Val::json(Value::from(position))],
+                        )?
+                        .into_json()?,
                     );
                 }
             }
@@ -887,7 +894,7 @@ impl Evaluator<'_, '_> {
 
     /// Call a function whose body is statements: its parameters and `let`s live in frames of their
     /// own above what it closed over, and only those may change.
-    fn run_block(&mut self, closure: &Closure, arguments: Vec<Val>) -> Result<Val> {
+    fn run_block(&mut self, closure: &Closure, arguments: Args) -> Result<Val> {
         let wrapped = format!("({})", closure.body);
         with_expression(&wrapped, |parsed| {
             let (expression, wrapped) = parsed.ok_or(Unsupported)?;
@@ -898,7 +905,7 @@ impl Evaluator<'_, '_> {
     fn run_statements(
         &mut self,
         closure: &Closure,
-        arguments: Vec<Val>,
+        arguments: Args,
         expression: &Expression<'_>,
         wrapped: &str,
     ) -> Result<Val> {
@@ -1266,7 +1273,8 @@ impl Evaluator<'_, '_> {
                     let replacement: Vec<u16> = match &second {
                         Val::Function(closure) => {
                             // (match, p1, …, pn, offset, string[, groups])
-                            let mut arguments = vec![Val::json(text(&units[each.start..each.end]))];
+                            let mut arguments: Args =
+                                smallvec::smallvec![Val::json(text(&units[each.start..each.end]))];
                             for capture in &each.captures {
                                 arguments.push(match capture {
                                     Some((start, end)) => Val::json(text(&units[*start..*end])),
@@ -1377,13 +1385,13 @@ impl Evaluator<'_, '_> {
         }
     }
 
-    fn method(&mut self, object: &Val, name: &str, arguments: Vec<Val>) -> Result<Val> {
+    fn method(&mut self, object: &Val, name: &str, arguments: Args) -> Result<Val> {
         let value = self.method_inner(object, name, arguments)?;
         self.charge(&value)?;
         Ok(value)
     }
 
-    fn method_inner(&mut self, object: &Val, name: &str, arguments: Vec<Val>) -> Result<Val> {
+    fn method_inner(&mut self, object: &Val, name: &str, arguments: Args) -> Result<Val> {
         let arg = |index: usize| arguments.get(index).cloned().unwrap_or(Val::Undefined);
         match object {
             Val::Json(Value::Array(items)) => match name {
@@ -1545,7 +1553,7 @@ impl Evaluator<'_, '_> {
                     for (position, item) in entries {
                         total = self.apply(
                             &closure,
-                            vec![
+                            smallvec::smallvec![
                                 total,
                                 Val::json(item.clone()),
                                 Val::json(Value::from(position)),
@@ -1576,7 +1584,10 @@ impl Evaluator<'_, '_> {
                                 match self
                                     .apply(
                                         &closure,
-                                        vec![Val::json(a.clone()), Val::json(b.clone())],
+                                        smallvec::smallvec![
+                                            Val::json(a.clone()),
+                                            Val::json(b.clone())
+                                        ],
                                     )
                                     .and_then(|value| to_number(&value))
                                 {
@@ -2112,17 +2123,42 @@ fn to_fixed(value: f64, digits: usize) -> String {
     // and the exact expansion decides. The expansion is up to 1100 digits long and costly to
     // write; a price formatted for every row of a table shouldn't need it.
     const EXTRA: usize = 20;
-    let rounded = format!("{:.*}", digits + EXTRA, value.abs());
-    let (kept, rest) = rounded.split_at(rounded.len() - EXTRA);
-    let half = rest.as_bytes()[0] == b'5' && rest.bytes().skip(1).all(|digit| digit == b'0');
+    // Room for the digits, a carry and a sign: the answer is made in this one buffer.
+    let mut out: Vec<u8> = Vec::with_capacity(digits + EXTRA + 24);
+    std::io::Write::write_fmt(&mut out, format_args!("{:.*}", digits + EXTRA, value.abs()))
+        .expect("writing to a Vec");
+    let kept = out.len() - EXTRA;
+    let rest = &out[kept..];
+    let half = rest[0] == b'5' && rest[1..].iter().all(|digit| *digit == b'0');
     if half {
         return to_fixed_exact(value, digits);
     }
-    let expansion = format!(
-        "{kept}{}",
-        if rest.as_bytes()[0] >= b'5' { '5' } else { '0' }
-    );
-    round_expansion(value, digits, &expansion)
+    let up = rest[0] >= b'5';
+    // The kept digits, without the point when none are asked for (`"12."`).
+    out.truncate(if digits == 0 { kept - 1 } else { kept });
+    if up {
+        // Round up in place: 9s become 0s until a digit takes the carry, past the point.
+        let mut carried = true;
+        for byte in out.iter_mut().rev() {
+            match *byte {
+                b'.' => continue,
+                b'9' => *byte = b'0',
+                _ => {
+                    *byte += 1;
+                    carried = false;
+                    break;
+                }
+            }
+        }
+        if carried {
+            out.insert(0, b'1');
+        }
+    }
+    // As JavaScript: a negative value keeps its sign even when it rounds to zero (`-0.00`).
+    if value < 0.0 {
+        out.insert(0, b'-');
+    }
+    String::from_utf8(out).expect("ASCII digits")
 }
 
 /// `to_fixed` from the value's exact decimal expansion.

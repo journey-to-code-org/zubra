@@ -1136,6 +1136,7 @@ dependencies = [
  "oxc_syntax",
  "regress",
  "serde_json",
+ "smallvec",
 ]
 
 [[package]]
