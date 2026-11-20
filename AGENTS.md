@@ -1,6 +1,6 @@
 # Working in this repository
 
-Zubra is a compiler for web components: `.zb` files in, custom elements, server HTML, typings and framework wrappers out. The Rust compiler is in `src/`, the browser runtime in `runtime/`, the npm packages in `compiler/`, `plugin/`, `server/`, `create/`, `editors/`, the component registry in `registry/`, and a tested app per framework and server in `examples/`.
+Zubra is a compiler for web components: `.zb` files in, custom elements, server HTML, typings and framework wrappers out. The Rust compiler is in `src/`, the browser runtime in `runtime/`, the npm packages in `compiler/`, `plugin/`, `server/`, `create/`, `editors/` and the siblings `actions/`, `sync/` and `router/`, the Sync log as a Rust binary in `sync-server/`, `include_zb!` in `macros/`, the Python, Ruby and PHP packages in `clients/`, the Prettier plugin (not on npm yet) in `prettier-plugin/`, the component registry in `registry/`, and a tested app per framework and server in `examples/`. `docs/stability.md` says what each promises in 6.x, and `docs/migrating-to-6.0.md` how to move from 5.x.
 
 ## Skills
 
