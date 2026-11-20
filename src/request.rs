@@ -18,7 +18,8 @@
 //! success: attributes a render left out because their values weren't safe URLs; and `gaps`, when
 //! a partial HTML render is asked for them with `"gaps": true`: what it left for the browser): `output` is the
 //! compiled text, `error` and `warnings` are rendered for a terminal, and `diagnostics` has
-//! each one as `{ file, line, column, severity, message, help }` for editors. `command: "check"`
+//! each one as `{ file, code, line, column, severity, message, help }` for editors (`code`, such
+//! as `ZB2001`, is the stable part: docs/diagnostics.md). `command: "check"`
 //! runs every check without producing output, and `command: "format"` answers with the source
 //! as `zubra fmt` lays it out (`indentWidth`, `useTabs`, `printWidth`); `command: "formatRange"`
 //! (`start`, `end` in bytes) answers with the one edit that formats the lines the range touches. `command: "refactor"`
@@ -638,6 +639,7 @@ fn entry(path: &str, diagnostic: &Diagnostic, severity: &str) -> Value {
         .map_or(path, |(file, _)| file.as_str());
     json!({
         "file": file,
+        "code": diagnostic.code,
         "line": diagnostic.span.line,
         "column": diagnostic.span.column,
         "severity": severity,
@@ -1256,11 +1258,11 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
         assert!(response["error"]
             .as_str()
             .unwrap()
-            .starts_with("error: unknown reference `hiden`"));
+            .starts_with("error[ZB2001]: unknown reference `hiden`"));
         assert!(response["warnings"][0]
             .as_str()
             .unwrap()
-            .starts_with("warning: prop `hidden`"));
+            .starts_with("warning[ZB4019]: prop `hidden`"));
         assert_eq!(
             response["diagnostics"]
                 .as_array()

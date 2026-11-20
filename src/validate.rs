@@ -360,6 +360,7 @@ pub fn validate<'t>(
     // The props are moved into the render, not copied: a list of rows is the bulk of a request.
     let Value::Object(overrides) = values else {
         return Err(Diagnostic::new(
+            crate::codes::PROPS_NOT_OBJECT,
             Span::new(1, 1),
             "component props must be a JSON object",
         ));
@@ -586,6 +587,7 @@ fn lower_rest<'t>(
     for name in supply.names() {
         if !declared_slots.contains(name) {
             return Err(Diagnostic::new(
+                crate::codes::UNKNOWN_SLOT,
                 Span::new(1, 1),
                 format!("slot `{name}` is not declared by this component"),
             ));
@@ -626,7 +628,7 @@ fn lower_rest<'t>(
     // before its JavaScript runs); a light-DOM component's go in the page (`--emit css`).
     if let Some(style) = &component.style {
         if let Some(lang) = &style.lang {
-            return Err(Diagnostic::new(
+            return Err(Diagnostic::new(crate::codes::STYLE_LANG_NEEDS_BUNDLER,
                 style.span,
                 format!("`<style lang=\"{lang}\">` needs a bundler to compile it: use @zubra/unplugin (Vite)"),
             ));
@@ -849,7 +851,7 @@ pub(crate) fn enum_props(component: &crate::ast::ComponentAst) -> Vec<(Diagnosti
             let strings = members
                 .iter()
                 .any(|(_, value)| !matches!(value, Some(crate::enums::EnumValue::Number(_))));
-            let diagnostic = Diagnostic::new(
+            let diagnostic = Diagnostic::new(crate::codes::PROP_ENUM_NOT_EXPORTED,
                 prop.span,
                 if strings {
                     format!(
@@ -936,6 +938,7 @@ pub fn analyze(component: &ast::ComponentAst) -> Result<Interface, Diagnostic> {
             .any(|prop: &Prop| prop.name == declaration.name)
         {
             return Err(Diagnostic::new(
+                crate::codes::DUPLICATE_PROP,
                 declaration.span,
                 format!("duplicate prop `{}`", declaration.name),
             ));
@@ -971,7 +974,7 @@ pub fn analyze(component: &ast::ComponentAst) -> Result<Interface, Diagnostic> {
         if !props.iter().any(|prop| prop.name == name) {
             let names: Vec<&str> = props.iter().map(|prop| prop.name).collect();
             return Err(with_suggestion(
-                Diagnostic::new(*span, format!("`declare const {name}` types a prop, but there's no prop `{name}` on the host tag")),
+                Diagnostic::new(crate::codes::DECLARE_CONST_NO_PROP, *span, format!("`declare const {name}` types a prop, but there's no prop `{name}` on the host tag")),
                 name,
                 &names,
             ));
@@ -1104,6 +1107,7 @@ fn evaluate_script_with<'s, 'v>(
     for name in &script.runtime_names {
         if !seen.insert(name) {
             return Err(Diagnostic::new(
+                crate::codes::DUPLICATE_DECLARATION,
                 Span::new(1, 1),
                 format!("`{name}` is declared more than once in <script>"),
             ));
@@ -1126,6 +1130,7 @@ fn evaluate_script_with<'s, 'v>(
     for binding in &script.bindings {
         if !seen.insert(&binding.name) {
             return Err(Diagnostic::new(
+                crate::codes::DUPLICATE_DECLARATION,
                 binding.span,
                 format!("`{}` is declared more than once in <script>", binding.name),
             ));
@@ -1213,6 +1218,7 @@ fn evaluate_script_with<'s, 'v>(
                     let names: Vec<&str> = locals.iter().map(|(name, _)| *name).collect();
                     return Err(with_suggestion(
                         Diagnostic::new(
+                            crate::codes::USED_BEFORE_DECLARED,
                             binding.span,
                             format!(
                                 "`{name}` is used before it is declared (in `{}`)",
@@ -1232,7 +1238,11 @@ fn evaluate_script_with<'s, 'v>(
                         None => prop(name).map(|prop| prop.value.clone()),
                     };
                     Local::Value(Cow::Owned(init.evaluate(&lookup).map_err(|message| {
-                        Diagnostic::new(binding.span, format!("in `{}`: {message}", binding.name))
+                        Diagnostic::new(
+                            crate::codes::SERVER_EVALUATION,
+                            binding.span,
+                            format!("in `{}`: {message}", binding.name),
+                        )
                     })?))
                 }
             }
@@ -1264,6 +1274,7 @@ fn evaluate_props<'t>(
             .any(|earlier| earlier.name == declaration.name)
         {
             return Err(Diagnostic::new(
+                crate::codes::DUPLICATE_PROP,
                 declaration.span,
                 format!("duplicate prop `{}`", declaration.name),
             ));
@@ -1294,6 +1305,7 @@ fn evaluate_props<'t>(
             (Some(value), Some(Ok(default))) => {
                 if !same_type(default, &value) {
                     return Err(Diagnostic::new(
+                        crate::codes::PROP_TYPE_MISMATCH,
                         declaration.span,
                         format!(
                             "prop `{}` must be {} (like its default), found {}",
@@ -1310,6 +1322,7 @@ fn evaluate_props<'t>(
             (None, Some(Err(_))) if partial() => Value::Null,
             (None, Some(Err(runtime))) => {
                 return Err(Diagnostic::new(
+                    crate::codes::DEFAULT_USES_RUNTIME,
                     declaration.span,
                     format!(
                         "the default for prop `{}` uses `{runtime}`, which only exists at runtime",
@@ -1323,6 +1336,7 @@ fn evaluate_props<'t>(
             }
             (None, None) => {
                 return Err(Diagnostic::new(
+                    crate::codes::MISSING_REQUIRED_PROP,
                     declaration.span,
                     format!("missing required prop `{}`", declaration.name),
                 ));
@@ -1342,7 +1356,11 @@ fn evaluate_props<'t>(
             let names: Vec<&str> = props.iter().map(|prop| prop.name).collect();
             return Err(with_suggestion(
                 // At the host tag, where the props are declared (the file may start with a comment).
-                Diagnostic::new(component.tag_span, format!("unknown prop `{name}`")),
+                Diagnostic::new(
+                    crate::codes::UNKNOWN_PROP,
+                    component.tag_span,
+                    format!("unknown prop `{name}`"),
+                ),
                 name,
                 &names,
             ));
@@ -1387,6 +1405,7 @@ fn prop_default(
                 Some(Ok(unknown)) => {
                     return Err(with_suggestion(
                         Diagnostic::new(
+                            crate::codes::UNKNOWN_REFERENCE,
                             *span,
                             format!(
                                 "unknown reference `{unknown}` in the default for prop `{}`",
@@ -1403,9 +1422,9 @@ fn prop_default(
                         Some(Local::Value(value)) => Some(Value::clone(value)),
                         _ => None,
                     };
-                    Some(Ok(expression
-                        .evaluate(&lookup)
-                        .map_err(|message| Diagnostic::new(*span, message))?))
+                    Some(Ok(expression.evaluate(&lookup).map_err(|message| {
+                        Diagnostic::new(crate::codes::SERVER_EVALUATION, *span, message)
+                    })?))
                 }
             }
         }
@@ -1531,12 +1550,16 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 let names = self.names_in_scope(scopes);
                 if !looped && !global && !names.contains(&name) {
                     return Err(with_suggestion(
-                        Diagnostic::new(span, format!("unknown reference `{name}`")),
+                        Diagnostic::new(
+                            crate::codes::UNKNOWN_REFERENCE,
+                            span,
+                            format!("unknown reference `{name}`"),
+                        ),
                         name,
                         &names,
                     ));
                 }
-                return Err(Diagnostic::new(
+                return Err(Diagnostic::new(crate::codes::ASSIGN_READONLY,
                     span,
                     format!("`{name}` can't be assigned here: a template can assign props and state (a `let`) only"),
                 )
@@ -1550,7 +1573,11 @@ impl<'a, 't: 'a> Context<'a, 't> {
         match unknown {
             None => Ok(()),
             Some(name) => Err(with_suggestion(
-                Diagnostic::new(span, format!("unknown reference `{name}`")),
+                Diagnostic::new(
+                    crate::codes::UNKNOWN_REFERENCE,
+                    span,
+                    format!("unknown reference `{name}`"),
+                ),
                 &name,
                 &self.names_in_scope(scopes),
             )),
@@ -1582,12 +1609,14 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 ast::Node::Text(parts) => self.resolve_parts(parts, scopes)?,
                 ast::Node::Element(element) if element.name.eq_ignore_ascii_case("zb-case") => {
                     return Err(Diagnostic::new(
+                        crate::codes::DIRECTIVE_PLACEMENT,
                         element.span,
                         "zb-case is only valid as a child of zb-switch",
                     ));
                 }
                 ast::Node::Element(element) if element.name.eq_ignore_ascii_case("zb-pending") => {
                     return Err(Diagnostic::new(
+                        crate::codes::DIRECTIVE_PLACEMENT,
                         element.span,
                         "zb-pending is only valid as the first child of zb-await",
                     ));
@@ -1656,14 +1685,14 @@ impl<'a, 't: 'a> Context<'a, 't> {
                         .and_then(|scope| scope.iter().find(|name| name.starts_with('#')))
                     {
                         return Err(if inside == SCOPE_EACH {
-                            Diagnostic::new(
+                            Diagnostic::new(crate::codes::SLOT_PLACEMENT,
                                 *span,
                                 "zb-slot can't be inside zb-each: slotted content can only be in one place",
                             )
                             .with_help("put the slot outside the list, or pass each row's content as a prop")
                         } else {
                             let branch = &inside[1..];
-                            Diagnostic::new(
+                            Diagnostic::new(crate::codes::SLOT_PLACEMENT,
                                 *span,
                                 format!("zb-slot can't be inside zb-{branch}: slotted content is placed when the element starts, before the value settles"),
                             )
@@ -1674,6 +1703,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 }
                 ast::Node::Else { span, .. } => {
                     return Err(Diagnostic::new(
+                        crate::codes::DIRECTIVE_PLACEMENT,
                         *span,
                         "zb-else is only valid as a direct child of zb-if",
                     ));
@@ -1717,6 +1747,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 }
                 ast::Node::Settled { caught, branch } => {
                     return Err(Diagnostic::new(
+                        crate::codes::DIRECTIVE_PLACEMENT,
                         branch.span,
                         format!(
                             "zb-{} is only valid as a direct child of zb-await",
@@ -1936,7 +1967,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
             }
         }
         if let Some(name) = runtime {
-            return Err(Diagnostic::new(
+            return Err(Diagnostic::new(crate::codes::RUNTIME_ONLY_IN_HTML,
                 span,
                 format!("`{name}` only exists at runtime, so it can't be rendered into static HTML"),
             )
@@ -1948,7 +1979,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
         };
         expression
             .evaluate_lent(&lend)
-            .map_err(|message| Diagnostic::new(span, message))
+            .map_err(|message| Diagnostic::new(crate::codes::SERVER_EVALUATION, span, message))
     }
 
     /// Text with its values; partially rendered text the browser fills in is empty.
@@ -2008,7 +2039,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
             }
         };
         text.map(|text| Some(Part::Escaped(text)))
-            .map_err(|message| Diagnostic::new(span, message))
+            .map_err(|message| Diagnostic::new(crate::codes::VALUE_NOT_TEXT, span, message))
     }
 
     fn lower_nodes(
@@ -2140,6 +2171,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                     };
                     let Value::Array(list) = value else {
                         return Err(Diagnostic::new(
+                            crate::codes::EACH_ITEMS_NOT_ARRAY,
                             *items_span,
                             format!(
                                 "zb-each items must be an array, found {}",
@@ -2186,6 +2218,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                             None => Ok(()),
                             Some(value) => match RowKey::of(value) {
                                 Ok(row_key) if keys.contains(&row_key) => Err(Diagnostic::new(
+                                    crate::codes::DUPLICATE_KEY,
                                     *key_span,
                                     format!(
                                         "duplicate zb-each key {} (row {})",
@@ -2198,6 +2231,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                                     Ok(())
                                 }
                                 Err(found) => Err(Diagnostic::new(
+                                    crate::codes::KEY_TYPE,
                                     *key_span,
                                     format!(
                                         "zb-each key must be a string or number, found {found}"
@@ -2290,6 +2324,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
             } => {
                 if !state.active_slots.insert(name.clone()) {
                     return Err(Diagnostic::new(
+                        crate::codes::RECURSIVE_SLOT,
                         *span,
                         format!("recursive slot expansion for `{name}`"),
                     ));
@@ -2368,6 +2403,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 output
             }
             ast::Node::Else { span, .. } => Err(Diagnostic::new(
+                crate::codes::DIRECTIVE_PLACEMENT,
                 *span,
                 "zb-else is only valid as a direct child of zb-if",
             )),
@@ -2412,6 +2448,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 Ok(output)
             }
             ast::Node::Settled { caught, branch } => Err(Diagnostic::new(
+                crate::codes::DIRECTIVE_PLACEMENT,
                 branch.span,
                 format!(
                     "zb-{} is only valid as a direct child of zb-await",
@@ -2538,7 +2575,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
         check_child_required(&child.ast.tag, &interface, element, &spread_keys)?;
         for prop in &interface.props {
             if prop.runtime_default.is_some() && !overrides.contains_key(&prop.name) && !partial() {
-                return Err(Diagnostic::new(
+                return Err(Diagnostic::new(crate::codes::CHILD_DEFAULT_IN_BROWSER,
                     element.span,
                     format!(
                         "<{}> computes the default for `{}` in the browser; pass `{}` here to render it as HTML",
@@ -2580,6 +2617,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
             }
             if !declared.contains(current.as_ref()) {
                 return Err(Diagnostic::new(
+                    crate::codes::UNKNOWN_SLOT,
                     element.span,
                     format!("<{}> has no slot named `{current}`", child.ast.tag),
                 ));
@@ -2730,9 +2768,9 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 continue;
             }
             let text = expression::to_display_string(&value)
-                .map_err(|message| Diagnostic::new(*span, message))?;
+                .map_err(|message| Diagnostic::new(crate::codes::VALUE_NOT_TEXT, *span, message))?;
             if !is_safe_css_value(&text) {
-                return Err(Diagnostic::new(
+                return Err(Diagnostic::new(crate::codes::UNSAFE_CSS_VALUE,
                     *span,
                     format!("`{}`'s value `{text}` isn't a single CSS value (it can't contain `;`, braces, `<`, a backslash, or url())", attribute.name),
                 ));
@@ -2795,6 +2833,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
             Value::Object(entries) => entries,
             other => {
                 return Err(Diagnostic::new(
+                    crate::codes::SPREAD_NOT_OBJECT,
                     *span,
                     format!(
                         "{{...}} spreads an object of attributes (found {})",
@@ -2857,6 +2896,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                         continue;
                     }
                     return Err(Diagnostic::new(
+                        crate::codes::SPREAD_VALUE,
                         *span,
                         "a spread's `style` must be an object of properties, not text",
                     ));
@@ -2878,10 +2918,12 @@ impl<'a, 't: 'a> Context<'a, 't> {
                     if own.contains(&format!("style:{css}")) {
                         continue;
                     }
-                    let text = expression::to_display_string(&value)
-                        .map_err(|message| Diagnostic::new(*span, message))?;
+                    let text = expression::to_display_string(&value).map_err(|message| {
+                        Diagnostic::new(crate::codes::VALUE_NOT_TEXT, *span, message)
+                    })?;
                     if !is_safe_css_value(&text) {
                         return Err(Diagnostic::new(
+                            crate::codes::UNSAFE_CSS_VALUE,
                             *span,
                             format!("the spread's `{css}` value `{text}` isn't a single CSS value"),
                         ));
@@ -2894,8 +2936,9 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 continue;
             }
             if name == "class" {
-                let text = expression::to_display_string(&value)
-                    .map_err(|message| Diagnostic::new(*span, message))?;
+                let text = expression::to_display_string(&value).map_err(|message| {
+                    Diagnostic::new(crate::codes::VALUE_NOT_TEXT, *span, message)
+                })?;
                 if !text.trim().is_empty() {
                     merge_attribute(attributes, "class", text.trim(), " ");
                 }
@@ -2914,14 +2957,14 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 Value::Bool(flag) => Some(flag.to_string()),
                 Value::Array(_) | Value::Object(_) => {
                     return Err(Diagnostic::new(
+                        crate::codes::SPREAD_VALUE,
                         *span,
                         format!("a spread can't write an object to the `{name}` attribute"),
                     ));
                 }
-                other => Some(
-                    expression::to_display_string(other)
-                        .map_err(|message| Diagnostic::new(*span, message))?,
-                ),
+                other => Some(expression::to_display_string(other).map_err(|message| {
+                    Diagnostic::new(crate::codes::VALUE_NOT_TEXT, *span, message)
+                })?),
             };
             if let Some(text) = &rendered {
                 let lower_name = name.to_ascii_lowercase();
@@ -3008,7 +3051,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                     return match value {
                         Value::Bool(true) => Ok(Some(ir::Attribute { name: Cow::Borrowed(attribute.name.as_str()), value: None })),
                         Value::Bool(false) => Ok(None),
-                        other => Err(Diagnostic::new(
+                        other => Err(Diagnostic::new(crate::codes::BOOLEAN_ATTRIBUTE_VALUE,
                             *span,
                             format!(
                                 "`{}` is a boolean attribute, so {{…}} must be true or false (found {})",
@@ -3026,8 +3069,9 @@ impl<'a, 't: 'a> Context<'a, 't> {
                     Value::Array(_) | Value::Object(_) if custom_element => {
                         serde_json::to_string(&value).expect("JSON serializes")
                     }
-                    _ => expression::to_display_string(&value)
-                        .map_err(|message| Diagnostic::new(*span, message))?,
+                    _ => expression::to_display_string(&value).map_err(|message| {
+                        Diagnostic::new(crate::codes::VALUE_NOT_TEXT, *span, message)
+                    })?,
                 };
                 // An unsafe value is left out, as the browser leaves it out (see above).
                 if is_url && !is_safe_url(&text) {
@@ -3301,11 +3345,11 @@ fn check_animation_value(
         return Ok(());
     }
     match &attribute.value {
-        AttributeValue::Expression(..) => Err(Diagnostic::new(
+        AttributeValue::Expression(..) => Err(Diagnostic::new(crate::codes::UNSAFE_INTERPOLATION,
             attribute.span,
             format!("interpolation in <{tag} {lower}> is not supported: it can animate a link to a URL nothing checks"),
         )),
-        AttributeValue::Text(parts) if parts.iter().any(|part| matches!(part, AstPart::Expression { .. })) => Err(Diagnostic::new(
+        AttributeValue::Text(parts) if parts.iter().any(|part| matches!(part, AstPart::Expression { .. })) => Err(Diagnostic::new(crate::codes::UNSAFE_INTERPOLATION,
             attribute.span,
             format!("interpolation in <{tag} {lower}> is not supported: it can animate a link to a URL nothing checks"),
         )),
@@ -3316,7 +3360,7 @@ fn check_animation_value(
             });
             let text = literal_text(parts);
             if animates_url && text.split(';').any(|value| !is_safe_url(value)) {
-                return Err(Diagnostic::new(attribute.span, format!("unsafe URL in <{tag} {lower}>")));
+                return Err(Diagnostic::new(crate::codes::UNSAFE_URL, attribute.span, format!("unsafe URL in <{tag} {lower}>")));
             }
             Ok(())
         }
@@ -3344,7 +3388,7 @@ fn check_meta_value(element: &ast::Element, attribute: &ast::Attribute) -> Resul
         .iter()
         .any(|other| other.name.eq_ignore_ascii_case("http-equiv"));
     if dynamic && (lower == "http-equiv" || (lower == "content" && equiv)) {
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::UNSAFE_INTERPOLATION,
             attribute.span,
             format!("interpolation in <meta http-equiv> `{lower}` is not supported: a refresh there is a redirect to wherever the value says"),
         )
@@ -3372,6 +3416,7 @@ fn check_attribute_statically(attribute: &ast::Attribute) -> Result<(), Diagnost
     let dynamic = dynamic_text || matches!(attribute.value, AttributeValue::Expression(..));
     if lower == "srcdoc" && dynamic {
         return Err(Diagnostic::new(
+            crate::codes::UNSAFE_INTERPOLATION,
             attribute.span,
             "interpolation in srcdoc is not supported",
         ));
@@ -3379,7 +3424,7 @@ fn check_attribute_statically(attribute: &ast::Attribute) -> Result<(), Diagnost
     // `ping` makes every click on the link POST to the URLs it lists, with the visitor's cookies
     // when they are this site's (`/account/delete`): the template's text only.
     if lower == "ping" && dynamic {
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::UNSAFE_INTERPOLATION,
             attribute.span,
             "interpolation in ping is not supported: a click posts to every URL it lists, with the visitor's cookies",
         ));
@@ -3394,6 +3439,7 @@ fn check_attribute_statically(attribute: &ast::Attribute) -> Result<(), Diagnost
     }
     if BOOLEAN_ATTRIBUTES.contains(&&*lower) && dynamic_text {
         return Err(Diagnostic::new(
+            crate::codes::BOOLEAN_ATTRIBUTE_VALUE,
             attribute.span,
             format!(
                 "`{}` is a boolean attribute; bind it with {}={{…}} instead of quoted text",
@@ -3405,6 +3451,7 @@ fn check_attribute_statically(attribute: &ast::Attribute) -> Result<(), Diagnost
         match &attribute.value {
             AttributeValue::None => {
                 return Err(Diagnostic::new(
+                    crate::codes::UNSAFE_URL,
                     attribute.span,
                     format!("URL attribute `{}` requires a value", attribute.name),
                 ));
@@ -3419,6 +3466,7 @@ fn check_attribute_statically(attribute: &ast::Attribute) -> Result<(), Diagnost
                     .collect();
                 if !is_safe_url(&text) {
                     return Err(Diagnostic::new(
+                        crate::codes::UNSAFE_URL,
                         attribute.span,
                         format!("unsafe URL in `{}` attribute", attribute.name),
                     ));
@@ -3443,6 +3491,7 @@ pub fn is_safe_srcset(value: &str) -> bool {
 fn validate_srcset(attribute: &ast::Attribute) -> Result<(), Diagnostic> {
     let AttributeValue::Text(parts) = &attribute.value else {
         return Err(Diagnostic::new(
+            crate::codes::UNSAFE_URL,
             attribute.span,
             "srcset requires a list of safe URL candidates",
         ));
@@ -3462,6 +3511,7 @@ fn validate_srcset(attribute: &ast::Attribute) -> Result<(), Diagnostic> {
             .is_none_or(|url| !is_safe_url(url))
     }) {
         return Err(Diagnostic::new(
+            crate::codes::UNSAFE_URL,
             attribute.span,
             "srcset contains an unsafe or empty URL candidate",
         ));
@@ -3587,6 +3637,7 @@ fn assign_to_slot<'t>(
                 Ok(Node::Text(parts))
             }
             _ => Err(Diagnostic::new(
+                crate::codes::SHADOW_NAMED_SLOT_TEXT,
                 span,
                 format!(
                     "content for the named slot `{name}` of a shadow component must be elements"
@@ -3607,8 +3658,11 @@ fn validate_custom_element(tag: &str, span: Span) -> Result<(), Diagnostic> {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'.'
         });
     if !valid || RESERVED_CUSTOM_ELEMENTS.contains(&tag) {
-        let mut diagnostic =
-            Diagnostic::new(span, format!("`{tag}` is not a valid custom-element name"));
+        let mut diagnostic = Diagnostic::new(
+            crate::codes::INVALID_TAG_NAME,
+            span,
+            format!("`{tag}` is not a valid custom-element name"),
+        );
         if !tag.contains('-') {
             diagnostic = diagnostic.with_help(format!(
                 "custom element names need a hyphen, e.g. `{}-element`: the HTML spec reserves hyphen-less names for built-in elements (https://html.spec.whatwg.org/#valid-custom-element-name)",
@@ -3680,7 +3734,11 @@ pub(crate) fn check_child_event(
         .map(|declared| declared.name.as_str())
         .collect();
     let error = with_suggestion(
-        Diagnostic::new(attribute.span, format!("<{tag}> never fires `{event}`")),
+        Diagnostic::new(
+            crate::codes::UNKNOWN_EVENT,
+            attribute.span,
+            format!("<{tag}> never fires `{event}`"),
+        ),
         event,
         &names,
     );
@@ -3702,6 +3760,7 @@ pub(crate) fn check_child_prop_type(
         // A declared type (`declare const value: number | null`) says more than the default.
         _ if prop.declared.is_some() => Ok(()),
         Some(default) if !same_type(default, value) => Err(Diagnostic::new(
+            crate::codes::PROP_TYPE_MISMATCH,
             span,
             format!(
                 "<{tag}> prop `{}` must be {} (like its default), found {}",
@@ -3728,7 +3787,11 @@ pub(crate) fn unknown_child_prop(
         .map(|prop| prop.name.as_str())
         .collect();
     with_suggestion(
-        Diagnostic::new(attribute.span, format!("<{tag}> has no prop `{prop_name}`")),
+        Diagnostic::new(
+            crate::codes::UNKNOWN_PROP,
+            attribute.span,
+            format!("<{tag}> has no prop `{prop_name}`"),
+        ),
         &prop_name,
         &names,
     )
@@ -3818,6 +3881,7 @@ pub(crate) fn check_child_required(
         }) || keys.iter().any(|key| spread_key_is_prop(key, &prop.name));
         if prop.required() && !given {
             return Err(Diagnostic::new(
+                crate::codes::MISSING_REQUIRED_PROP,
                 element.span,
                 format!("<{tag}> requires the prop `{}`", prop.attribute),
             ));

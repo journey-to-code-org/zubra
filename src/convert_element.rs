@@ -149,6 +149,7 @@ pub fn convert_element(
     if let Some(error) = parsed.diagnostics.first() {
         let at = error.labels.first().map_or(0, |label| label.offset());
         return Err(Diagnostic::new(
+            crate::codes::CONVERT_SYNTAX,
             span_at(source, at),
             error.message.to_string(),
         ));
@@ -256,14 +257,14 @@ pub fn convert_element(
         }
     }
     let Some(class) = class else {
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::CONVERT_NO_ELEMENT_CLASS,
             Span::new(1, 1),
             format!("{path}: no class that extends HTMLElement"),
         )
         .with_help("zubra convert reads a custom element written the way `zubra compile --emit element` writes one"));
     };
     let Some(tag) = tag else {
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::CONVERT_NO_TAG,
             span_at(source, class.span.start),
             "no tag: the module needs `customElements.define(\"my-tag\", …)` or `export const tag = \"my-tag\"`",
         ));
@@ -350,7 +351,7 @@ pub fn convert_element(
         }
     }
     let Some(setup) = setup else {
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::CONVERT_NOT_ELEMENT_SHAPE,
             span_at(source, class.span.start),
             "the class has no #setup(): zubra convert reads the shape `zubra compile --emit element` writes (the script and template in #setup())",
         ));
@@ -417,6 +418,7 @@ pub fn convert_element(
     }
     let Some((root, markup)) = root else {
         return Err(Diagnostic::new(
+            crate::codes::CONVERT_NOT_ELEMENT_SHAPE,
             span_at(source, setup.span.start),
             "#setup() has no template: zubra convert looks for `const content = clone(`…`)`",
         ));
@@ -1131,6 +1133,7 @@ impl Converter<'_> {
 
     fn unsupported(&mut self, span: OxcSpan, what: &str) {
         self.unsupported.push(Diagnostic::new(
+            crate::codes::CONVERT_ELEMENT_UNFINISHED,
             span_at(self.source, span.start),
             format!("not converted: {what}"),
         ));

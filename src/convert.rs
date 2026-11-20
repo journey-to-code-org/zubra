@@ -102,6 +102,7 @@ pub fn convert_component(
     if let Some(error) = parsed.diagnostics.first() {
         let at = error.labels.first().map_or(0, |label| label.offset());
         return Err(Diagnostic::new(
+            crate::codes::CONVERT_SYNTAX,
             at_offset(source, at),
             error.message.to_string(),
         ));
@@ -124,7 +125,7 @@ pub fn convert_component(
             continue;
         }
         if let Some((library, instead)) = react_primitive(module) {
-            return Err(Diagnostic::new(
+            return Err(Diagnostic::new(crate::codes::CONVERT_PRIMITIVE_LIBRARY,
                 at_offset(source, import.span.start),
                 format!("this component is built on {library} (`{module}`), whose React components have no HTML to convert to"),
             )
@@ -264,6 +265,7 @@ pub fn convert_component(
                     }
                     None => {
                         return Err(Diagnostic::new(
+                            crate::codes::CONVERT_NO_SUCH_EXPORT,
                             Span::new(1, 1),
                             format!("no exported component named `{wanted}` in this file"),
                         )
@@ -273,6 +275,7 @@ pub fn convert_component(
             }
             (several, None) if several.len() > 1 => {
                 return Err(Diagnostic::new(
+                    crate::codes::CONVERT_SEVERAL_COMPONENTS,
                     Span::new(1, 1),
                     format!(
                         "this file exports {} components; `zubra convert` converts one at a time",
@@ -288,11 +291,12 @@ pub fn convert_component(
         }
     }
     let Some(function) = function else {
-        return Err(Diagnostic::new(Span::new(1, 1), "no component to convert: `zubra convert` takes a file whose default export is a function component")
+        return Err(Diagnostic::new(crate::codes::CONVERT_NO_COMPONENT, Span::new(1, 1), "no component to convert: `zubra convert` takes a file whose default export is a function component")
             .with_help("write it as `export default function TodoItem({ … }) { … }` (an arrow function or a class isn't converted)"));
     };
     let Some(id) = &function.id else {
         return Err(Diagnostic::new(
+            crate::codes::CONVERT_UNNAMED,
             at_offset(source, function.span.start),
             "the component function needs a name: it becomes the tag",
         ));
@@ -315,7 +319,7 @@ pub fn convert_component(
         ));
         renamed
     } else {
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::CONVERT_ONE_WORD_NAME,
             at_offset(source, id.span.start),
             format!("`{name}` is one word, and a custom element's name needs a hyphen"),
         )
@@ -848,8 +852,14 @@ impl Work<'_> {
         self.edits.iter().any(|(start, _, _)| *start == at)
     }
     fn unsupported(&mut self, at: u32, message: impl Into<String>, help: &str) {
-        self.unsupported
-            .push(Diagnostic::new(at_offset(self.source, at), message).with_help(help));
+        self.unsupported.push(
+            Diagnostic::new(
+                crate::codes::CONVERT_UNFINISHED,
+                at_offset(self.source, at),
+                message,
+            )
+            .with_help(help),
+        );
     }
     fn apply(&self) -> String {
         let mut edits: Vec<&(u32, u32, String)> = self

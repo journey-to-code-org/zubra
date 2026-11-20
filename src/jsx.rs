@@ -198,8 +198,14 @@ impl Out {
     }
 }
 
-fn error_at(source: &str, offset: u32, message: impl Into<String>) -> Diagnostic {
+fn error_at(
+    code: crate::codes::Code,
+    source: &str,
+    offset: u32,
+    message: impl Into<String>,
+) -> Diagnostic {
     Diagnostic::new(
+        code,
         span_after(Span::new(1, 1), source, offset as usize),
         message,
     )
@@ -264,7 +270,7 @@ pub fn tag_in(source: &str, path: &str) -> Result<String, Diagnostic> {
             }
         }
     }
-    Err(Diagnostic::new(
+    Err(Diagnostic::new(crate::codes::JSX_DEFAULT_EXPORT,
         Span::new(1, 1),
         "a JSX component file default-exports a named function, e.g. `export default function ZbCard() {…}`",
     ))
@@ -344,6 +350,7 @@ fn lower_uncached(
     if let Some(error) = parsed.diagnostics.first() {
         let offset = error.labels.first().map_or(0, |label| label.offset());
         return Err(error_at(
+            crate::codes::JSX_SYNTAX,
             source,
             offset,
             format!("invalid JSX: {}", error.message),
@@ -379,7 +386,7 @@ fn lower_uncached(
                                 resource_names.push(named.local.name.to_string());
                             }
                             if named.imported.name().as_str() == "emit" {
-                                return Err(error_at(
+                                return Err(error_at(crate::codes::JSX_EMIT,
                                     source,
                                     named.span.start,
                                     "a JSX component fires events by calling its `on…` props, not emit()",
@@ -430,7 +437,7 @@ fn lower_uncached(
                 let ExportDefaultDeclarationKind::FunctionDeclaration(declared) =
                     &export.declaration
                 else {
-                    return Err(error_at(
+                    return Err(error_at(crate::codes::JSX_DEFAULT_EXPORT,
                         source,
                         export.span.start,
                         "the default export must be the component, as a named function: `export default function ZbCard(…) {…}`",
@@ -460,7 +467,7 @@ fn lower_uncached(
                 helpers.push(span.start as usize..span.end as usize);
             }
             Statement::VariableDeclaration(declaration) => {
-                return Err(error_at(
+                return Err(error_at(crate::codes::JSX_MODULE_STATE,
                     source,
                     declaration.span.start,
                     "module-level `let` would be shared by every element; declare state inside the component function",
@@ -475,14 +482,14 @@ fn lower_uncached(
                 helpers.push(span.start as usize..span.end as usize);
             }
             Statement::ExportNamedDeclaration(_) | Statement::ExportAllDeclaration(_) => {
-                return Err(error_at(
+                return Err(error_at(crate::codes::JSX_EXTRA_EXPORT,
                     source,
                     span.start,
                     "a JSX component file exports only its component; move shared code to a module and import it",
                 ));
             }
             _ => {
-                return Err(error_at(
+                return Err(error_at(crate::codes::JSX_TOP_LEVEL,
                     source,
                     span.start,
                     "only imports, functions, constants and types can be at the top of a JSX component file",
@@ -491,13 +498,14 @@ fn lower_uncached(
         }
     }
     let Some(function) = function else {
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::JSX_DEFAULT_EXPORT,
             Span::new(1, 1),
             "a JSX component file default-exports its component: `export default function ZbCard(…) {…}`",
         ));
     };
     let Some(id) = &function.id else {
         return Err(error_at(
+            crate::codes::JSX_UNNAMED,
             source,
             function.span.start,
             "name the component function: its name is the tag (`ZbCard` → <zb-card>)",
@@ -506,7 +514,7 @@ fn lower_uncached(
     let name = id.name.as_str();
     let tag = tag_of(name);
     if !tag.contains('-') {
-        return Err(error_at(
+        return Err(error_at(crate::codes::JSX_TAG_NEEDS_HYPHEN,
             source,
             id.span.start,
             format!("`{name}` would be <{tag}>, but a custom element's name needs a hyphen"),
@@ -514,7 +522,7 @@ fn lower_uncached(
         .with_help(format!("name it with two words, e.g. `Zb{name}`: the HTML spec reserves hyphen-less names for built-in elements (https://html.spec.whatwg.org/#valid-custom-element-name)")));
     }
     if function.r#async || function.generator {
-        return Err(error_at(
+        return Err(error_at(crate::codes::JSX_ASYNC,
             source,
             function.span.start,
             "a component function can't be async or a generator: it runs once to set up the element",
@@ -549,6 +557,7 @@ fn lower_uncached(
         Some((Statement::ReturnStatement(last), rest)) => (rest, last.argument.as_ref()),
         _ => {
             return Err(error_at(
+                crate::codes::JSX_RETURN,
                 source,
                 body.span.end.saturating_sub(1),
                 "a component function ends with `return` and its JSX",
@@ -561,6 +570,7 @@ fn lower_uncached(
     }
     if let Some(&at) = returns.0.first() {
         return Err(error_at(
+            crate::codes::JSX_RETURN,
             source,
             at,
             "a component function returns once, at the end; use conditionals in the returned JSX",
@@ -589,6 +599,7 @@ fn lower_uncached(
         let text = text.join("\n");
         if text.contains("-->") {
             return Err(error_at(
+                crate::codes::DESCRIPTION_CLOSES_COMMENT,
                 source,
                 comment.span.start,
                 "the description can't contain `-->`",
@@ -660,7 +671,7 @@ fn lower_uncached(
                         let name = attribute_name(&attribute.name);
                         if name != "shadow" && name != "form-associated" && name != "formAssociated"
                         {
-                            return Err(error_at(source, attribute.span.start, format!("`{name}` on the host: the host takes `shadow` and `form-associated`; props are the function's parameters")));
+                            return Err(error_at(crate::codes::JSX_HOST_ATTRIBUTE, source, attribute.span.start, format!("`{name}` on the host: the host takes `shadow` and `form-associated`; props are the function's parameters")));
                         }
                         flags.push(if name == "formAssociated" {
                             "form-associated".to_owned()
@@ -669,7 +680,7 @@ fn lower_uncached(
                         });
                     }
                     _ => {
-                        return Err(error_at(source, attribute.span().start, "the host takes `shadow` and `form-associated`; props are the function's parameters"));
+                        return Err(error_at(crate::codes::JSX_HOST_ATTRIBUTE, source, attribute.span().start, "the host takes `shadow` and `form-associated`; props are the function's parameters"));
                     }
                 }
             }
@@ -827,8 +838,13 @@ struct Lowering<'s, 'l> {
 }
 
 impl Lowering<'_, '_> {
-    fn error(&self, offset: u32, message: impl Into<String>) -> Diagnostic {
-        error_at(self.source, offset, message)
+    fn error(
+        &self,
+        code: crate::codes::Code,
+        offset: u32,
+        message: impl Into<String>,
+    ) -> Diagnostic {
+        error_at(code, self.source, offset, message)
     }
 
     fn kind_of(&self, identifier: &IdentifierReference<'_>) -> Option<&Kind> {
@@ -843,6 +859,7 @@ impl Lowering<'_, '_> {
         let parameters = &function.params;
         if let Some(rest) = &parameters.rest {
             return Err(self.error(
+                crate::codes::JSX_PROPS,
                 rest.span.start,
                 "a component takes one parameter: its destructured props",
             ));
@@ -852,6 +869,7 @@ impl Lowering<'_, '_> {
             [parameter] => &parameter.pattern,
             [_, second, ..] => {
                 return Err(self.error(
+                    crate::codes::JSX_PROPS,
                     second.span.start,
                     "a component takes one parameter: its destructured props",
                 ))
@@ -860,6 +878,7 @@ impl Lowering<'_, '_> {
         let BindingPattern::ObjectPattern(object) = pattern else {
             return Err(self
                 .error(
+                    crate::codes::JSX_PROPS,
                     pattern.span().start,
                     "destructure the props in the parameter list",
                 )
@@ -867,13 +886,18 @@ impl Lowering<'_, '_> {
         };
         if let Some(rest) = &object.rest {
             return Err(self.error(
+                crate::codes::JSX_PROPS,
                 rest.span.start,
                 "`...rest` props aren't supported; name each prop",
             ));
         }
         for property in &object.properties {
             let PropertyKey::StaticIdentifier(key) = &property.key else {
-                return Err(self.error(property.span.start, "prop names must be plain identifiers"));
+                return Err(self.error(
+                    crate::codes::JSX_PROPS,
+                    property.span.start,
+                    "prop names must be plain identifiers",
+                ));
             };
             let name = key.name.to_string();
             let (binding, default) = match &property.value {
@@ -884,6 +908,7 @@ impl Lowering<'_, '_> {
                     }
                     _ => {
                         return Err(self.error(
+                            crate::codes::JSX_PROPS,
                             property.span.start,
                             "destructure a prop's value inside the function",
                         ))
@@ -891,6 +916,7 @@ impl Lowering<'_, '_> {
                 },
                 _ => {
                     return Err(self.error(
+                        crate::codes::JSX_PROPS,
                         property.span.start,
                         "destructure a prop's value inside the function",
                     ))
@@ -898,6 +924,7 @@ impl Lowering<'_, '_> {
             };
             if binding.name.as_str() != name {
                 return Err(self.error(
+                    crate::codes::JSX_PROPS,
                     property.span.start,
                     format!("renaming the prop `{name}` isn't supported; use its own name"),
                 ));
@@ -905,7 +932,7 @@ impl Lowering<'_, '_> {
             let symbol = binding.symbol_id();
             if name == "children" {
                 if default.is_some() {
-                    return Err(self.error(property.span.start, "`children` is the default slot; put fallback content in <zb-slot> instead of a default"));
+                    return Err(self.error(crate::codes::JSX_PROPS, property.span.start, "`children` is the default slot; put fallback content in <zb-slot> instead of a default"));
                 }
                 self.symbols.insert(symbol, Kind::Children);
                 continue;
@@ -913,6 +940,7 @@ impl Lowering<'_, '_> {
             if let Some(event) = event_of(&name) {
                 if default.is_some() {
                     return Err(self.error(
+                        crate::codes::JSX_PROPS,
                         property.span.start,
                         format!("`{name}` is the `{event}` event; it can't have a default"),
                     ));
@@ -957,6 +985,7 @@ impl Lowering<'_, '_> {
                         }
                         _ => {
                             return Err(self.error(
+                                crate::codes::JSX_DECLARATION,
                                 declarator.span.start,
                                 "state is one name per `let`; destructure when you read it",
                             ))
@@ -977,11 +1006,12 @@ impl Lowering<'_, '_> {
                             BindingPattern::BindingIdentifier(identifier) => {
                                 self.symbols.insert(identifier.symbol_id(), Kind::Derived);
                             }
-                            _ => return Err(self.error(declarator.span.start, "a value derived from props or state is one name per `const`; destructure it where you use it")),
+                            _ => return Err(self.error(crate::codes::JSX_DECLARATION, declarator.span.start, "a value derived from props or state is one name per `const`; destructure it where you use it")),
                         }
                     }
                     _ => {
                         return Err(self.error(
+                            crate::codes::JSX_DECLARATION,
                             declaration.span.start,
                             "use `let` (state) or `const` in a component function",
                         ))
@@ -1078,7 +1108,7 @@ impl Lowering<'_, '_> {
             }
             _ => {
                 if let Some(at) = contains_jsx(expression) {
-                    return Err(self.error(at, "JSX can be returned, in `&&` / `? :` branches and in `.map()` callbacks; not inside other expressions"));
+                    return Err(self.error(crate::codes::JSX_PLACEMENT, at, "JSX can be returned, in `&&` / `? :` branches and in `.map()` callbacks; not inside other expressions"));
                 }
                 self.expression(out, expression, "{", "}")
             }
@@ -1198,11 +1228,12 @@ impl Lowering<'_, '_> {
         for parameter in &arrow.params.items {
             match &parameter.pattern {
                 BindingPattern::BindingIdentifier(identifier) => names.push(identifier.name.to_string()),
-                _ => return Err(self.error(parameter.span.start, "a list callback takes the item (and its index) as plain names; destructure inside")),
+                _ => return Err(self.error(crate::codes::JSX_LIST_CALLBACK, parameter.span.start, "a list callback takes the item (and its index) as plain names; destructure inside")),
             }
         }
         if names.is_empty() || names.len() > 2 {
             return Err(self.error(
+                crate::codes::JSX_LIST_CALLBACK,
                 arrow.span.start,
                 "a list callback takes the item and, optionally, its index: `(item, i) => …`",
             ));
@@ -1228,6 +1259,7 @@ impl Lowering<'_, '_> {
                             }
                             _ => {
                                 return Err(self.error(
+                                    crate::codes::KEY_NEEDS_EXPRESSION,
                                     attribute.span.start,
                                     "`key` takes an expression: key={item.id}",
                                 ))
@@ -1274,6 +1306,7 @@ impl Lowering<'_, '_> {
                 }
                 JSXChild::Spread(spread) => {
                     return Err(self.error(
+                        crate::codes::JSX_CHILDREN,
                         spread.span.start,
                         "`{...children}` isn't supported; render the list with .map()",
                     ));
@@ -1287,7 +1320,7 @@ impl Lowering<'_, '_> {
         let opening = &element.opening_element;
         let at = opening.span.start as usize;
         let Some(name) = element_name(&opening.name) else {
-            return Err(self.error(opening.span.start, "member expressions as tags (`<a.B>`) aren't supported; import the component and use its name"));
+            return Err(self.error(crate::codes::JSX_MEMBER_TAG, opening.span.start, "member expressions as tags (`<a.B>`) aren't supported; import the component and use its name"));
         };
         let tag = if name.starts_with(|character: char| character.is_ascii_uppercase()) {
             self.component_tag(&name, opening.span.start)?
@@ -1301,7 +1334,11 @@ impl Lowering<'_, '_> {
                 JSXAttributeItem::SpreadAttribute(spread) => {
                     // `{...attributes}` on an element or a component: the same spread as in an .zb template.
                     if let Some(at) = contains_jsx(&spread.argument) {
-                        return Err(self.error(at, "JSX inside a spread isn't supported"));
+                        return Err(self.error(
+                            crate::codes::JSX_PLACEMENT,
+                            at,
+                            "JSX inside a spread isn't supported",
+                        ));
                     }
                     out.synthetic(" ", spread.span.start as usize);
                     self.expression(out, &spread.argument, "{...", "}")?;
@@ -1347,7 +1384,7 @@ impl Lowering<'_, '_> {
                         expression => {
                             let expression = expression.as_expression().expect("not empty");
                             if let Some(jsx) = contains_jsx(expression) {
-                                return Err(self.error(jsx, "JSX in an attribute (a render prop) isn't supported; use a named slot"));
+                                return Err(self.error(crate::codes::JSX_RENDER_PROP, jsx, "JSX in an attribute (a render prop) isn't supported; use a named slot"));
                             }
                             if let (true, Expression::Identifier(identifier)) =
                                 (name == "ref", expression)
@@ -1375,6 +1412,7 @@ impl Lowering<'_, '_> {
                 }
                 Some(_) => {
                     return Err(self.error(
+                        crate::codes::JSX_RENDER_PROP,
                         attribute.span.start,
                         "JSX in an attribute (a render prop) isn't supported; use a named slot",
                     ))
@@ -1385,7 +1423,11 @@ impl Lowering<'_, '_> {
         let void = VOID_ELEMENTS.contains(&tag.as_str());
         if void {
             if !element.children.is_empty() {
-                return Err(self.error(opening.span.start, format!("<{tag}> can't have children")));
+                return Err(self.error(
+                    crate::codes::ELEMENT_CANT_HAVE_CONTENT,
+                    opening.span.start,
+                    format!("<{tag}> can't have children"),
+                ));
             }
             return Ok(());
         }
@@ -1401,7 +1443,11 @@ impl Lowering<'_, '_> {
         }
         let Some((specifier, import_at)) = self.components.get(name).cloned() else {
             return Err(self
-                .error(at, format!("<{name}> isn't an imported component"))
+                .error(
+                    crate::codes::UNKNOWN_COMPONENT_TAG,
+                    at,
+                    format!("<{name}> isn't an imported component"),
+                )
                 .with_help(format!(
                     "import it: `import {name} from './{}.zb'`",
                     kebab(name).trim_start_matches('-')
@@ -1417,7 +1463,11 @@ impl Lowering<'_, '_> {
             ));
         };
         let (child_path, child_source) = loader(&specifier, self.path).map_err(|message| {
-            self.error(import_at, format!("can't load `{specifier}`: {message}"))
+            self.error(
+                crate::codes::IMPORT_UNREADABLE,
+                import_at,
+                format!("can't load `{specifier}`: {message}"),
+            )
         })?;
         let tag = if is_jsx(&child_path) {
             tag_in(&child_source, &child_path)
@@ -1512,8 +1562,8 @@ impl reactive::Names for JsxNames<'_, '_, '_> {
     fn source(&self) -> &str {
         self.lowering.source
     }
-    fn error(&self, offset: u32, message: String) -> Diagnostic {
-        self.lowering.error(offset, message)
+    fn error(&self, code: crate::codes::Code, offset: u32, message: String) -> Diagnostic {
+        self.lowering.error(code, offset, message)
     }
     fn in_script(&self) -> bool {
         self.context == Context::Script

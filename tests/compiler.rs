@@ -803,7 +803,7 @@ fn renders_diagnostics_with_the_source_line() {
     let rendered = error(source, r#"{"title":"t"}"#).render(source, "x.zb");
     assert_eq!(
         rendered,
-        "error: unknown reference `titel`\n --> x.zb:2:7\n  |\n2 |   <h1>{titel}</h1>\n  |       ^\n  = help: did you mean `title`?\n"
+        "error[ZB2001]: unknown reference `titel`\n --> x.zb:2:7\n  |\n2 |   <h1>{titel}</h1>\n  |       ^\n  = help: did you mean `title`?\n"
     );
 }
 
@@ -1122,7 +1122,7 @@ fn props_that_shadow_built_in_element_properties_are_warned_about() {
     assert_eq!(warnings[0].span.column, 7);
     assert!(warnings[0]
         .render_warning("<zb-x title=\"\">", "x.zb")
-        .starts_with("warning: prop `title`"));
+        .starts_with("warning[ZB4019]: prop `title`"));
     assert!(zubra::warnings("<zb-x label=\"\"><p>x</p></zb-x>").is_empty());
 }
 

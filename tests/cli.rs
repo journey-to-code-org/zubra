@@ -32,13 +32,16 @@ fn check_reports_errors_and_warnings_across_files() {
 
     let (ok, _, stderr) = zubra(&["check", good.to_str().unwrap(), warned.to_str().unwrap()]);
     assert!(ok, "warnings don't fail the check: {stderr}");
-    assert!(stderr.contains("warning: prop `hidden`"), "{stderr}");
+    assert!(
+        stderr.contains("warning[ZB4019]: prop `hidden`"),
+        "{stderr}"
+    );
     assert!(stderr.contains("checked 2 files: no errors"), "{stderr}");
 
     let (ok, _, stderr) = zubra(&["check", good.to_str().unwrap(), bad.to_str().unwrap()]);
     assert!(!ok);
     assert!(
-        stderr.contains("error: unknown reference `lable`"),
+        stderr.contains("error[ZB2001]: unknown reference `lable`"),
         "{stderr}"
     );
     assert!(stderr.contains("= help: did you mean `label`?"), "{stderr}");
@@ -261,7 +264,7 @@ fn check_server_reports_what_the_servers_html_leaves_out() {
     );
     // toLocaleUpperCase() is left for the browser; the template literal renders on the server.
     assert_eq!(
-        text.matches("warning: this is computed in the browser")
+        text.matches("warning[ZB5001]: this is computed in the browser")
             .count(),
         1,
         "{text}"
@@ -516,7 +519,7 @@ fn check_takes_a_folder_and_checks_every_component_under_it() {
     let (ok, _, stderr) = zubra(&["check", lone.to_str().unwrap(), app.to_str().unwrap()]);
     assert!(!ok);
     assert!(
-        stderr.contains("error: unknown reference `lable`"),
+        stderr.contains("error[ZB2001]: unknown reference `lable`"),
         "{stderr}"
     );
     assert!(

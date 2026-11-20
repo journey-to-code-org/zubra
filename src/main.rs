@@ -604,6 +604,7 @@ fn entry(
         .map_or(path, |(file, _)| file.as_str());
     serde_json::json!({
         "file": file,
+        "code": diagnostic.code,
         "line": diagnostic.span.line,
         "column": diagnostic.span.column,
         "severity": severity,

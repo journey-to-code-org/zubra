@@ -168,7 +168,7 @@ pub fn emit(
     // ---- what --emit element doesn't cover
     // `@zubra/sync` binds to `@zubra/runtime`'s signals, which an element doesn't have.
     if let Some(collection) = &component.script.collection {
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::ELEMENT_UNSUPPORTED,
             collection.span,
             "--emit element doesn't support 'use collection': `@zubra/sync` works with `@zubra/runtime`, which a plain element doesn't include",
         )
@@ -178,6 +178,7 @@ pub fn emit(
     }
     if component.shadow {
         return Err(Diagnostic::new(
+            crate::codes::ELEMENT_UNSUPPORTED,
             component.tag_span,
             "--emit element makes light-DOM elements, and this component has a shadow root",
         )
@@ -191,6 +192,7 @@ pub fn emit(
             for (imported, local) in named_imports(&import.text) {
                 if !PROVIDED.contains(&imported.as_str()) {
                     return Err(Diagnostic::new(
+                        crate::codes::ELEMENT_UNSUPPORTED,
                         component.tag_span,
                         format!("--emit element doesn't provide `{imported}` from @zubra/runtime"),
                     )
@@ -201,7 +203,7 @@ pub fn emit(
                 }
                 // The browser only calls the form callbacks on a form-associated element.
                 if imported.starts_with("onForm") && !component.form_associated {
-                    return Err(Diagnostic::new(
+                    return Err(Diagnostic::new(crate::codes::FORM_API_NEEDS_FORM_ASSOCIATED,
                         component.tag_span,
                         format!("`{imported}()` needs form-associated on the component's host tag"),
                     )
@@ -214,6 +216,7 @@ pub fn emit(
             }
         } else if specifier.starts_with("@zubra/runtime/") && !STANDALONE.contains(&specifier) {
             return Err(Diagnostic::new(
+                crate::codes::ELEMENT_UNSUPPORTED,
                 component.tag_span,
                 format!("--emit element can't include `{specifier}`: it needs the runtime"),
             )
@@ -227,6 +230,7 @@ pub fn emit(
     for name in &interface.script_names {
         if name.starts_with('$') {
             return Err(Diagnostic::new(
+                crate::codes::RESERVED_NAME,
                 component.tag_span,
                 format!("`{name}`: names starting with $ are reserved for compiled code"),
             ));
@@ -496,7 +500,7 @@ pub fn emit(
     let css = match &component.style {
         Some(style) => {
             if let Some(lang) = &style.lang {
-                return Err(Diagnostic::new(
+                return Err(Diagnostic::new(crate::codes::STYLE_LANG_NEEDS_BUNDLER,
                     style.span,
                     format!("`<style lang=\"{lang}\">` needs a bundler to compile it: use @zubra/unplugin (Vite)"),
                 ));
@@ -955,14 +959,16 @@ fn refuse_unsupported(nodes: &[Node]) -> Result<(), Diagnostic> {
     for node in nodes {
         match node {
             Node::Await { span, .. } => {
-                return Err(
-                    Diagnostic::new(*span, "--emit element doesn't support zb-await")
-                        .with_help(HINT),
+                return Err(Diagnostic::new(
+                    crate::codes::ELEMENT_UNSUPPORTED,
+                    *span,
+                    "--emit element doesn't support zb-await",
                 )
+                .with_help(HINT))
             }
             Node::Element(element) => {
                 if element.name == "zb-outlet" {
-                    return Err(Diagnostic::new(
+                    return Err(Diagnostic::new(crate::codes::ELEMENT_UNSUPPORTED,
                         element.span,
                         "--emit element doesn't support <zb-outlet>: outlets are filled by @zubra/runtime's adapters",
                     )
@@ -971,6 +977,7 @@ fn refuse_unsupported(nodes: &[Node]) -> Result<(), Diagnostic> {
                 for attribute in &element.attributes {
                     if attribute.name == crate::parser::SPREAD {
                         return Err(Diagnostic::new(
+                            crate::codes::ELEMENT_UNSUPPORTED,
                             attribute.span,
                             "--emit element doesn't support `{...spread}` in the template",
                         )
@@ -1687,18 +1694,22 @@ impl Emitter<'_, '_> {
                 }
                 Node::Else { span, .. } => {
                     return Err(Diagnostic::new(
+                        crate::codes::DIRECTIVE_PLACEMENT,
                         *span,
                         "zb-else is only valid as a direct child of zb-if",
                     ));
                 }
                 Node::Await { span, .. } => {
-                    return Err(
-                        Diagnostic::new(*span, "--emit element doesn't support zb-await")
-                            .with_help(HINT),
-                    );
+                    return Err(Diagnostic::new(
+                        crate::codes::ELEMENT_UNSUPPORTED,
+                        *span,
+                        "--emit element doesn't support zb-await",
+                    )
+                    .with_help(HINT));
                 }
                 Node::Settled { caught, branch } => {
                     return Err(Diagnostic::new(
+                        crate::codes::DIRECTIVE_PLACEMENT,
                         branch.span,
                         format!(
                             "zb-{} is only valid as a direct child of zb-await",

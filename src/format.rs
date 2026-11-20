@@ -86,6 +86,7 @@ pub fn format(source: &str, options: &FormatOptions) -> Result<String, Diagnosti
     let source = source.replace("\r\n", "\n").replace('\r', "\n");
     if crate::jsx::looks_like_jsx(&source) {
         return Err(Diagnostic::new(
+            crate::codes::FMT_JSX,
             Span::new(1, 1),
             "zubra fmt formats HTML-first .zb files; this is a JSX component",
         )
@@ -97,6 +98,7 @@ pub fn format(source: &str, options: &FormatOptions) -> Result<String, Diagnosti
     // The output is checked, not trusted: if it doesn't parse, the file is left alone.
     if let Err(error) = parser::parse(&formatted) {
         return Err(Diagnostic::new(
+            crate::codes::FMT_UNPARSEABLE_OUTPUT,
             Span::new(1, 1),
             format!(
                 "the formatter wrote markup that doesn't parse ({}), so the file is left as it was",
@@ -141,6 +143,7 @@ pub fn format_range(
     let normalized = source.replace("\r\n", "\n").replace('\r', "\n");
     if crate::jsx::looks_like_jsx(&normalized) {
         return Err(Diagnostic::new(
+            crate::codes::FMT_JSX,
             Span::new(1, 1),
             "zubra fmt formats HTML-first .zb files; this is a JSX component",
         )
@@ -151,6 +154,7 @@ pub fn format_range(
     let (formatted, marks) = Printer::new(options).print_marked(&tokens);
     if let Err(error) = parser::parse(&formatted) {
         return Err(Diagnostic::new(
+            crate::codes::FMT_UNPARSEABLE_OUTPUT,
             Span::new(1, 1),
             format!(
                 "the formatter wrote markup that doesn't parse ({}), so the file is left as it was",
@@ -365,7 +369,7 @@ fn scan(source: &str) -> Result<Vec<Token<'_>>, Diagnostic> {
     let error = |at: usize, message: &str| {
         let mut cursor = Cursor::new(source);
         cursor.advance(at);
-        cursor.error(message.to_owned())
+        cursor.error(crate::codes::FMT_SYNTAX, message.to_owned())
     };
     while at < bytes.len() {
         let rest = &source[at..];
@@ -463,7 +467,7 @@ fn open_tag(source: &str, at: usize) -> Result<(Token<'_>, usize), Diagnostic> {
             break false;
         }
         if cursor.is_at_end() {
-            return Err(cursor.error(format!("missing > after <{name}")));
+            return Err(cursor.error(crate::codes::FMT_SYNTAX, format!("missing > after <{name}")));
         }
         if cursor.starts_with("{") {
             // `{...spread}`
@@ -494,7 +498,10 @@ fn open_tag(source: &str, at: usize) -> Result<(Token<'_>, usize), Diagnostic> {
                 cursor.advance(1);
                 loop {
                     match cursor.peek_byte() {
-                        None => return Err(cursor.error("unterminated attribute value")),
+                        None => {
+                            return Err(cursor
+                                .error(crate::codes::FMT_SYNTAX, "unterminated attribute value"))
+                        }
                         Some(b'{') => {
                             cursor.scan_braced()?;
                         }

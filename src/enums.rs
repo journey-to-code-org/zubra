@@ -526,7 +526,7 @@ pub fn resolve_imports(
             .any(|kept| kept.names.iter().any(|name| name.local == import.local));
         if info.constant && used_as_value {
             if let Some((member, _)) = info.members.iter().find(|(_, value)| value.is_none()) {
-                return Err(crate::diagnostic::Diagnostic::new(
+                return Err(crate::diagnostic::Diagnostic::new(crate::codes::CONST_ENUM_NOT_CONSTANT,
                     import.span,
                     format!(
                         "`{}` is a `const enum` (in {file}), and its member `{member}` isn't a constant the compiler can work out, so it can't be inlined; TypeScript erases a const enum, so importing it would fail in the browser",
