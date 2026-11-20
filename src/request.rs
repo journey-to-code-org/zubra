@@ -668,7 +668,7 @@ fn entry(path: &str, diagnostic: &Diagnostic, severity: &str) -> Value {
         .map_or(path, |(file, _)| file.as_str());
     json!({
         "file": file,
-        "code": diagnostic.code,
+        "code": diagnostic.code.as_str(),
         "line": diagnostic.span.line,
         "column": diagnostic.span.column,
         "severity": severity,
@@ -1325,7 +1325,7 @@ const rows = [{ id: "a", tone: "warm" }, { id: "b", tone: "cool" }]</script><zb-
             ("{", "isn't JSON"),
             ("{\"files\": {}}", "`path` is required"),
             ("{\"path\": \"/a.zb\"}", "`files` must map"),
-            ("{\"path\": \"/a.zb\", \"files\": {}}", "no source for `/a.zb`"),
+            ("{\"path\": \"/a.zb\", \"files\": {}}", "no such file: /a.zb"),
             ("{\"path\": \"/a.zb\", \"files\": {\"/a.zb\": \"<zb-a></zb-a>\"}, \"emit\": \"pdf\"}", "unknown emit"),
             ("{\"path\": \"/a.zb\", \"files\": {\"/a.zb\": \"<zb-a></zb-a>\"}, \"command\": \"run\"}", "unknown command"),
             ("{\"path\": \"/a.zb\", \"files\": {\"/a.zb\": \"<zb-a></zb-a>\"}, \"emit\": \"js\", \"cssImport\": \"x\"}", "go together"),

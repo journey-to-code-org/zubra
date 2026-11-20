@@ -10,13 +10,40 @@
 //! types, ZB5xxx server rendering, ZB6xxx output targets, ZB7xxx imports, ZB8xxx tools (fmt,
 //! convert, refactor), ZB9xxx internal errors.
 
-/// A diagnostic's stable code.
+/// A diagnostic's stable code: `ZB2001` is `Code(2001)` (a number, so a `Diagnostic` stays small).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct Code(pub &'static str);
+pub struct Code(pub u16);
+
+impl Code {
+    /// `ZB2001`.
+    pub fn as_str(self) -> &'static str {
+        ALL.iter()
+            .find(|(_, code, _)| number(code) == self.0)
+            .map_or("ZB0000", |(_, code, _)| code)
+    }
+}
+
+impl std::fmt::Display for Code {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// `"ZB2001"` → 2001, at compile time.
+const fn number(code: &str) -> u16 {
+    let bytes = code.as_bytes();
+    let mut value = 0;
+    let mut at = 2;
+    while at < bytes.len() {
+        value = value * 10 + (bytes[at] - b'0') as u16;
+        at += 1;
+    }
+    value
+}
 
 macro_rules! codes {
     ($($name:ident = $code:literal, $meaning:literal;)*) => {
-        $(#[doc = $meaning] pub const $name: Code = Code($code);)*
+        $(#[doc = $meaning] pub const $name: Code = Code(number($code));)*
         /// Every code: (name, code, meaning).
         pub const ALL: &[(&str, &str, &str)] = &[$((stringify!($name), $code, $meaning)),*];
     };

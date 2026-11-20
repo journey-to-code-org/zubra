@@ -750,7 +750,7 @@ fn entry(
         .map_or(path, |(file, _)| file.as_str());
     serde_json::json!({
         "file": file,
-        "code": diagnostic.code,
+        "code": diagnostic.code.as_str(),
         "line": diagnostic.span.line,
         "column": diagnostic.span.column,
         "severity": severity,

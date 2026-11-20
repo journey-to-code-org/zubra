@@ -18,7 +18,7 @@ impl Span {
 pub struct Diagnostic {
     /// The stable code (`ZB2001`), from `crate::codes`: what tools key on, while the message may
     /// change (docs/diagnostics.md).
-    pub code: &'static str,
+    pub code: Code,
     pub span: Span,
     pub message: String,
     /// An optional suggestion, e.g. "did you mean `title`?".
@@ -28,9 +28,12 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
+    /// A diagnostic with its stable code. A new kind of diagnostic gets a new code: add it to
+    /// `src/codes.rs` (in its area's range, never reusing a number) and a row to
+    /// docs/diagnostics.md; `tests/diagnostics.rs` checks the two agree.
     pub fn new(code: Code, span: Span, message: impl Into<String>) -> Self {
         Self {
-            code: code.0,
+            code,
             span,
             message: message.into(),
             help: None,

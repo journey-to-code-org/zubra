@@ -115,7 +115,7 @@ fn every_diagnostic_is_made_with_a_code() {
             let rest = source[at + "Diagnostic::new(".len()..].trim_start();
             assert!(
                 rest.starts_with("crate::codes::") || rest.starts_with("code,"),
-                "{path}:{}: a Diagnostic made without a code from crate::codes",
+                "{path}:{}: a Diagnostic made without a code. Every diagnostic needs one: add it to src/codes.rs (in its area's range, never reusing a number) and a row to docs/diagnostics.md, then pass it first: Diagnostic::new(crate::codes::NAME, span, message)",
                 source[..at].lines().count()
             );
         }
@@ -137,7 +137,8 @@ fn every_code_is_used() {
 fn the_rendered_error_and_the_json_carry_the_code() {
     let error = zubra::compile_js("<x-y><p>{titel}</p></x-y>", "@zubra/runtime", "x.zb")
         .expect_err("an unknown reference");
-    assert_eq!(error.code, "ZB2001");
+    assert_eq!(error.code.as_str(), "ZB2001");
+    assert_eq!(error.code, zubra::codes::UNKNOWN_REFERENCE);
     assert!(error
         .render("<x-y><p>{titel}</p></x-y>", "x.zb")
         .starts_with("error[ZB2001]: unknown reference `titel`"));
