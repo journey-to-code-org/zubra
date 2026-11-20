@@ -568,3 +568,42 @@ fn reacts_names_for_class_and_for_warn_with_the_html_name() {
     let jsx = "export default function XLabel() {\n  return <x-label><label className=\"a\" htmlFor=\"b\">x</label></x-label>;\n}\n";
     assert!(zubra::warnings_with(jsx, "x-label.zb.tsx", &loader).is_empty());
 }
+
+#[test]
+fn a_dashed_attribute_on_a_child_is_its_camelcase_prop() {
+    // `max-value` on the tag is `maxValue`: passed as the prop, counted as given for a required
+    // one (`min-value`), and the tag's own wins over a spread's, in either order.
+    let meter = "<zb-meter min-value max-value={5}><p>{minValue}-{maxValue}</p></zb-meter>";
+    let children = files(&[("./meter.zb", meter)]);
+    let page = |tag: &str| {
+        format!("<script>\n  import './meter.zb'\n  const rest = {{ maxValue: 9 }}\n</script>\n<zb-app>{tag}</zb-app>")
+    };
+    for (tag, shown) in [
+        (
+            "<zb-meter min-value={1} max-value={3}></zb-meter>",
+            "<p>1-3</p>",
+        ),
+        ("<zb-meter min-value=\"2\"></zb-meter>", "<p>2-5</p>"),
+        (
+            "<zb-meter min-value={1} max-value={3} {...rest}></zb-meter>",
+            "<p>1-3</p>",
+        ),
+        (
+            "<zb-meter {...rest} min-value={1} max-value={3}></zb-meter>",
+            "<p>1-3</p>",
+        ),
+        (
+            "<zb-meter min-value={1} {...rest}></zb-meter>",
+            "<p>1-9</p>",
+        ),
+    ] {
+        let output = html(&page(tag), &children).unwrap_or_else(|error| panic!("{tag}: {error:?}"));
+        assert!(output.contains(shown), "{tag}: {output}");
+    }
+    let missing = html(&page("<zb-meter max-value={3}></zb-meter>"), &children).unwrap_err();
+    assert!(
+        missing.message.contains("minValue") || missing.message.contains("min-value"),
+        "{}",
+        missing.message
+    );
+}
