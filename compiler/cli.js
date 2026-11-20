@@ -270,6 +270,21 @@ const shown = (file) => (file.startsWith(process.cwd() + sep) ? relative(process
 /** Whether a component is TypeScript, whose types only `--types` checks. */
 const isTypescript = (path, source) => path.endsWith('.zb.tsx') || /<script\b[^>]*\blang\s*=\s*["']?ts(?![\w-])/i.test(source);
 
+/** The source line under a type error, with a caret at its column, as the compiler's own errors have. */
+function frame({ file, line, column }) {
+  let text;
+  try {
+    text = readFileSync(file, 'utf8').replace(/\r\n?/g, '\n').split('\n')[line - 1];
+  } catch {
+    return '';
+  }
+  if (text === undefined) return '';
+  const gutter = ' '.repeat(String(line).length);
+  // Columns count UTF-16 units, as the editor does; tabs keep their width so the caret lines up.
+  const lead = text.slice(0, Math.max(column - 1, 0)).replace(/[^\t]/g, ' ');
+  return `${gutter} |\n${line} | ${text}\n${gutter} | ${lead}^\n`;
+}
+
 /** Read a file, or say plainly that it isn't there. */
 function readSource(path) {
   try {
@@ -291,7 +306,7 @@ function check(command, { flags, rest }) {
       if (diagnostics.length) process.exitCode = 1;
       return;
     }
-    for (const diagnostic of diagnostics) process.stderr.write(`${formatDiagnostic(diagnostic)}\n`);
+    for (const diagnostic of diagnostics) process.stderr.write(`${formatDiagnostic(diagnostic)}\n${frame(diagnostic)}`);
     if (diagnostics.length) {
       process.stderr.write(`${diagnostics.length} type error${diagnostics.length === 1 ? '' : 's'} in ${checked} component${checked === 1 ? '' : 's'}\n`);
       process.exitCode = 1;

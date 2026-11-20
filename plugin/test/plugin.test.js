@@ -295,6 +295,7 @@ test('compile errors fail the build with the source line', async () => {
   writeFileSync(join(root, 'components/card.zb'), '<zb-card heading="x">\n  <h2>{headng}</h2>\n</zb-card>\n');
   await assert.rejects(bundle('plain', root), (error) => {
     assert.match(error.message, /unknown reference `headng`/);
+    assert.match(error.message, /ZB2001/, 'with its code');
     assert.match(error.message, /2 \|   <h2>\{headng\}<\/h2>/);
     assert.match(error.message, /did you mean `heading`\?/);
     return true;

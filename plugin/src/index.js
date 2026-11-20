@@ -233,7 +233,8 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
     const at = text.match(/-->\s+(.+?):(\d+):(\d+)/);
     if (!at) return null;
     return {
-      message: `${text.split('\n')[0].replace(/^error:\s*/, '')}\n\n${text}`,
+      // The first line without its `error[ZB2001]: `, the code kept after the message.
+      message: `${text.split('\n')[0].replace(/^error(?:\[(\w+)\])?:\s*(.*)$/, (_, code, message) => (code ? `${message} (${code})` : message))}\n\n${text}`,
       id,
       loc: { file: at[1], line: Number(at[2]), column: Number(at[3]) },
       frame: text.split('\n').slice(1).join('\n'),

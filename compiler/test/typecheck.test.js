@@ -102,6 +102,8 @@ test('the CLI: errors on .zb lines, or as JSON for tooling, and exit 1', { skip 
   const human = cli('src');
   assert.equal(human.status, 1);
   assert.match(human.stderr, /^src\/badge\.zb:6:\d+ - error TS2339: Property 'nope' does not exist on type 'number'\./m);
+  // With the line and a caret under the error, as the compiler's own errors have.
+  assert.match(human.stderr, /TS2339[^\n]*\n  \|\n6 \| [^\n]*count\.nope[^\n]*\n  \| +\^\n/);
   const json = cli('src', '--format', 'json');
   assert.equal(json.status, 1);
   const [entry] = JSON.parse(json.stdout);
