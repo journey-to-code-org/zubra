@@ -59,3 +59,26 @@ test('the edge entry has it too, and a Worker is production unless told otherwis
   assert.equal(createEdge({ wasm, components: sources }).errorPage(failure()).body, 'Something went wrong');
   assert.match(createEdge({ wasm, components: sources, production: false }).errorPage(failure()).body, /&lt;script&gt;alert/);
 });
+
+test("development: a component's compile error is the compiler's message, without the server's own frames", () => {
+  const broken = mkdtempSync(join(tmpdir(), 'zubra-error-page-broken-'));
+  try {
+    writeFileSync(join(broken, 'bad-word.zb'), '<script>\n  let = = 2\n</script>\n<bad-word><p>x</p></bad-word>\n');
+    const zubra = createZubra({ components: broken, production: false });
+    let error;
+    try {
+      zubra.page().render('bad-word', {});
+    } catch (thrown) {
+      error = thrown;
+    }
+    assert.ok(error, 'it fails to render');
+    // Printed as `Error: invalid <script>…`, not `Error: error: invalid <script>…`.
+    assert.match(error.message, /^invalid <script>/);
+    assert.match(String(error.stack), /^Error: invalid <script>/);
+    const failed = zubra.errorPage(error);
+    assert.match(failed.body, /<pre>invalid &lt;script&gt;[^]*bad-word\.zb:2:\d+[^]*let = = 2/);
+    assert.equal(failed.body.match(/<pre>/g).length, 1, 'no frames: they would be the server\'s own');
+  } finally {
+    rmSync(broken, { recursive: true, force: true });
+  }
+});
