@@ -77,8 +77,8 @@ test('every output matches the native CLI', { skip }, () => {
 test('errors and warnings come back rendered and as diagnostics', { skip }, () => {
   const response = request({ command: 'check', path: '/x.zb', files: { '/x.zb': '<zb-x title="">\n  <p>{titel}</p>\n</zb-x>' } });
   assert.equal(response.ok, false);
-  assert.match(response.error, /^error: unknown reference `titel`/);
-  assert.match(response.warnings[0], /^warning: prop `title`/);
+  assert.match(response.error, /^error\[ZB2001\]: unknown reference `titel`/);
+  assert.match(response.warnings[0], /^warning\[ZB4019\]: prop `title`/);
   assert.deepEqual(response.diagnostics.map((d) => [d.severity, d.line, d.help]), [
     ['warning', 1, "rename the prop if that isn't intended (e.g. `title-text`)"],
     ['error', 2, 'did you mean `title`?'],
