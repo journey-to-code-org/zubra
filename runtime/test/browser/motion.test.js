@@ -110,6 +110,46 @@ test('a removed row stays where it was on screen, even when its list is anchored
   await page.close();
 });
 
+test('a glide reads every row before it writes any (no layout per row)', async () => {
+  const { page, messages } = await open('<zb-motion></zb-motion>', { modules: ['motion'] });
+  const many = Array.from({ length: 8 }, (_, i) => ({ id: i + 1, label: `row ${i + 1}` }));
+  await set(page, { items: many });
+  await drawn(page);
+  // After the change, the order of box and style reads and of animate() calls on one list's rows:
+  // interleaved, each read after a write lays the page out again.
+  const order = await page.evaluate(async (kept) => {
+    const log = [];
+    let on = false;
+    const spy = (owner, name, kind) => {
+      const original = owner[name];
+      owner[name] = function (...args) {
+        if (on && this.matches?.('ul.list > li')) log.push(kind);
+        return original.apply(this, args);
+      };
+    };
+    spy(Element.prototype, 'getBoundingClientRect', 'read');
+    spy(Element.prototype, 'animate', 'write');
+    const computed = window.getComputedStyle;
+    window.getComputedStyle = (element, ...rest) => {
+      if (on && element.matches?.('ul.list > li')) log.push('read');
+      return computed(element, ...rest);
+    };
+    const el = document.querySelector('zb-motion');
+    // The first row goes, so every other row moves up and one row leaves.
+    on = true;
+    el.items = kept;
+    await el.updateComplete;
+    on = false;
+    return log;
+  }, many.slice(1));
+  const writes = order.indexOf('write');
+  assert.ok(writes > 0, order.join());
+  assert.equal(order.lastIndexOf('read') < writes, true, `reads after a write: ${order.join()}`);
+  assert.ok(order.filter((kind) => kind === 'write').length >= 7, 'the rows that stayed glide');
+  assert.deepEqual(messages, []);
+  await page.close();
+});
+
 test('reduced motion: branches and rows go at once, and nothing glides', async () => {
   const { page, messages } = await open('<zb-motion></zb-motion>', { modules: ['motion'] });
   await page.emulateMedia({ reducedMotion: 'reduce' });

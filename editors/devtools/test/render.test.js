@@ -2,7 +2,8 @@
 // against a live page is tested in runtime/test/browser/devtools.test.js.)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { render } from '../render.js';
+import { readFileSync } from 'node:fs';
+import { announcement, render } from '../render.js';
 
 const reading = {
   version: 1,
@@ -153,4 +154,25 @@ test('the timeline: newest first, what each wrote and re-ran, and how long it to
   assert.match(html, /wrote <code>an unnamed signal<\/code> → <code>&quot;&lt;i&gt;&quot;<\/code>, and 22 more/);
   assert.match(html, /re-ran 9: <code>effect 0<\/code>.*<code>effect 5<\/code>, and 3 more/);
   assert.ok(!html.includes('<i>'));
+});
+
+test('what a screen reader is told: the selection, then only updates, as plain text', () => {
+  const later = (number, ran) => ({ ...reading, lastUpdate: { number, written: ['count'], ran } });
+  assert.equal(announcement(null, reading, true), 'Inspecting <dt-panel>');
+  assert.equal(announcement(reading, reading, true), 'Inspecting <dt-panel>', 'a new selection is always said');
+  assert.equal(announcement(reading, reading), '', 'a reading with nothing new says nothing');
+  assert.equal(announcement(reading, later(4, 1)), "Update 4: 1 of this component's binding re-ran");
+  assert.equal(announcement(reading, later(6, 2)), "3 updates: 2 of this component's bindings re-ran");
+  assert.equal(announcement(reading, { version: 1, component: null }), 'Not inside a Zubra component');
+  assert.equal(announcement(null, { missing: true }), 'No Zubra development runtime on this page');
+  assert.equal(announcement(reading, { loading: true }), '', 'connecting is not worth saying');
+  // A page's numbers are numbers here too.
+  assert.equal(announcement(reading, later('9<b>', '<i>')), '');
+});
+
+test("the pane isn't a live region (it changes on every update); a status line is", () => {
+  const html = readFileSync(new URL('../pane.html', import.meta.url), 'utf8');
+  assert.match(html, /<main id="pane">/);
+  assert.ok(!/aria-live/.test(html));
+  assert.match(html, /id="pane-status" class="visually-hidden" role="status"/);
 });

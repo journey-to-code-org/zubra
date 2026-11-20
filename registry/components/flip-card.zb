@@ -6,6 +6,11 @@
   @fires flippedchange - It was flipped; `detail` is whether the back is showing.
 -->
 <script>
+  import { id } from '@zubra/runtime'
+
+  // The hint describes the card; its name stays the face's own text (what is seen is what is said).
+  const hintId = id()
+
   function flip() {
     flipped = !flipped
   }
@@ -17,7 +22,7 @@
   .flipped { transform: rotateY(180deg); }
   .face { grid-area: 1 / 1; display: grid; place-items: center; padding: 2rem; border-radius: 1.25rem; backface-visibility: hidden; background: var(--card-front, #fff); box-shadow: 0 2px 4px #0001, 0 16px 40px #00000014; text-align: center; }
   .back { transform: rotateY(180deg); background: var(--card-back, #fdf8ee); }
-  .hint { position: absolute; bottom: 0.75rem; left: 0; right: 0; text-align: center; font-size: 0.75rem; color: var(--muted, #888); backface-visibility: hidden; }
+  .hint { position: absolute; bottom: 0.75rem; left: 0; right: 0; text-align: center; font-size: 0.75rem; color: var(--muted, #667085); backface-visibility: hidden; }
   @media (prefers-reduced-motion: reduce) { .card { transition: none; } }
 </style>
 <flip-card shadow flipped:model={false} hint="Click or press Space to flip">
@@ -27,11 +32,12 @@
     role="button"
     tabindex="0"
     aria-pressed={flipped ? "true" : "false"}
+    aria-describedby={hintId}
     onclick={flip}
     onkeydown.space.enter.prevent={flip}
   >
     <div class="face front" aria-hidden={flipped ? "true" : "false"}><zb-slot name="front"></zb-slot></div>
     <div class="face back" aria-hidden={flipped ? "false" : "true"}><zb-slot name="back"></zb-slot></div>
-    <span class="hint">{hint}</span>
+    <span class="hint" id={hintId} aria-hidden="true">{hint}</span>
   </div>
 </flip-card>

@@ -1,29 +1,47 @@
 <!--
   A star rating that is a form control: it submits its value under its `name`, is invalid while
   `required` and unset, and goes back to 0 when its form resets. `readonly` shows a rating.
+  A radio group with one tab stop: the arrow keys move the rating one star (Right and Up add one,
+  Left and Down take one away), Home picks one star and End all of them. A disabled control (its
+  own `disabled` attribute, or a disabled `<fieldset>`) leaves the tab order.
   @fires valuechange - The user picked a rating; `detail` is the number of stars.
 -->
 <script>
-  import { formValue, validity } from '@zubra/runtime'
+  import { formValue, validity, onFormDisabled } from '@zubra/runtime'
 
   let hovered = 0
+  let disabled = false
+  let group = null
   const shown = hovered || value
   const stars = Array.from({ length: max }, (_, index) => index + 1)
+  // The star that takes focus: the chosen one, or the first while there's none.
+  const current = value >= 1 && value <= max ? value : 1
 
   formValue(() => (value ? value : null))
   validity(() => (required && !value ? "Pick a rating" : ""))
+  onFormDisabled((off) => (disabled = off))
 
   function rate(stars) {
-    if (readonly) return
+    if (readonly || disabled) return
     value = stars
+  }
+  function keys(event, n) {
+    const to = { ArrowRight: n + 1, ArrowUp: n + 1, ArrowLeft: n - 1, ArrowDown: n - 1, Home: 1, End: max }[event.key]
+    if (to === undefined) return
+    event.preventDefault()
+    const next = Math.min(max, Math.max(1, to))
+    if (!readonly) rate(next)
+    queueMicrotask(() => group.querySelector(`[data-star="${readonly ? current : next}"]`)?.focus())
   }
 </script>
 <style>
   :host { display: inline-flex; }
-  [role=group] { display: inline-flex; gap: 0.1rem; }
-  button { font: inherit; font-size: 1.25rem; line-height: 1; padding: 0; border: 0; background: none; color: #c9c2b8; cursor: pointer; }
+  [role=radiogroup] { display: inline-flex; gap: 0.1rem; }
+  button { display: inline-grid; place-items: center; min-width: 1.5rem; min-height: 1.5rem; font: inherit; font-size: 1.25rem; line-height: 1; padding: 0; border: 0; border-radius: 0.25rem; background: none; color: #908779; cursor: pointer; }
   button.on { color: var(--accent, #e07a2f); }
+  button:focus-visible { outline: 2px solid var(--ink, #1d2130); outline-offset: 1px; }
   :host([readonly]) button { cursor: default; font-size: 1rem; }
+  [aria-disabled=true] button { cursor: default; opacity: 0.6; }
 </style>
 <star-rating
   form-associated
@@ -33,15 +51,26 @@
   readonly={false}
   label="Rating"
 >
-  <span role="group" aria-label={label}>
+  <span
+    role="radiogroup"
+    aria-label={label}
+    aria-required={required ? "true" : "false"}
+    aria-readonly={readonly ? "true" : "false"}
+    aria-disabled={disabled ? "true" : "false"}
+    ref={group}
+  >
     <zb-each items={stars} as="n" key={n}>
       <button
         type="button"
+        role="radio"
         class:on={n <= shown}
+        data-star={n}
         aria-label={`${n} of ${max}`}
-        aria-pressed={n === value ? "true" : "false"}
+        aria-checked={n === value ? "true" : "false"}
+        tabindex={!disabled && n === current ? "0" : "-1"}
         onclick={() => rate(n)}
-        onmouseenter={() => (hovered = readonly ? 0 : n)}
+        onkeydown={(event) => keys(event, n)}
+        onmouseenter={() => (hovered = readonly || disabled ? 0 : n)}
         onmouseleave={() => (hovered = 0)}
       >★</button>
     </zb-each>

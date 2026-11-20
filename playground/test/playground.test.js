@@ -441,3 +441,71 @@ test('the new examples: a form control validates and resets, data loads, events 
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('the output tabs are a tab list with one tab stop; arrows, Home and End choose', async () => {
+  const { page, errors } = await openPlayground();
+  const list = page.getByRole('tablist', { name: 'Output' });
+  const tabs = list.getByRole('tab');
+  assert.equal(await tabs.count(), 7);
+  // Each tab controls its panel, and each panel is labelled by its tab.
+  for (const tab of await tabs.all()) {
+    const panel = page.locator(`#${await tab.getAttribute('aria-controls')}`);
+    assert.equal(await panel.getAttribute('role'), 'tabpanel');
+    assert.equal(await panel.getAttribute('aria-labelledby'), await tab.getAttribute('id'));
+  }
+  const selected = () => page.evaluate(() => [document.activeElement.dataset.tab, document.querySelector('[role=tab][aria-selected=true]').dataset.tab, [...document.querySelectorAll('[role=tabpanel]:not([hidden])')].map((el) => el.dataset.panel).join()]);
+  await page.getByRole('tab', { name: 'Preview' }).focus();
+  await page.keyboard.press('ArrowRight');
+  assert.deepEqual(await selected(), ['element', 'element', 'element']);
+  await page.keyboard.press('End');
+  assert.deepEqual(await selected(), ['server', 'server', 'server']);
+  await page.keyboard.press('ArrowRight'); // wraps
+  assert.deepEqual(await selected(), ['preview', 'preview', 'preview']);
+  await page.keyboard.press('ArrowLeft');
+  assert.deepEqual(await selected(), ['server', 'server', 'server']);
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowRight');
+  assert.deepEqual(await selected(), ['element', 'element', 'element']);
+  assert.deepEqual(await tabs.evaluateAll((els) => els.map((el) => el.tabIndex)), [-1, 0, -1, -1, -1, -1, -1]);
+  // Tab leaves the list for the panel, a scrolling code block the keyboard can reach.
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'panel-element');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Tab indents in the editors; Escape or Ctrl+M makes it move focus, and says so', async () => {
+  const { page, errors } = await openPlayground();
+  const source = page.getByRole('textbox', { name: 'Component source' });
+  const hint = page.locator('#tab-hint');
+  assert.match(await source.evaluate((el) => document.getElementById(el.getAttribute('aria-describedby')).textContent), /Tab indents/);
+  await source.focus();
+  await source.evaluate((el) => el.setSelectionRange(0, 0));
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'source');
+  assert.equal((await source.inputValue()).slice(0, 2), '  ');
+  await page.keyboard.press('Escape');
+  assert.match(await hint.textContent(), /^Tab moves focus/);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'page', 'Tab moved on to the next editor');
+  await page.keyboard.press('Tab');
+  assert.notEqual(await page.evaluate(() => document.activeElement.id), 'page', 'and out of it');
+  // Ctrl+M switches it back.
+  await page.locator('#page').focus();
+  await page.keyboard.press('Control+m');
+  assert.match(await hint.textContent(), /^Tab indents/);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'page');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('at 375px wide the page does not scroll sideways', async () => {
+  const { page, errors } = await openPlayground();
+  await page.setViewportSize({ width: 375, height: 740 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 375);
+  const list = await page.getByRole('tablist', { name: 'Output' }).boundingBox();
+  assert.ok(list.x + list.width <= 375, `the tab list is ${list.width}px wide`);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

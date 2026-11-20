@@ -44,5 +44,12 @@
       <p class="edit"><a href="{{ docs.github }}/blob/main/{{ doc.file }}">Edit this page on GitHub</a> · Zubra {{ docs.version }}</p>
     </main>
   </div>
+  <script>
+    // Code blocks and tables are focusable so the keyboard can scroll them; one that fits needs no tab stop.
+    const scrolls = () => { for (const box of document.querySelectorAll('[data-scrolls]')) box.tabIndex = box.scrollWidth > box.clientWidth + 1 ? 0 : -1; };
+    scrolls();
+    let resizing;
+    addEventListener('resize', () => { clearTimeout(resizing); resizing = setTimeout(scrolls, 150); });
+  </script>
 </body>
 </html>
