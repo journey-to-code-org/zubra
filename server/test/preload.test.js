@@ -12,6 +12,10 @@ import { chromium } from 'playwright';
 import { createZubra } from '../src/index.js';
 import { resolveSpecifier, staticImports } from '../src/core.js';
 
+// What these tests call development is NODE_ENV=development (since 6.0 an unset NODE_ENV is
+// production: production-default.test.js); a test of production passes `production: true`.
+process.env.NODE_ENV = 'development';
+
 const here = dirname(fileURLToPath(import.meta.url));
 const components = join(here, 'components');
 const layout = (body) => `<!doctype html><html><head><meta charset="utf-8"><title>t</title></head><body>${body}</body></html>`;

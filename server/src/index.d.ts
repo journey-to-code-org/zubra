@@ -109,7 +109,11 @@ export interface ZubraOptions {
    * edit shows on the next request with no restart. False recompiles and renders on every request.
    */
   cache?: boolean;
-  /** Serve the runtime's production build, without hot reloading (default: `NODE_ENV` is `production`). */
+  /**
+   * Serve the runtime's production build, without hot reloading, and answer errors with
+   * "Something went wrong" only. Default: true unless `NODE_ENV` is `development` (an unset
+   * NODE_ENV is production). Development mode says so once, at start.
+   */
   production?: boolean;
   /**
    * Compile for the Zubra DevTools extension and serve the runtime build it reads (default: on,

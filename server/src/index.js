@@ -59,7 +59,7 @@ const posix = (path) => path.split(sep).join('/');
  * the browser modules are served under. `cache`: keep compiled output and renders. In
  * development an edit under the folder is still picked up on the next request (the folder's
  * files are checked for changes first); `cache: false` compiles on every request instead. `production`: serve the runtime's production build, without hot
- * reloading (by default when `NODE_ENV` is `production`). `devtools`: compile for the Zubra DevTools
+ * reloading, errors as "Something went wrong" (on by default; off with `NODE_ENV=development` or `production: false`). `devtools`: compile for the Zubra DevTools
  * extension and serve the runtime build it reads (on by default except in production;
  * `ZUBRA_DEVTOOLS=1` turns it on there too, for a demo or a staging site). `imports`: more import map entries,
  * for packages the components import beyond `@zubra/runtime` and `@zubra/sync` (both of which
@@ -81,7 +81,16 @@ const posix = (path) => path.split(sep).join('/');
  * Zubra's own engine (`@zubra/runtime`'s `signal-tc39.js` is served as its `signal.js`). The runtime
  * is then served file by file in production too, since its one-file builds hold Zubra's engine.
  */
-export function createZubra({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = process.env.NODE_ENV === 'production', devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, runtime = null, onError, streamTimeout, compress = false, reload = false, signals = false, minify = production && !devtools } = {}) {
+/**
+ * Development is opt-in: `NODE_ENV=development`, or `production: false`. Anything else, unset
+ * included, is production, so a deployment that forgets NODE_ENV doesn't send its visitors
+ * error messages, stacks, source paths and the runtime's development build (as `/edge` never did).
+ */
+const developmentByDefault = () => process.env.NODE_ENV === 'development';
+
+export function createZubra({ components = 'components', packages = [], prefix = '/_zubra', cache = true, production = !developmentByDefault(), devtools = process.env.ZUBRA_DEVTOOLS === '1' || !production, imports = {}, warn, gaps, clientModules, inline, preload, bundle = false, runtime = null, onError, streamTimeout, compress = false, reload = false, signals = false, minify = production && !devtools } = {}) {
+  // Said once at start, so a server in development mode never passes for a deployed one.
+  if (!production) console.info(`@zubra/server: development mode (${developmentByDefault() ? 'NODE_ENV=development' : 'production: false'})`);
   const root = resolve(components);
   // The folder as the disk has it, links resolved: what a served module's real path must be inside.
   const realRoot = existsSync(root) ? realpathSync(root) : root;
