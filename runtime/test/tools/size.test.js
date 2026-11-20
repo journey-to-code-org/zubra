@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gzipSync, brotliCompressSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { basename, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
@@ -76,8 +76,8 @@ const BUDGETS = {
   // `{...spread}`'s binder (3.5), loaded only by components whose template spreads. (1.5 KB until
   // spread onto a Zubra component — its props as props, unset when their key goes, about 110 B.)
   // 1.75 KB until the second security audit: a spread may not set an animation's values or
-  // target, a <meta>'s http-equiv, or ping (about 100 B).
-  'src/spread.js': { gzip: 1.875 * 1024, external: ['./element.js', './effect.js'] },
+  // target, a <meta>'s http-equiv, or ping (about 100 B). Style value safety checks take it to 2 KB.
+  'src/spread.js': { gzip: 2 * 1024, external: ['./element.js', './effect.js'] },
   // rovingFocus and typeahead (3.6), for menus, tab lists and toolbars.
   'src/primitives.js': { gzip: 1.25 * 1024 },
   // The Zag adapter (3.6), without Zag itself (an app's dependency, like the machines).
@@ -101,8 +101,9 @@ for (const [entry, budget] of Object.entries(BUDGETS)) {
     };
     load(Object.keys(outputs).find((path) => path.endsWith('/entry.js')));
     const names = new Set([...loaded].map((path) => path.split('/').pop()));
-    const files = result.outputFiles.filter((file) => names.has(file.path.split('/').pop()));
+    const files = result.outputFiles.filter((file) => names.has(basename(file.path)));
     const code = Buffer.concat(files.map((file) => file.contents));
+    assert.ok(code.length, `${entry}: no output found`);
     const gzip = gzipSync(code).length;
     t.diagnostic(`${entry}: ${code.length} B minified, ${gzip} B gzip, ${brotliCompressSync(code).length} B brotli`);
     assert.ok(gzip <= budget.gzip, `${gzip} B gzip > ${budget.gzip} B`);
