@@ -3,7 +3,7 @@
 //
 //   OUT         where to write it (default _site)
 //   BASE        the path the site is served from, like /zubra/ (default /)
-//   GITHUB_REPOSITORY  who the links to the source point at (default journey-to-code-org/zubra)
+//   GITHUB_REPOSITORY  who the links to the source point at (default zubra-js/zubra)
 //   LANDING_OUT the finished Pages build, so the page links the examples that are in it
 import Prism from 'prismjs';
 import loadLanguages from 'prismjs/components/index.js';

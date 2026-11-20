@@ -610,7 +610,7 @@ Dynamic values are escaped or written as text. URL attributes must be relative o
 
 ## Install the CLI without Node or Rust
 
-Each release attaches prebuilt `zubra` binaries to its [GitHub release](https://github.com/journey-to-code-org/zubra/releases) (`zubra serve`, `zubra compile` and the rest), so a server written in anything can run Zubra:
+Each release attaches prebuilt `zubra` binaries to its [GitHub release](https://github.com/zubra-js/zubra/releases) (`zubra serve`, `zubra compile` and the rest), so a server written in anything can run Zubra:
 
 | Platform | Archive |
 |---|---|
@@ -621,8 +621,8 @@ Each release attaches prebuilt `zubra` binaries to its [GitHub release](https://
 
 ```sh
 version=5.5.0 target=x86_64-unknown-linux-gnu   # 5.5.0 is the first release with binaries
-curl -fsSLO "https://github.com/journey-to-code-org/zubra/releases/download/v$version/zubra-$version-$target.tar.gz"
-curl -fsSL "https://github.com/journey-to-code-org/zubra/releases/download/v$version/SHA256SUMS" | grep "zubra-$version-$target" | sha256sum -c -
+curl -fsSLO "https://github.com/zubra-js/zubra/releases/download/v$version/zubra-$version-$target.tar.gz"
+curl -fsSL "https://github.com/zubra-js/zubra/releases/download/v$version/SHA256SUMS" | grep "zubra-$version-$target" | sha256sum -c -
 tar -xzf "zubra-$version-$target.tar.gz" && echo "<hi-x></hi-x>" | "zubra-$version-$target/zubra" fmt --stdin
 ```
 

@@ -1,11 +1,11 @@
 # zubra for PHP
 
-Render [Zubra](https://github.com/journey-to-code-org/zubra) web components from Laravel, or any PHP app, with no Node.js anywhere. The components are compiled by the Zubra compiler (a Rust binary) running as one long-lived `zubra serve` process; the browser hydrates the HTML your server wrote.
+Render [Zubra](https://github.com/zubra-js/zubra) web components from Laravel, or any PHP app, with no Node.js anywhere. The components are compiled by the Zubra compiler (a Rust binary) running as one long-lived `zubra serve` process; the browser hydrates the HTML your server wrote.
 
 It isn't on Packagist yet. Install it from the repository, and put a compiler where it can find it (see "Finding the compiler"):
 
 ```json
-"repositories": [{ "type": "vcs", "url": "https://github.com/journey-to-code-org/zubra" }]
+"repositories": [{ "type": "vcs", "url": "https://github.com/zubra-js/zubra" }]
 ```
 
 (or a `path` repository pointing at `clients/php` in a checkout), then `composer require zubra/zubra`.
@@ -34,7 +34,7 @@ The provider registers a page per request, a route for the modules (`/components
 
 ## Finding the compiler
 
-In order: the `$compiler` argument (`zubra.compiler` in Laravel), `$ZUBRA_COMPILER`, then `zubra` on the `PATH`. Download a binary from the project's [releases](https://github.com/journey-to-code-org/zubra/releases). `proc_open` must be enabled.
+In order: the `$compiler` argument (`zubra.compiler` in Laravel), `$ZUBRA_COMPILER`, then `zubra` on the `PATH`. Download a binary from the project's [releases](https://github.com/zubra-js/zubra/releases). `proc_open` must be enabled.
 
 ## When the compiler misbehaves
 

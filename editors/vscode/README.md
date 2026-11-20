@@ -1,6 +1,6 @@
 # Zubra for VS Code
 
-Language support for [Zubra](https://journey-to-code-org.github.io/zubra/): `.zb` files are HTML with a script and styles, compiled to standard web components.
+Language support for [Zubra](https://zubra-js.github.io/zubra/): `.zb` files are HTML with a script and styles, compiled to standard web components.
 
 - **Syntax highlighting** for `.zb`: HTML, `{…}` as JavaScript, `<script>` and `<script lang="ts">` as JavaScript and TypeScript, `<style>` and `<style lang="scss">` as CSS and SCSS, and Zubra's directives and event attributes.
 - **Diagnostics as you type**: the compiler's own errors and warnings, with their suggestions ("did you mean `count`?").
@@ -30,6 +30,6 @@ Highlighting needs none of them.
 
 ## Learn more
 
-- [Documentation](https://journey-to-code-org.github.io/zubra/docs/) and the [playground](https://journey-to-code-org.github.io/zubra/playground/), which runs in the browser.
+- [Documentation](https://zubra-js.github.io/zubra/docs/) and the [playground](https://zubra-js.github.io/zubra/playground/), which runs in the browser.
 - `npm create zubra@latest` starts a project.
-- [Source](https://github.com/journey-to-code-org/zubra/tree/main/editors/vscode) and [issues](https://github.com/journey-to-code-org/zubra/issues).
+- [Source](https://github.com/zubra-js/zubra/tree/main/editors/vscode) and [issues](https://github.com/zubra-js/zubra/issues).

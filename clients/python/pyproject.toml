@@ -22,7 +22,7 @@ jinja = ["jinja2>=3"]
 django = ["django>=4.2"]
 
 [project.urls]
-Repository = "https://github.com/journey-to-code-org/zubra"
+Repository = "https://github.com/zubra-js/zubra"
 
 [tool.setuptools.packages.find]
 where = ["src"]

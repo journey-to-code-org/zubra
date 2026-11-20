@@ -1,8 +1,8 @@
 # DevDay registration: Bootstrap 5
 
-[![DevDay registration](../../../demos/shots/bootstrap-devday.jpg)](https://journey-to-code-org.github.io/zubra/demos/bootstrap-devday/)
+[![DevDay registration](../../../demos/shots/bootstrap-devday.jpg)](https://zubra-js.github.io/zubra/demos/bootstrap-devday/)
 
-**[Open the live demo](https://journey-to-code-org.github.io/zubra/demos/bootstrap-devday/)**, or browse [every example](https://journey-to-code-org.github.io/zubra/).
+**[Open the live demo](https://zubra-js.github.io/zubra/demos/bootstrap-devday/)**, or browse [every example](https://zubra-js.github.io/zubra/).
 
 A conference registration form in plain JavaScript and Bootstrap 5. Bootstrap provides the grid, cards, form fields, validation and modal. The ticket picker and the workshop list are Zubra components.
 

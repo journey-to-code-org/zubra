@@ -29,7 +29,7 @@
 </newsletter-signup>
 ```
 
-Open it in the [playground](https://journey-to-code-org.github.io/zubra/playground/#example=actions) and look at three tabs:
+Open it in the [playground](https://zubra-js.github.io/zubra/playground/#example=actions) and look at three tabs:
 
 - **JavaScript.** `subscribe` is now `const subscribe = "/_zb/action/newsletter-signup/subscribe";`. The function, its error message and `subscribers.js` are gone. The browser gets a URL, never the code.
 - **HTML.** The form is `<form action="/_zb/action/newsletter-signup/subscribe" method="post">`: a plain form that posts without JavaScript.

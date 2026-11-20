@@ -36,7 +36,7 @@ __version__ = "0.1.0"
 EXE = ".exe" if sys.platform == "win32" else ""
 HOW_TO = (
     "A platform wheel of this package includes the compiler; otherwise download a binary from "
-    "https://github.com/journey-to-code-org/zubra/releases and put it on the PATH, or set "
+    "https://github.com/zubra-js/zubra/releases and put it on the PATH, or set "
     "ZUBRA_COMPILER to its path."
 )
 

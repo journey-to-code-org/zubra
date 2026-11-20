@@ -3,7 +3,7 @@
 # Rails (and any Rack app): view helpers, a middleware that gives each request its own page, and
 # a Rack endpoint for the modules.
 #
-#   # Gemfile: gem "zubra", github: "journey-to-code-org/zubra", glob: "clients/ruby/*.gemspec"
+#   # Gemfile: gem "zubra", github: "zubra-js/zubra", glob: "clients/ruby/*.gemspec"
 #   # config/application.rb (the defaults shown):
 #   config.zubra.components = "app/components"
 #   # config/routes.rb: the modules that make the components interactive

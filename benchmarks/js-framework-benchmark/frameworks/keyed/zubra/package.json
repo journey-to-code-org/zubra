@@ -5,9 +5,9 @@
   "type": "module",
   "js-framework-benchmark": {
     "frameworkVersionFromPackage": "@zubra/runtime",
-    "frameworkHomeURL": "https://journey-to-code-org.github.io/zubra/",
+    "frameworkHomeURL": "https://zubra-js.github.io/zubra/",
     "language": "JavaScript",
-    "repoURL": "https://github.com/journey-to-code-org/zubra"
+    "repoURL": "https://github.com/zubra-js/zubra"
   },
   "scripts": {
     "dev": "node build.mjs --watch",

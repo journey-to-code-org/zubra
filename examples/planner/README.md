@@ -1,8 +1,8 @@
 # Event planner
 
-[![Event planner](../../demos/shots/planner.jpg)](https://journey-to-code-org.github.io/zubra/demos/planner/)
+[![Event planner](../../demos/shots/planner.jpg)](https://zubra-js.github.io/zubra/demos/planner/)
 
-**[Open the live demo](https://journey-to-code-org.github.io/zubra/demos/planner/)**, or browse [every example](https://journey-to-code-org.github.io/zubra/).
+**[Open the live demo](https://zubra-js.github.io/zubra/demos/planner/)**, or browse [every example](https://zubra-js.github.io/zubra/).
 
 The largest example: a single-page app for planning events, written only in `.zb` components
 and plain JavaScript modules. No framework, no router library, no state library.

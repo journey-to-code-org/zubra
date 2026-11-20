@@ -1,6 +1,6 @@
 # {{title}}
 
-A {{framework}} app with [Zubra](https://github.com/journey-to-code-org/zubra) components. A Zubra component is one `.zb` file (a script, styles and a template) that compiles to a standard custom element, so the same file works in plain HTML, in any framework and on a server.
+A {{framework}} app with [Zubra](https://github.com/zubra-js/zubra) components. A Zubra component is one `.zb` file (a script, styles and a template) that compiles to a standard custom element, so the same file works in plain HTML, in any framework and on a server.
 
 ## Commands
 
@@ -88,4 +88,4 @@ From a plain script: `el.count = 3` (the camelCase property) or `el.setAttribute
 - Don't edit the generated typings next to the components (`*.d.zb.ts`); they're rewritten from the `.zb` file.
 - After changing a component: `npx zubra check` on it, then `npm test`.
 
-The full reference is https://github.com/journey-to-code-org/zubra#readme, and the tutorial is https://journey-to-code-org.github.io/zubra/docs/.
+The full reference is https://github.com/zubra-js/zubra#readme, and the tutorial is https://zubra-js.github.io/zubra/docs/.

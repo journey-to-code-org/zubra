@@ -1,12 +1,12 @@
 # zubra for Python
 
-Render [Zubra](https://github.com/journey-to-code-org/zubra) web components from Flask, Django (template tags), or any Python server, with no Node.js anywhere. The components are compiled by the Zubra compiler (a Rust binary) running as one long-lived process; the browser hydrates the HTML your server wrote.
+Render [Zubra](https://github.com/zubra-js/zubra) web components from Flask, Django (template tags), or any Python server, with no Node.js anywhere. The components are compiled by the Zubra compiler (a Rust binary) running as one long-lived process; the browser hydrates the HTML your server wrote.
 
 It isn't on PyPI yet (the name `zubra` isn't registered there). Until it is, install it from the repository, and give it a compiler (see "Finding the compiler"):
 
 ```sh
-pip install "git+https://github.com/journey-to-code-org/zubra#subdirectory=clients/python"
-pip install "zubra[jinja] @ git+https://github.com/journey-to-code-org/zubra#subdirectory=clients/python"   # with the Jinja helpers (Django needs nothing extra)
+pip install "git+https://github.com/zubra-js/zubra#subdirectory=clients/python"
+pip install "zubra[jinja] @ git+https://github.com/zubra-js/zubra#subdirectory=clients/python"   # with the Jinja helpers (Django needs nothing extra)
 ```
 
 Once published, `pip install zubra` will fetch a platform wheel with the compiler inside it.
@@ -61,7 +61,7 @@ The middleware gives each request its own page, and fills in `{% zubra_head %}` 
 
 ## Finding the compiler
 
-In order: the `compiler=` argument, `$ZUBRA_COMPILER`, the binary bundled in the wheel, then `zubra` on the `PATH`. Without a platform wheel, download a binary from the project's [releases](https://github.com/journey-to-code-org/zubra/releases) (with `SHA256SUMS`).
+In order: the `compiler=` argument, `$ZUBRA_COMPILER`, the binary bundled in the wheel, then `zubra` on the `PATH`. Without a platform wheel, download a binary from the project's [releases](https://github.com/zubra-js/zubra/releases) (with `SHA256SUMS`).
 
 ## When the compiler misbehaves
 

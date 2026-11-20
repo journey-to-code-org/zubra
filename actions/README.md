@@ -14,4 +14,4 @@ Adapters: `@zubra/actions/hono`, `@zubra/actions/express`, `@zubra/actions/fasti
 
 On Cloudflare Workers (no disk to compile from): `npx zubra-actions build components --out src/actions`, then `createActions({ actions })` from `@zubra/actions/edge`. See `docs/actions.md`.
 
-The contract, the security rules and the no-JavaScript path are in [docs/actions.md](https://github.com/journey-to-code-org/zubra/blob/main/docs/actions.md).
+The contract, the security rules and the no-JavaScript path are in [docs/actions.md](https://github.com/zubra-js/zubra/blob/main/docs/actions.md).

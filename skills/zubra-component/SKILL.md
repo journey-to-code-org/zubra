@@ -7,7 +7,7 @@ A Zubra component is one `.zb` file: a `<script>`, a `<style>`, and a template w
 
 ## Steps
 
-1. **Decide whether it's a leaf.** A component takes data in through props and sends it out through events; it may hold children through slots. If it would need the app's store, router, context or component types, it's a container: write that in the app's framework and put Zubra components inside it. (https://github.com/journey-to-code-org/zubra/blob/main/docs/what-crosses-the-boundary.md has the full list.)
+1. **Decide whether it's a leaf.** A component takes data in through props and sends it out through events; it may hold children through slots. If it would need the app's store, router, context or component types, it's a container: write that in the app's framework and put Zubra components inside it. (https://github.com/zubra-js/zubra/blob/main/docs/what-crosses-the-boundary.md has the full list.)
 2. **Name the element with a hyphen** (`star-rating`, not `rating`), and put the file at `src/components/<tag>.zb` unless the project has another convention.
 3. **Write the host tag with every prop**, each with its default, then the script, then the template. Follow the format below.
 4. **Run `zubra check <file>`** (`npx zubra check` without a Rust toolchain). It prints each error with a caret and a suggested fix; `--format json` gives the same as data (Rust CLI only). Done when it prints `no errors`.
@@ -94,4 +94,4 @@ The server evaluates the deterministic subset (props, arithmetic, ternaries, tem
 
 ## Reference
 
-The Zubra reference has every rule; read a section only when a rule above isn't enough: https://github.com/journey-to-code-org/zubra/blob/main/docs/reference.md#writing-a-component, `#directives`, `#classes-styles-events-and-references`, `#script-state-and-hooks`, `#events`, `#slots`, `#forms`, `#styles`, `#async-data`, `#server-rendering-and-hydration`. The registry holds twenty-five tested, accessible components to copy the shape from (`npx zubra add --list`; `registry/components/` in the Zubra repository).
+The Zubra reference has every rule; read a section only when a rule above isn't enough: https://github.com/zubra-js/zubra/blob/main/docs/reference.md#writing-a-component, `#directives`, `#classes-styles-events-and-references`, `#script-state-and-hooks`, `#events`, `#slots`, `#forms`, `#styles`, `#async-data`, `#server-rendering-and-hydration`. The registry holds twenty-five tested, accessible components to copy the shape from (`npx zubra add --list`; `registry/components/` in the Zubra repository).

@@ -74,4 +74,4 @@ The general rules, with the reasons, are in [What crosses the boundary](../what-
 - **Under Nuxt, an element given Vue children must be `shadow`.** Vue would remove the nodes the element rendered. An element with no Vue children can stay light DOM; `@zubra/unplugin` says which ([Server rendering, honestly](../server-rendering.md)).
 - **Event names are lowercase** (`@valuechange`, not `@valueChange`), because they are DOM events.
 
-**Which framework do you use alongside Zubra, and what would a page written for you need to show?** [Tell us in an issue](https://github.com/journey-to-code-org/zubra/issues/new).
+**Which framework do you use alongside Zubra, and what would a page written for you need to show?** [Tell us in an issue](https://github.com/zubra-js/zubra/issues/new).

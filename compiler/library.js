@@ -217,7 +217,7 @@ ${name} is a library of zubra web components. Each is a standard custom element:
 | Angular (${code('CUSTOM_ELEMENTS_SCHEMA')}) | ${code('[items]="list"')} | ${code('(valuechange)="…"')} | ${code('zubraModel [(ngModel)]')} from ${code('@zubra/runtime/angular')} |
 | Plain HTML | ${code('el.items = list')} or a JSON attribute | ${code("addEventListener('valuechange', …)")} | the pair by hand |
 
-Server rendering: the elements hydrate server HTML in place; inside Nuxt, SvelteKit, React Router, SolidStart or Next.js, use ${code('@zubra/server')}'s ${code('injectShadowRoots()')} (see https://github.com/journey-to-code-org/zubra/blob/main/docs/server-rendering.md).
+Server rendering: the elements hydrate server HTML in place; inside Nuxt, SvelteKit, React Router, SolidStart or Next.js, use ${code('@zubra/server')}'s ${code('injectShadowRoots()')} (see https://github.com/zubra-js/zubra/blob/main/docs/server-rendering.md).
 
 ## Components
 

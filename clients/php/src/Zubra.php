@@ -20,7 +20,7 @@ namespace Zubra;
 class Zubra
 {
     public const VERSION = '0.1.0';
-    public const HOW_TO = 'Download a binary from https://github.com/journey-to-code-org/zubra/releases and put it on the PATH, or set ZUBRA_COMPILER to its path.';
+    public const HOW_TO = 'Download a binary from https://github.com/zubra-js/zubra/releases and put it on the PATH, or set ZUBRA_COMPILER to its path.';
 
     public readonly string $dir;
     public readonly string $compiler;

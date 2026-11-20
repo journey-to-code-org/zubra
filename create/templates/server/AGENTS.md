@@ -1,6 +1,6 @@
 # {{title}}
 
-A server-rendered app with [Zubra](https://github.com/journey-to-code-org/zubra) components. A Zubra component is one `.zb` file (a script, styles and a template) that compiles to a standard custom element. Here a Node server renders each page with the components already in the HTML, serves their browser modules, and runs the functions they mark `'use server'`. There is no bundler and no build step.
+A server-rendered app with [Zubra](https://github.com/zubra-js/zubra) components. A Zubra component is one `.zb` file (a script, styles and a template) that compiles to a standard custom element. Here a Node server renders each page with the components already in the HTML, serves their browser modules, and runs the functions they mark `'use server'`. There is no bundler and no build step.
 
 ## Commands
 
@@ -121,4 +121,4 @@ res.end(page.finish(`<!doctype html><html><head>…</head><body>${body}${actions
 - A component takes data in through props and sends it out through events. Data it needs comes from `server.js` as props, or from a `'use server'` function.
 - After changing a component: `npx zubra check src/components/*.zb`, then `npm test`.
 
-The full reference is https://github.com/journey-to-code-org/zubra#readme, and the tutorial is https://journey-to-code-org.github.io/zubra/docs/.
+The full reference is https://github.com/zubra-js/zubra#readme, and the tutorial is https://zubra-js.github.io/zubra/docs/.

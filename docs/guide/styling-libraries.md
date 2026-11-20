@@ -5,7 +5,7 @@ Your styling system doesn't have to change to use Zubra components. One rule dec
 - **Light DOM** (the default): the component's markup is part of the page, so the page's CSS applies to it. Use the library's classes in the template.
 - **Shadow DOM** (`shadow` on the host tag): page CSS stops at the shadow root, but **CSS custom properties inherit through it**. Read the library's variables, or hand the shadow root the stylesheet with `adoptStyles()`.
 
-All four libraries below put their theme in CSS variables, so a theme switch (dark mode, a brand colour) reaches every Zubra component without code in the component. Each section has a complete app in `examples/frameworks/`, tested in Chromium, live in the [demo gallery](https://journey-to-code-org.github.io/zubra/).
+All four libraries below put their theme in CSS variables, so a theme switch (dark mode, a brand colour) reaches every Zubra component without code in the component. Each section has a complete app in `examples/frameworks/`, tested in Chromium, live in the [demo gallery](https://zubra-js.github.io/zubra/).
 
 | | Light-DOM components | Shadow-DOM components | Theme switch |
 |---|---|---|---|

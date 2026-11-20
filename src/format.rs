@@ -103,7 +103,7 @@ pub fn format(source: &str, options: &FormatOptions) -> Result<String, Diagnosti
                 error.message
             ),
         )
-        .with_help("please report it: https://github.com/journey-to-code-org/zubra/issues"));
+        .with_help("please report it: https://github.com/zubra-js/zubra/issues"));
     }
     Ok(if crlf {
         formatted.replace('\n', "\r\n")
@@ -157,7 +157,7 @@ pub fn format_range(
                 error.message
             ),
         )
-        .with_help("please report it: https://github.com/journey-to-code-org/zubra/issues"));
+        .with_help("please report it: https://github.com/zubra-js/zubra/issues"));
     }
     // Offsets in the text with LF line endings, which is what was scanned.
     let (start, end) = (

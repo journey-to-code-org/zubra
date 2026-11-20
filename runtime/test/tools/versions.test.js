@@ -82,7 +82,7 @@ test('the release version has its notes in CHANGELOG.md', () => {
 test('every published package names this repository and its folder', () => {
   for (const path of ['compiler', 'create', 'plugin', 'runtime', 'server', 'editors/language-server']) {
     const { repository } = json(`${path}/package.json`);
-    assert.deepEqual(repository, { type: 'git', url: 'git+https://github.com/journey-to-code-org/zubra.git', directory: path }, path);
+    assert.deepEqual(repository, { type: 'git', url: 'git+https://github.com/zubra-js/zubra.git', directory: path }, path);
   }
 });
 

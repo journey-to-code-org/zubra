@@ -7,7 +7,7 @@
   "license": "ISC",
   "repository": {
     "type": "git",
-    "url": "https://github.com/journey-to-code-org/zubra.git",
+    "url": "https://github.com/zubra-js/zubra.git",
     "directory": "editors/vscode"
   },
   "engines": {
@@ -122,9 +122,9 @@
     "color": "#14161F",
     "theme": "dark"
   },
-  "homepage": "https://journey-to-code-org.github.io/zubra/",
+  "homepage": "https://zubra-js.github.io/zubra/",
   "bugs": {
-    "url": "https://github.com/journey-to-code-org/zubra/issues"
+    "url": "https://github.com/zubra-js/zubra/issues"
   },
   "capabilities": {
     "untrustedWorkspaces": {

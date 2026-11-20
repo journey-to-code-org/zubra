@@ -7,7 +7,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '../../..');
 // The build the page belongs to (demos/build.mjs sets it): which examples are live there.
 const out = process.env.LANDING_OUT;
-const repository = process.env.GITHUB_REPOSITORY ?? 'journey-to-code-org/zubra';
+const repository = process.env.GITHUB_REPOSITORY ?? 'zubra-js/zubra';
 const has = (id) => (out ? existsSync(join(out, 'demos', id, 'index.html')) : false);
 const shot = (id) => existsSync(join(repo, 'demos/shots', `${id}.jpg`));
 

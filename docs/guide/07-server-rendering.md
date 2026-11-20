@@ -49,4 +49,4 @@ The component's script runs on the server too, as far as it's deterministic: `.m
 zubra compile src/components/user-card.zb --props props.json --partial > card.html
 ```
 
-**Next:** [Read the output](08-read-the-output.md), which shows what all of this compiles to and why. The [README](../../README.md) has every feature in detail, and the [playground](https://journey-to-code-org.github.io/zubra/playground/) is the quickest way to try one.
+**Next:** [Read the output](08-read-the-output.md), which shows what all of this compiles to and why. The [README](../../README.md) has every feature in detail, and the [playground](https://zubra-js.github.io/zubra/playground/) is the quickest way to try one.
