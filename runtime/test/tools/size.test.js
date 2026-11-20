@@ -44,8 +44,11 @@ const BUDGETS = {
   // template's first copy had, a one-element row copied without a fragment, and a list watching
   // its array through one signal, about 230 B, to 18.25 KB: a fifth less script time to create,
   // replace and append 1,000 rows. A named slot passed on to a child component's slot (the
-  // content routed by the slot it was passed on to, not its own `slot`), about 60 B, to 18.5 KB.)
-  'src/index.js': { gzip: 18.5 * 1024 },
+  // content routed by the slot it was passed on to, not its own `slot`), about 60 B, to 18.5 KB.
+  // 5.x's TC39 names that the default engine doesn't have (`Signal.subtle.Watcher`, `watched`, the
+  // introspection functions) saying so and pointing to signals mode, about 300 B, to 18.75 KB:
+  // development only, the production build is byte for byte the same.)
+  'src/index.js': { gzip: 18.75 * 1024 },
   // The production build (the `production` export condition): the same, without hot reloading
   // (12.5 KB until 3.2, 13 KB until 4.2, 13.5 KB until `animate`, 14 KB until the list work,
   // 14.25 KB until the faster Signals core, 14.75 KB until rows without markers, 15 KB until

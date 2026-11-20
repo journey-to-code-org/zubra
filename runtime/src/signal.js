@@ -220,6 +220,9 @@ export class State {
     const node = new Node(STATE, this);
     node.value = initialValue;
     if (options?.equals) node.equals = options.equals;
+    // @dev
+    if (options) removedOptions(options);
+    // @dev-end
     this.#node = node;
   }
   static { stateNode = (x) => (#node in x ? x.#node : undefined); }
@@ -249,6 +252,9 @@ export class Computed {
     node.value = UNSET;
     node.dirty = true;
     if (options?.equals) node.equals = options.equals;
+    // @dev
+    if (options) removedOptions(options);
+    // @dev-end
     this.#node = node;
   }
   static { computedNode = (x) => (#node in x ? x.#node : undefined); }
@@ -355,6 +361,27 @@ export function sinks(value) {
 }
 
 // @dev
+// 5.x's TC39 API that this engine doesn't have (`Signal.subtle.Watcher`, the introspection
+// functions, the `watched`/`unwatched` option keys): in development, using one says so and where
+// to go, where it would otherwise be "not a constructor", `undefined`, or a callback that never
+// runs. The production build leaves them out (they're `undefined` there).
+const REMOVED = "is TC39 Signals API, not in Zubra's default engine since 6.0: use signals mode (engine: 'signals', experimental). See docs/migrating-to-6.0.md";
+const removed = {};
+for (const name of ['Watcher', 'watched', 'unwatched', 'introspectSources', 'introspectSinks', 'hasSinks', 'hasSources']) {
+  removed[name] = { get() { throw new TypeError(`zubra: Signal.subtle.${name} ${REMOVED}`); } };
+}
+let warnedOptions;
+/** A `watched`/`unwatched` option key (5.x's `[Signal.subtle.watched]`): warned once, as it never runs. */
+function removedOptions(options) {
+  for (const key of warnedOptions ? [] : Reflect.ownKeys(options)) {
+    const name = typeof key === 'symbol' ? key.description : key;
+    if (/^(un)?watched$|^undefined$/.test(name)) {
+      warnedOptions = true;
+      console.warn(`zubra: a State or Computed has a \`${name === 'undefined' ? 'watched' : name}\` option, whose callback never runs: Signal.subtle.watched and unwatched ${REMOVED}`);
+      return;
+    }
+  }
+}
 /** Which engine this is, for the DevTools. */
 export const engine = 'zubra';
 /**
@@ -373,10 +400,19 @@ export function changes(value) {
 
 // The public `Signal` export: enough of the old shape that `new Signal.State(0)` and
 // `Signal.subtle.untrack(fn)` keep working. It is not the TC39 API (no Watcher, no
-// introspection): that is signals mode (signal-tc39.js).
+// introspection): that is signals mode (signal-tc39.js). In development, those names throw and
+// say so (`removed` above).
 export const Signal = Object.freeze({
   State,
   Computed,
-  subtle: Object.freeze({ untrack, currentComputed: () => (active !== null && active.kind === COMPUTED ? active.wrapper : undefined) }),
+  subtle: Object.freeze(
+    // @dev
+    Object.defineProperties(
+    // @dev-end
+    { untrack, currentComputed: () => (active !== null && active.kind === COMPUTED ? active.wrapper : undefined) },
+    // @dev
+    removed),
+    // @dev-end
+  ),
 });
 export const isNative = false;
