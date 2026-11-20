@@ -1033,6 +1033,56 @@ pub fn analyze(component: &ast::ComponentAst) -> Result<Interface, Diagnostic> {
 /// branch or `zb-each` row (which has no element of its own), gets an empty-comment anchor
 /// before it in both backends, so the JavaScript side can find it in server-rendered markup.
 /// Text that is an element's only child is bound through the element and needs no anchor.
+/// A list's items: lent from a value that outlives the render, or its own.
+enum Rows<'a> {
+    Lent(std::slice::Iter<'a, Value>),
+    Owned(std::vec::IntoIter<Value>),
+}
+
+impl<'a> Iterator for Rows<'a> {
+    type Item = Cow<'a, Value>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Rows::Lent(items) => items.next().map(Cow::Borrowed),
+            Rows::Owned(items) => items.next().map(Cow::Owned),
+        }
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Rows::Lent(items) => items.size_hint(),
+            Rows::Owned(items) => items.size_hint(),
+        }
+    }
+}
+
+impl ExactSizeIterator for Rows<'_> {}
+
+/// About how many lowered nodes `nodes` make, to reserve before lowering them (a `<tr>`'s
+/// cells otherwise grow its list three or four times): a node each, an anchor for a text with
+/// a value, and a `zb-if`'s markers and its larger branch. A list's rows are reserved once its
+/// items are known (`lower_region_into`).
+fn output_hint(nodes: &[ast::Node]) -> usize {
+    nodes
+        .iter()
+        .map(|node| match node {
+            ast::Node::Text(parts) => {
+                1 + usize::from(
+                    parts
+                        .iter()
+                        .any(|part| matches!(part, AstPart::Expression { .. })),
+                )
+            }
+            ast::Node::If {
+                consequent,
+                alternate,
+                ..
+            } => 2 + output_hint(consequent).max(output_hint(alternate)),
+            ast::Node::Each { .. } => 2,
+            _ => 1,
+        })
+        .sum()
+}
+
 pub(crate) fn needs_text_anchor(siblings: &[ast::Node], node: &ast::Node, block_top: bool) -> bool {
     (block_top || siblings.len() > 1)
         && matches!(node, ast::Node::Text(parts) if parts.iter().any(|part| matches!(part, AstPart::Expression { .. })))
@@ -1422,6 +1472,10 @@ struct LowerState<'a, 't> {
     /// render (a prop, a script value, or an item of one): a row is then read where it is, not
     /// copied for each pass over it.
     scopes: Vec<Vec<(Cow<'t, str>, Cow<'a, Value>)>>,
+    /// Emptied scopes and key sets of lists already lowered, for the next list to use: a list
+    /// inside a list's rows (a row's cells) would otherwise make its own for every row.
+    spare_scopes: Vec<Vec<(Cow<'t, str>, Cow<'a, Value>)>>,
+    spare_keys: Vec<HashSet<RowKey<'a>>>,
     active_slots: HashSet<String>,
     /// Lowering HTML a server already rendered ([`Supply::Rendered`]): no tag is a child component.
     rendered: bool,
@@ -1987,7 +2041,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
         state: &mut LowerState<'a, 't>,
         block_top: bool,
     ) -> Result<Vec<Node<'t>>, Diagnostic> {
-        let mut output = Vec::new();
+        let mut output = Vec::with_capacity(output_hint(nodes));
         self.lower_block_into(nodes, state, block_top, &mut output)?;
         Ok(output)
     }
@@ -2072,8 +2126,8 @@ impl<'a, 't: 'a> Context<'a, 't> {
                         _ => None,
                     }
                 };
-                let list: Vec<Cow<'a, Value>> = if let Some(list) = lent {
-                    list.iter().map(Cow::Borrowed).collect()
+                let rows = if let Some(list) = lent {
+                    Rows::Lent(list.iter())
                 } else {
                     let Some(value) = (if browser_only {
                         None
@@ -2093,16 +2147,19 @@ impl<'a, 't: 'a> Context<'a, 't> {
                             ),
                         ));
                     };
-                    list.into_iter().map(Cow::Owned).collect()
+                    Rows::Owned(list.into_iter())
                 };
                 // A region for the list, and one per row.
-                output.reserve(list.len() * 3 + 2);
+                output.reserve(rows.len() * 3 + 2);
                 output.push(Node::Open);
-                let mut keys: HashSet<RowKey<'_>> =
-                    HashSet::with_capacity(if key.is_some() { list.len() } else { 0 });
-                // One scope for every row in turn, emptied between them, not one made per row.
-                let mut spare = Vec::new();
-                for (position, entry) in list.into_iter().enumerate() {
+                let mut keys = state.spare_keys.pop().unwrap_or_default();
+                if key.is_some() {
+                    keys.reserve(rows.len());
+                }
+                // One scope for every row in turn, emptied between them, not one made per row
+                // (nor per list: an emptied one is kept for the next).
+                let mut spare = state.spare_scopes.pop().unwrap_or_default();
+                for (position, entry) in rows.enumerate() {
                     let mut scope = std::mem::take(&mut spare);
                     destructure_entry(item, entry, &mut scope);
                     if let Some(index) = index {
@@ -2162,6 +2219,9 @@ impl<'a, 't: 'a> Context<'a, 't> {
                     lowered?;
                     output.push(Node::Close);
                 }
+                keys.clear();
+                state.spare_keys.push(keys);
+                state.spare_scopes.push(spare);
                 output.push(Node::Close);
                 Ok(())
             }
