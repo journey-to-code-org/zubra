@@ -14,7 +14,7 @@ pub struct Component<'a> {
     pub shadow: bool,
     /// Prop values written back onto the host (only those that differ from their defaults), so
     /// a runtime can pick them up from the markup. `""` means a bare attribute.
-    pub host_attributes: Vec<(String, String)>,
+    pub host_attributes: Vec<(Cow<'a, str>, String)>,
     pub nodes: Vec<Node<'a>>,
     /// Shadow-DOM components: supplied slot content, as the host's own (light DOM) children.
     pub light_children: Vec<Node<'a>>,

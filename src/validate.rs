@@ -94,9 +94,10 @@ const SCOPE_EACH: &str = "#each";
 const SCOPE_THEN: &str = "#then";
 const SCOPE_CATCH: &str = "#catch";
 
-struct Prop {
-    name: String,
-    attribute: String,
+struct Prop<'t> {
+    /// Borrowed from the component's declaration, as the attribute is unless it differs.
+    name: &'t str,
+    attribute: Cow<'t, str>,
     default: Option<Value>,
     value: Value,
     /// Partial rendering: the value is computed in the browser.
@@ -500,10 +501,10 @@ fn lower_component<'t>(
         }
     }
 
-    let prop_names: Vec<String> = component
+    let prop_names: Vec<&str> = component
         .props
         .iter()
-        .map(|prop| prop.name.clone())
+        .map(|prop| prop.name.as_str())
         .collect();
     // Defaults first (they can use script bindings), then the script with the props' values.
     let defaults = evaluate_script_with(&component.script, &prop_names, None, &known)?;
@@ -553,7 +554,7 @@ fn lower_component<'t>(
     lowered.map(|mut lowered| {
         if !injected.is_empty() {
             lowered.host_attributes.push((
-                "data-zb-inject".to_owned(),
+                Cow::Borrowed("data-zb-inject"),
                 Value::Object(injected).to_string(),
             ));
         }
@@ -564,8 +565,8 @@ fn lower_component<'t>(
 /// The rest of [`lower_component`], once the script is evaluated (and its context provided).
 fn lower_rest<'t>(
     component: &'t ast::ComponentAst,
-    props: &[Prop],
-    locals: &[(String, Local<'_>)],
+    props: &[Prop<'t>],
+    locals: &[(&'t str, Local<'_>)],
     supply: &Supply<'t>,
     id_base: Option<&String>,
     host_id: Option<&str>,
@@ -597,8 +598,8 @@ fn lower_rest<'t>(
     let in_scope = || {
         props
             .iter()
-            .map(|prop| prop.name.as_str())
-            .chain(locals.iter().map(|(name, _)| name.as_str()))
+            .map(|prop| prop.name)
+            .chain(locals.iter().map(|(name, _)| *name))
     };
     let passed = component
         .resolved
@@ -647,13 +648,13 @@ fn lower_rest<'t>(
     }
     let light_children = std::mem::take(&mut state.light);
 
-    let mut host_attributes: Vec<(String, String)> = props
+    let mut host_attributes: Vec<(Cow<'t, str>, String)> = props
         .iter()
         .filter(|prop| !prop.unknown && prop.default.as_ref() != Some(&prop.value))
         .filter_map(|prop| host_attribute(prop).map(|value| (prop.attribute.clone(), value)))
         .collect();
     if let (Some(base), None) = (id_base, host_id) {
-        host_attributes.push(("data-zb-id".to_owned(), base.clone()));
+        host_attributes.push((Cow::Borrowed("data-zb-id"), base.clone()));
     }
     // The slots that were given content (`data-zb-filled`): the ones `hasSlot` asked about, for
     // either kind of component. A light-DOM component with slots names every one, and has the
@@ -672,7 +673,7 @@ fn lower_rest<'t>(
     }
     filled.extend(rest);
     if !filled.is_empty() || (!component.shadow && !declared_slots.is_empty()) {
-        host_attributes.push(("data-zb-filled".to_owned(), filled.join(" ")));
+        host_attributes.push((Cow::Borrowed("data-zb-filled"), filled.join(" ")));
     }
 
     Ok(ir::Component {
@@ -921,10 +922,10 @@ impl PropInterface {
 
 pub fn analyze(component: &ast::ComponentAst) -> Result<Interface, Diagnostic> {
     validate_custom_element(&component.tag, component.tag_span)?;
-    let prop_names: Vec<String> = component
+    let prop_names: Vec<&str> = component
         .props
         .iter()
-        .map(|prop| prop.name.clone())
+        .map(|prop| prop.name.as_str())
         .collect();
     let locals = evaluate_script_with(&component.script, &prop_names, None, &HashMap::new())?;
     let mut props = Vec::new();
@@ -949,8 +950,8 @@ pub fn analyze(component: &ast::ComponentAst) -> Result<Interface, Diagnostic> {
             }
         };
         props.push(Prop {
-            name: declaration.name.clone(),
-            attribute: kebab(&declaration.name),
+            name: &declaration.name,
+            attribute: kebab_cow(&declaration.name),
             value: default.clone().unwrap_or(Value::Null),
             default,
             unknown: false,
@@ -967,8 +968,8 @@ pub fn analyze(component: &ast::ComponentAst) -> Result<Interface, Diagnostic> {
     };
     context.resolve_nodes(&component.nodes, &mut Vec::new())?;
     for (name, _, span) in &component.script.prop_types {
-        if !props.iter().any(|prop| &prop.name == name) {
-            let names: Vec<&str> = props.iter().map(|prop| prop.name.as_str()).collect();
+        if !props.iter().any(|prop| prop.name == name) {
+            let names: Vec<&str> = props.iter().map(|prop| prop.name).collect();
             return Err(with_suggestion(
                 Diagnostic::new(*span, format!("`declare const {name}` types a prop, but there's no prop `{name}` on the host tag")),
                 name,
@@ -986,9 +987,9 @@ pub fn analyze(component: &ast::ComponentAst) -> Result<Interface, Diagnostic> {
         props: props
             .into_iter()
             .map(|prop| {
-                let declared = declared_type(component, &prop.name);
+                let declared = declared_type(component, prop.name);
                 let runtime_default = runtime_defaults
-                    .contains(&prop.name)
+                    .contains(prop.name)
                     .then(|| {
                         component
                             .props
@@ -1010,17 +1011,20 @@ pub fn analyze(component: &ast::ComponentAst) -> Result<Interface, Diagnostic> {
                     .find(|doc| doc.name == prop.name)
                     .and_then(|doc| doc.description.clone());
                 PropInterface {
-                    name: prop.name,
+                    name: prop.name.to_owned(),
                     declared,
                     description,
-                    attribute: prop.attribute,
+                    attribute: prop.attribute.into_owned(),
                     default: prop.default,
                     runtime_default,
                     model,
                 }
             })
             .collect(),
-        script_names: locals.into_iter().map(|(name, _)| name).collect(),
+        script_names: locals
+            .into_iter()
+            .map(|(name, _)| name.to_owned())
+            .collect(),
     }
     .with_model_events())
 }
@@ -1039,38 +1043,38 @@ pub(crate) fn needs_text_anchor(siblings: &[ast::Node], node: &ast::Node, block_
 /// The script's bindings. A prop's name is the prop in the script (2.0): with `values` (the
 /// props' values, once known) a binding that reads one is evaluated with it; before that (prop
 /// defaults can use script bindings) it's runtime-only.
-fn evaluate_script_with<'v>(
-    script: &ast::Script,
-    prop_names: &[String],
+fn evaluate_script_with<'s, 'v>(
+    script: &'s ast::Script,
+    prop_names: &[&str],
     values: Option<&'v [Prop]>,
     known: &HashMap<String, Option<Value>>,
-) -> Result<Vec<(String, Local<'v>)>, Diagnostic> {
-    let mut locals: Vec<(String, Local<'v>)> = Vec::new();
-    let mut seen = HashSet::new();
+) -> Result<Vec<(&'s str, Local<'v>)>, Diagnostic> {
+    let mut locals: Vec<(&'s str, Local<'v>)> = Vec::new();
+    let mut seen: HashSet<&'s str> = HashSet::new();
     for name in &script.runtime_names {
-        if !seen.insert(name.clone()) {
+        if !seen.insert(name) {
             return Err(Diagnostic::new(
                 Span::new(1, 1),
                 format!("`{name}` is declared more than once in <script>"),
             ));
         }
-        locals.push((name.clone(), Local::Runtime));
+        locals.push((name, Local::Runtime));
     }
     // `function f(…) { … }`: one the server can call, when it's within what it evaluates
     // (`pure.rs`: no `this`, no effects beyond its own `let`s). Otherwise it stays the browser's.
     for (name, source) in &script.functions {
         if let Some(function) = crate::pure::function(source) {
-            locals.push((name.clone(), Local::Function(function)));
+            locals.push((name, Local::Function(function)));
         }
     }
     // Imports whose values are known (enums from TypeScript modules): values at build time.
     for binding in &script.imported_values {
         if let Some(Ok(value)) = binding.init.as_ref().map(|init| init.evaluate(&|_| None)) {
-            locals.push((binding.name.clone(), Local::Value(Cow::Owned(value))));
+            locals.push((&binding.name, Local::Value(Cow::Owned(value))));
         }
     }
     for binding in &script.bindings {
-        if !seen.insert(binding.name.clone()) {
+        if !seen.insert(&binding.name) {
             return Err(Diagnostic::new(
                 binding.span,
                 format!("`{}` is declared more than once in <script>", binding.name),
@@ -1082,7 +1086,7 @@ fn evaluate_script_with<'v>(
                 Some(value) => Local::Value(Cow::Owned(value.clone())),
                 None => Local::Runtime,
             };
-            locals.push((binding.name.clone(), local));
+            locals.push((&binding.name, local));
             continue;
         }
         let local = match &binding.init {
@@ -1105,7 +1109,7 @@ fn evaluate_script_with<'v>(
                             }
                             Some(Local::Function(function)) => Some(function.clone()),
                             Some(Local::Runtime) => None,
-                            None if prop_names.iter().any(|prop| prop == name) => {
+                            None if prop_names.contains(&name) => {
                                 prop(name).map(|prop| crate::pure::Val::Json(prop.value.clone()))
                             }
                             None => None,
@@ -1116,7 +1120,7 @@ fn evaluate_script_with<'v>(
                             match find_local(&locals, name) {
                                 Some(Local::Value(Cow::Borrowed(value))) => Some(*value),
                                 Some(_) => None,
-                                None if prop_names.iter().any(|prop| prop == name) => {
+                                None if prop_names.contains(&name) => {
                                     prop(name).map(|prop| &prop.value)
                                 }
                                 None => None,
@@ -1148,9 +1152,7 @@ fn evaluate_script_with<'v>(
                     Some(Local::Runtime | Local::Function(_)) => runtime = true,
                     Some(Local::Value(_)) => {}
                     None if prop(name).is_some_and(|prop| !prop.unknown) => {}
-                    None if prop(name).is_some() || prop_names.iter().any(|prop| prop == name) => {
-                        runtime = true
-                    }
+                    None if prop(name).is_some() || prop_names.contains(&name) => runtime = true,
                     // The browser's globals exist only at runtime.
                     None if RUNTIME_GLOBALS.contains(&name) => runtime = true,
                     None => {
@@ -1158,7 +1160,7 @@ fn evaluate_script_with<'v>(
                     }
                 });
                 if let Some(name) = unknown {
-                    let names: Vec<&str> = locals.iter().map(|(name, _)| name.as_str()).collect();
+                    let names: Vec<&str> = locals.iter().map(|(name, _)| *name).collect();
                     return Err(with_suggestion(
                         Diagnostic::new(
                             binding.span,
@@ -1185,30 +1187,32 @@ fn evaluate_script_with<'v>(
                 }
             }
         };
-        locals.push((binding.name.clone(), local));
+        locals.push((&binding.name, local));
     }
     Ok(locals)
 }
 
-fn find_local<'l, 'v>(locals: &'l [(String, Local<'v>)], name: &str) -> Option<&'l Local<'v>> {
+fn find_local<'l, 'v>(locals: &'l [(&str, Local<'v>)], name: &str) -> Option<&'l Local<'v>> {
     locals
         .iter()
         .rev()
-        .find(|(local, _)| local == name)
+        .find(|(local, _)| *local == name)
         .map(|(_, local)| local)
 }
 
 /// The props' values: each given one moved out of `overrides` (what's left there afterwards is
 /// a prop the component doesn't declare), the others their defaults.
-fn evaluate_props(
-    component: &ast::ComponentAst,
-    locals: &[(String, Local<'_>)],
+fn evaluate_props<'t>(
+    component: &'t ast::ComponentAst,
+    locals: &[(&str, Local<'_>)],
     mut overrides: serde_json::Map<String, Value>,
-) -> Result<Vec<Prop>, Diagnostic> {
-    let mut props = Vec::new();
-    let mut seen = HashSet::new();
-    for declaration in &component.props {
-        if !seen.insert(declaration.name.clone()) {
+) -> Result<Vec<Prop<'t>>, Diagnostic> {
+    let mut props = Vec::with_capacity(component.props.len());
+    for (at, declaration) in component.props.iter().enumerate() {
+        if component.props[..at]
+            .iter()
+            .any(|earlier| earlier.name == declaration.name)
+        {
             return Err(Diagnostic::new(
                 declaration.span,
                 format!("duplicate prop `{}`", declaration.name),
@@ -1219,8 +1223,8 @@ fn evaluate_props(
             // A value a streaming server will have later: unknown for now, so what reads it is
             // left as an empty region, filled when the value arrives.
             props.push(Prop {
-                name: declaration.name.clone(),
-                attribute: kebab(&declaration.name),
+                name: &declaration.name,
+                attribute: kebab_cow(&declaration.name),
                 default: default.and_then(Result::ok),
                 value: Value::Null,
                 unknown: true,
@@ -1276,16 +1280,16 @@ fn evaluate_props(
         };
         let unknown = !was_given && matches!(default, Some(Err(_)));
         props.push(Prop {
-            name: declaration.name.clone(),
-            attribute: kebab(&declaration.name),
+            name: &declaration.name,
+            attribute: kebab_cow(&declaration.name),
             default: default.and_then(Result::ok),
             value,
             unknown,
         });
     }
     for name in overrides.keys() {
-        if !props.iter().any(|prop| &prop.name == name) {
-            let names: Vec<&str> = props.iter().map(|prop| prop.name.as_str()).collect();
+        if !props.iter().any(|prop| prop.name == name) {
+            let names: Vec<&str> = props.iter().map(|prop| prop.name).collect();
             return Err(with_suggestion(
                 // At the host tag, where the props are declared (the file may start with a comment).
                 Diagnostic::new(component.tag_span, format!("unknown prop `{name}`")),
@@ -1301,13 +1305,13 @@ fn evaluate_props(
 /// script name, `Some(Ok(value))` otherwise.
 fn prop_default(
     declaration: &ast::PropDecl,
-    locals: &[(String, Local<'_>)],
+    locals: &[(&str, Local<'_>)],
 ) -> Result<Option<Result<Value, String>>, Diagnostic> {
     Ok(match &declaration.default {
         PropDefault::Required => None,
         PropDefault::Text(text) => Some(Ok(Value::String(text.clone()))),
         PropDefault::Expression(expression, span) => {
-            let names: Vec<&str> = locals.iter().map(|(name, _)| name.as_str()).collect();
+            let names: Vec<&str> = locals.iter().map(|(name, _)| *name).collect();
             let mut problem = None;
             let runtime = expression.is_runtime();
             expression.for_each_identifier(&mut |name| {
@@ -1363,6 +1367,14 @@ fn same_type(default: &Value, value: &Value) -> bool {
 }
 
 pub(crate) fn kebab(name: &str) -> String {
+    kebab_cow(name).into_owned()
+}
+
+/// [`kebab`], borrowing a name that has no uppercase letter (most props: `status`, `rows`).
+pub(crate) fn kebab_cow(name: &str) -> Cow<'_, str> {
+    if !name.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        return Cow::Borrowed(name);
+    }
     let mut output = String::new();
     for character in name.chars() {
         if character.is_ascii_uppercase() {
@@ -1372,7 +1384,7 @@ pub(crate) fn kebab(name: &str) -> String {
             output.push(character);
         }
     }
-    output
+    Cow::Owned(output)
 }
 
 /// How a prop value is written on the host so a runtime can pick it up again
@@ -1395,8 +1407,8 @@ fn host_attribute(prop: &Prop) -> Option<String> {
 /// `'a`: the values they're rendered with.
 struct Context<'a, 't> {
     component: &'t ast::ComponentAst,
-    locals: &'a [(String, Local<'a>)],
-    props: &'a [Prop],
+    locals: &'a [(&'t str, Local<'a>)],
+    props: &'a [Prop<'t>],
     supply: &'a Supply<'t>,
     /// Shadow-DOM components use native `<slot>` elements.
     shadow: bool,
@@ -1428,8 +1440,8 @@ impl<'a, 't: 'a> Context<'a, 't> {
             .flatten()
             .map(String::as_str)
             .filter(|name| !name.starts_with('#'))
-            .chain(self.props.iter().map(|prop| prop.name.as_str()))
-            .chain(self.locals.iter().map(|(name, _)| name.as_str()))
+            .chain(self.props.iter().map(|prop| prop.name))
+            .chain(self.locals.iter().map(|(name, _)| *name))
             .collect()
     }
 
@@ -2368,7 +2380,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 spreads.push(attribute);
                 continue; // after the element's own (an explicit prop or attribute wins)
             }
-            let prop_name = camel(&attribute.name);
+            let prop_name = camel_cow(&attribute.name);
             let lower = ascii_lowercase(&attribute.name);
             check_child_event(&child.ast.tag, &interface, attribute)?;
             if let Some(prop) = interface.props.iter().find(|prop| prop.name == prop_name) {
@@ -2401,14 +2413,22 @@ impl<'a, 't: 'a> Context<'a, 't> {
         // `{...object}` on a component: the entries that are the child's props are passed as
         // props (the element's own win), the rest are attributes of its host, as on any
         // element. An object known only in the browser is left for it.
-        let prop_names: Vec<String> = interface
-            .props
-            .iter()
-            .map(|prop| prop.name.clone())
-            .collect();
+        // Made only when there is a spread (most children have none).
+        let spread = !spreads.is_empty();
+        let prop_names: Vec<String> = match spread {
+            true => interface
+                .props
+                .iter()
+                .map(|prop| prop.name.clone())
+                .collect(),
+            false => Vec::new(),
+        };
         // What the tag itself gives: a later spread replaces an earlier one's value, as in
         // JavaScript (and as the browser's binder does), but never the tag's own.
-        let written: Vec<String> = overrides.keys().cloned().collect();
+        let written: Vec<String> = match spread {
+            true => overrides.keys().cloned().collect(),
+            false => Vec::new(),
+        };
         let mut spread_keys = SpreadKeys::Known(Vec::new());
         for attribute in spreads {
             let AttributeValue::Expression(expression, span) = &attribute.value else {
@@ -2434,7 +2454,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 };
                 let given = written.contains(&prop.name)
                     || element.attributes.iter().any(|other| {
-                        other.name != crate::parser::SPREAD && camel(&other.name) == prop.name
+                        other.name != crate::parser::SPREAD && camel_cow(&other.name) == prop.name
                     });
                 if given {
                     continue; // the tag's own prop wins, in either order
@@ -2474,7 +2494,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
         collect_slots(&child.ast.nodes, &mut declared);
         let mut groups: HashMap<String, Vec<Node<'t>>> = HashMap::new();
         let mut depth = 0usize;
-        let mut current = "default".to_owned();
+        let mut current: Cow<'_, str> = Cow::Borrowed("default");
         for node in content {
             if depth == 0 {
                 current = match &node {
@@ -2483,8 +2503,8 @@ impl<'a, 't: 'a> Context<'a, 't> {
                         .iter()
                         .find(|attribute| attribute.name == "slot")
                         .and_then(|attribute| attribute.value.as_deref())
-                        .map_or_else(|| "default".to_owned(), joined),
-                    _ => "default".to_owned(),
+                        .map_or(Cow::Borrowed("default"), |parts| Cow::Owned(joined(parts))),
+                    _ => Cow::Borrowed("default"),
                 };
                 if matches!(&node, Node::Text(parts) if parts.iter().all(|part| match part {
                     Part::Literal(text) => text.trim().is_empty(),
@@ -2498,13 +2518,16 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 Node::Close => depth = depth.saturating_sub(1),
                 _ => {}
             }
-            if !declared.contains(&current) {
+            if !declared.contains(current.as_ref()) {
                 return Err(Diagnostic::new(
                     element.span,
                     format!("<{}> has no slot named `{current}`", child.ast.tag),
                 ));
             }
-            groups.entry(current.clone()).or_default().push(node);
+            groups
+                .entry(current.clone().into_owned())
+                .or_default()
+                .push(node);
         }
 
         // The child's own gaps are in its file: reported at its tag here, saying where in it.
@@ -2557,7 +2580,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
         .map_err(|error| error.in_file(&child.path, &child.source))?;
         for (name, value) in rendered.host_attributes {
             attributes.push(ir::Attribute {
-                name: name.into(),
+                name,
                 value: (!value.is_empty()).then(|| vec![Part::Escaped(value)]),
             });
         }
@@ -2589,7 +2612,7 @@ impl<'a, 't: 'a> Context<'a, 't> {
                 !models.contains_key(&prop.name)
                     && element.attributes.iter().any(|attribute| {
                         let given = attribute.name.split(':').next().unwrap_or_default();
-                        attribute.name != crate::parser::SPREAD && camel(given) == prop.name
+                        attribute.name != crate::parser::SPREAD && camel_cow(given) == prop.name
                     })
             })
             || matches!(spread_keys, SpreadKeys::Unknown);
@@ -3424,6 +3447,14 @@ pub(crate) fn collect_slots(nodes: &[ast::Node], slots: &mut HashSet<String>) {
 
 /// `max-value` → `maxValue`.
 pub(crate) fn camel(name: &str) -> String {
+    camel_cow(name).into_owned()
+}
+
+/// [`camel`], borrowing a name that has no `-` (most attributes: `status`, `rows`).
+pub(crate) fn camel_cow(name: &str) -> Cow<'_, str> {
+    if !name.contains('-') {
+        return Cow::Borrowed(name);
+    }
     let mut output = String::new();
     let mut upper = false;
     for character in name.chars() {
@@ -3436,7 +3467,7 @@ pub(crate) fn camel(name: &str) -> String {
             output.push(character);
         }
     }
-    output
+    Cow::Owned(output)
 }
 
 /// Attributes any element may carry, which aren't component props.
@@ -3723,7 +3754,7 @@ pub(crate) fn check_child_required(
     };
     for prop in &interface.props {
         let given = element.attributes.iter().any(|attribute| {
-            attribute.name != crate::parser::SPREAD && camel(&attribute.name) == prop.name
+            attribute.name != crate::parser::SPREAD && camel_cow(&attribute.name) == prop.name
         }) || keys.iter().any(|key| spread_key_is_prop(key, &prop.name));
         if prop.required() && !given {
             return Err(Diagnostic::new(
