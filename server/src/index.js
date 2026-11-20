@@ -6,6 +6,7 @@
 //   const page = zubra.page();                       // one per request
 //   const body = `<h1>Tickets</h1>${page.render('ticket-table', { tickets })}`;
 //   res.end(page.finish(layout(body)));            // the components' CSS and modules go in
+//   zubra.send(req, res, page.finish(layout(body))); // the same, compressed with `compress: true`
 //
 //   zubra.handle(req, res)    // Node: serves /_zubra/… (component modules, @zubra/runtime); false otherwise
 //   zubra.fetch(request)      // the same for fetch-style servers (Hono, Bun, Deno): a Response or null
@@ -21,7 +22,7 @@ import { createRequire } from 'node:module';
 import { StringDecoder } from 'node:string_decoder';
 import * as nodeStream from 'node:stream';
 import { createHash } from 'node:crypto';
-import { brotliCompressSync, gzipSync, constants as zlib } from 'node:zlib';
+import { brotliCompress, brotliCompressSync, gzip, gzipSync, constants as zlib } from 'node:zlib';
 const { Transform } = nodeStream;
 import { findCompiler } from './compiler.js';
 import { versionAt, versionSkew } from './versions.js';
@@ -221,19 +222,31 @@ export function createZubra({ components = 'components', packages = [], prefix =
     packageNames.push(name);
   }
 
+  // Nothing in the folder is looked at again (production, or development without `cache`'s
+  // checks): the runtime's and @zubra/sync's files are read once, and what `compress` keeps of
+  // each is found by the file's own bytes, with no hash per request.
+  const lasting = cache && !changed;
+  const readOnce = new Map();
+  const readAsset = (file) => {
+    if (!lasting) return readFileSync(file);
+    let body = readOnce.get(file);
+    if (!body) readOnce.set(file, (body = readFileSync(file)));
+    return body;
+  };
+
   // What <prefix>/ serves besides the components' modules: @zubra/sync and the runtime, from disk.
   const assets = (rest) => {
     if (rest.startsWith('sync/') && syncDir) {
       const file = resolve(syncDir, rest.slice('sync/'.length));
       if (!file.startsWith(syncDir + sep) || extname(file) !== '.js' || !existsSync(file)) return { status: 404, type: 'text/plain', body: 'Not found' };
-      return { status: 200, type: TYPES['.js'], body: readFileSync(file) };
+      return { status: 200, type: TYPES['.js'], body: readAsset(file) };
     }
     if (rest.startsWith('runtime/')) {
       const name = rest.slice('runtime/'.length);
       // Signals mode: the TC39 engine is the runtime's engine.
       const file = resolve(runtimeDir, signals && name === 'signal.js' ? 'signal-tc39.js' : name);
       if (!file.startsWith(runtimeDir + sep) || !existsSync(file) || statSync(file).isDirectory()) return { status: 404, type: 'text/plain', body: 'Not found' };
-      return { status: 200, type: TYPES[extname(file)] ?? 'application/octet-stream', body: readFileSync(file) };
+      return { status: 200, type: TYPES[extname(file)] ?? 'application/octet-stream', body: readAsset(file) };
     }
     return null;
   };
@@ -299,9 +312,13 @@ export function createZubra({ components = 'components', packages = [], prefix =
     }
     const served = core.serve(new URL(req.url, 'http://x').pathname);
     if (!served) return false;
-    const { body, headers } = compress ? encoded(served, req.headers?.['accept-encoding']) : { body: served.body, headers: {} };
-    res.writeHead(served.status, { 'content-type': served.type, 'cache-control': core.cacheControlOf(served), ...headers });
-    res.end(body);
+    const write = ({ body, headers }) => {
+      res.writeHead(served.status, { 'content-type': served.type, 'cache-control': core.cacheControlOf(served), ...headers });
+      res.end(body);
+    };
+    const answer = compress ? encoded(served, req.headers?.['accept-encoding']) : { body: served.body, headers: {} };
+    if (answer instanceof Promise) answer.then(write);
+    else write(answer);
     return true;
   }
 
@@ -311,16 +328,28 @@ export function createZubra({ components = 'components', packages = [], prefix =
   // synchronously, would let anyone keep the server busy with one request after another. Files that stay as they are until a restart get the smallest encoding
   // (Brotli 11 takes about 36 ms for the runtime's base, once); ones an edit may change (in
   // development, or with `cache: false`) a quick one.
-  const lasting = cache && !changed;
   const kept = new Map();
-  function encoded(served, accepts) {
-    const { body } = served;
-    if (Buffer.byteLength(body) < SMALLEST) return { body, headers: {} };
-    // `vary` on the plain answer too: a shared cache must not hand it to a browser that asked for Brotli, or the reverse.
-    const headers = { vary: 'accept-encoding' };
-    const encoding = encodingFor(accepts);
-    if (!encoding) return { body, headers };
-    const key = createHash('sha256').update(body).digest('base64');
+  // A body's content key, kept per body: the same Buffer (a runtime file read once) or the same
+  // string (a compiled module kept by `cache`) isn't hashed again on every request.
+  const keysOfBuffers = new WeakMap();
+  const keysOfStrings = new Map();
+  const hash = (body) => createHash('sha256').update(body).digest('base64');
+  function keyOf(body) {
+    if (typeof body === 'string') {
+      let key = keysOfStrings.get(body);
+      if (key === undefined) {
+        if (keysOfStrings.size >= KEPT_MOST) keysOfStrings.clear();
+        keysOfStrings.set(body, (key = hash(body)));
+      }
+      return key;
+    }
+    if (typeof body !== 'object' || body === null) return hash(body);
+    let key = keysOfBuffers.get(body);
+    if (key === undefined) keysOfBuffers.set(body, (key = hash(body)));
+    return key;
+  }
+  const brotliParams = (body, quality) => ({ params: { [zlib.BROTLI_PARAM_QUALITY]: quality, [zlib.BROTLI_PARAM_SIZE_HINT]: Buffer.byteLength(body) } });
+  const entryOf = (key) => {
     let entry = kept.get(key);
     if (!entry) {
       // What the server can answer differs without end in development (`reload`'s answers), so
@@ -328,10 +357,73 @@ export function createZubra({ components = 'components', packages = [], prefix =
       if (kept.size >= KEPT_MOST) kept.clear();
       kept.set(key, (entry = {}));
     }
-    entry[encoding] ??= encoding === 'br'
-      ? brotliCompressSync(body, { params: { [zlib.BROTLI_PARAM_QUALITY]: lasting ? 11 : 4, [zlib.BROTLI_PARAM_SIZE_HINT]: Buffer.byteLength(body) } })
-      : gzipSync(body, { level: lasting ? 9 : 6 });
+    return entry;
+  };
+  // The runtime's files, compressed at start, off the main thread: the first page's requests
+  // don't wait on Brotli 11 for each (about 120 ms for a page's fifteen modules). A request that
+  // comes before its file is done gets a quick encoding, not kept.
+  const warming = new Map(); // `<encoding> <key>` → its compression, running off the main thread
+  if (compress && lasting) {
+    const compressing = { br: (body) => [brotliCompress, brotliParams(body, 11)], gzip: () => [gzip, { level: 9 }] };
+    setImmediate(() => {
+      for (const name of existsSync(runtimeDir) ? readdirSync(runtimeDir) : []) {
+        if (!name.endsWith('.js')) continue;
+        const served = core.serve(`${base}/runtime/${name}`);
+        if (served?.status !== 200 || Buffer.byteLength(served.body) < SMALLEST) continue;
+        const key = keyOf(served.body);
+        for (const encoding of ['br', 'gzip']) {
+          const job = `${encoding} ${key}`;
+          if (warming.has(job) || kept.get(key)?.[encoding]) continue;
+          const [fn, options] = compressing[encoding](served.body);
+          warming.set(job, new Promise((done) => fn(served.body, options, (error, out) => {
+            warming.delete(job);
+            if (!error) entryOf(key)[encoding] ??= out;
+            done();
+          })));
+        }
+      }
+    });
+  }
+  /** The answer's body and headers; a promise of them for a file still being compressed at start. */
+  function encoded(served, accepts) {
+    const { body } = served;
+    if (Buffer.byteLength(body) < SMALLEST) return { body, headers: {} };
+    // `vary` on the plain answer too: a shared cache must not hand it to a browser that asked for Brotli, or the reverse.
+    const headers = { vary: 'accept-encoding' };
+    const encoding = encodingFor(accepts);
+    if (!encoding) return { body, headers };
+    const key = keyOf(body);
+    // (A request that comes before its file is done waits for it, rather than compress it again.)
+    const pending = warming.get(`${encoding} ${key}`);
+    if (pending) return pending.then(() => encoded(served, accepts));
+    const entry = entryOf(key);
+    entry[encoding] ??= encoding === 'br' ? brotliCompressSync(body, brotliParams(body, lasting ? 11 : 4)) : gzipSync(body, { level: lasting ? 9 : 6 });
     return { body: entry[encoding], headers: { ...headers, 'content-encoding': encoding, 'content-length': String(entry[encoding].length) } };
+  }
+
+  /**
+   * Send a page (any text the app made for this request) from a Node handler, with `compress`
+   * in Brotli or gzip when the request takes one: a page is most of a first visit's bytes, and
+   * differs per request, so it's compressed quickly and not kept. `status` (default: the
+   * response's own, 200), `headers` beside it; `content-type` is HTML unless the response or
+   * `headers` says otherwise.
+   */
+  function send(req, res, body, { status = res.statusCode ?? 200, headers = {} } = {}) {
+    const head = { ...headers };
+    const named = (name) => Object.keys(head).some((one) => one.toLowerCase() === name) || res.hasHeader?.(name);
+    if (!named('content-type')) head['content-type'] = 'text/html; charset=utf-8';
+    if (compress && Buffer.byteLength(body) >= SMALLEST) {
+      const vary = res.getHeader?.('vary');
+      head.vary = vary ? `${vary}, accept-encoding` : 'accept-encoding';
+      const encoding = encodingFor(req.headers?.['accept-encoding']);
+      if (encoding) {
+        body = encoding === 'br' ? brotliCompressSync(body, brotliParams(body, 5)) : gzipSync(body, { level: 6 });
+        head['content-encoding'] = encoding;
+        head['content-length'] = String(body.length);
+      }
+    }
+    res.writeHead(status, head);
+    res.end(body);
   }
 
   /** `fetch` with `reload`: the stream, as a Response whose body stays open. */
@@ -344,7 +436,7 @@ export function createZubra({ components = 'components', packages = [], prefix =
     if (reload && path === RELOAD) return reloadStream();
     const served = core.serve(path);
     if (!served) return null;
-    const { body, headers } = encoded(served, request.headers.get('accept-encoding'));
+    const { body, headers } = await encoded(served, request.headers.get('accept-encoding'));
     return new Response(body, { status: served.status, headers: { 'content-type': served.type, 'cache-control': core.cacheControlOf(served), ...headers } });
   }
 
@@ -439,6 +531,7 @@ export function createZubra({ components = 'components', packages = [], prefix =
     page,
     errorPage: core.errorPage,
     handle,
+    send,
     fetch: compress ? fetchEncoded : fetchPlain,
     importMap: core.importMap,
     head: core.head,

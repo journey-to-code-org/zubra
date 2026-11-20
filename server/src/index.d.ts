@@ -67,6 +67,15 @@ export interface Zubra {
   errorPage(error: unknown, options?: Pick<PageOptions, 'nonce'>): ErrorPage;
   /** Node's http: serves the browser modules and runtime under the prefix; true when it answered. */
   handle(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse): boolean;
+  /**
+   * Send a page from a Node handler: `res.writeHead(status, headers)` and `res.end(body)`, with
+   * `compress` in Brotli or gzip when the request takes one (and `vary: accept-encoding`). The
+   * status defaults to the response's own (200); `content-type` to HTML unless the response or
+   * `headers` has one.
+   *
+   *     zubra.send(req, res, page.finish(html));
+   */
+  send(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse, body: string | Uint8Array, options?: { status?: number; headers?: Record<string, string> }): void;
   /** Fetch-style servers: a Response for the prefix's paths, or null. */
   fetch(request: Request): Promise<Response | null>;
   /** The import map (empty with `inline: false`, where the modules need none). */
@@ -181,7 +190,7 @@ export interface ZubraOptions {
    */
   streamTimeout?: number;
   /**
-   * `true`: `handle` and `fetch` answer in Brotli, or gzip, when the request's `accept-encoding`
+   * `true`: `handle`, `fetch` and `send` answer in Brotli, or gzip, when the request's `accept-encoding`
    * takes one (with `vary: accept-encoding`), each file compressed once and kept. Off by
    * default: turn it on where nothing in front of the server compresses (a plain Node host),
    * and leave it off behind a CDN, a proxy or middleware that does. Files under 1 KB go as they

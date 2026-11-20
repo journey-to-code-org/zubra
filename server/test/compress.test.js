@@ -9,6 +9,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import nodeZlib, { brotliDecompressSync, gunzipSync } from 'node:zlib';
+import crypto from 'node:crypto';
 import { chromium } from 'playwright';
 import { createZubra } from '../src/index.js';
 
@@ -217,4 +218,93 @@ test('a browser loads the page from compressed modules', async () => {
   assert.equal(encodings[BASE], 'br');
   assert.equal(encodings['/_zubra/components/tap-count.js'], 'br');
   await page.close();
+});
+
+test("at start the runtime's files are compressed off the main thread, and a request before that waits for it", async () => {
+  const { brotliCompressSync: brotliNow, gzipSync: gzipNow } = nodeZlib;
+  // The compressions started at start are held until the test lets them go.
+  const held = [];
+  const brotliLater = mock.method(nodeZlib, 'brotliCompress', (body, options, callback) => held.push(() => callback(null, brotliNow(body, options))));
+  const gzipLater = mock.method(nodeZlib, 'gzip', (body, options, callback) => held.push(() => callback(null, gzipNow(body, options))));
+  const brotli = mock.method(nodeZlib, 'brotliCompressSync');
+  const gzip = mock.method(nodeZlib, 'gzipSync');
+  syncBuiltinESMExports();
+  try {
+    const zubra = production({ compress: true });
+    await new Promise((done) => setImmediate(done));
+    assert.ok(brotliLater.mock.callCount() > 3, `the runtime's files: ${brotliLater.mock.callCount()}`);
+    assert.equal(gzipLater.mock.callCount(), brotliLater.mock.callCount());
+    assert.equal(brotliLater.mock.calls[0].arguments[1].params[nodeZlib.constants.BROTLI_PARAM_QUALITY], 11);
+    // Asked for while its compression runs: the answer waits for it.
+    let answered = null;
+    const asked = zubra.fetch(new Request(`http://x${BASE}`, { headers: { 'accept-encoding': 'br' } })).then((response) => (answered = response));
+    await new Promise((done) => setTimeout(done, 20));
+    assert.equal(answered, null, 'it waits');
+    for (const release of held.splice(0)) release();
+    const response = await asked;
+    assert.equal(response.headers.get('content-encoding'), 'br');
+    const plain = Buffer.from(await (await production().fetch(new Request(`http://x${BASE}`))).arrayBuffer());
+    assert.deepEqual(brotliDecompressSync(Buffer.from(await response.arrayBuffer())), plain);
+    const gzipped = await zubra.fetch(new Request(`http://x${BASE}`, { headers: { 'accept-encoding': 'gzip' } }));
+    assert.deepEqual(gunzipSync(Buffer.from(await gzipped.arrayBuffer())), plain);
+    // Nothing was compressed on the main thread for a request.
+    assert.equal(brotli.mock.calls.filter(({ arguments: [body] }) => Buffer.compare(Buffer.from(body), plain) === 0).length, 0);
+    assert.equal(gzip.mock.calls.filter(({ arguments: [body] }) => Buffer.compare(Buffer.from(body), plain) === 0).length, 0);
+  } finally {
+    for (const one of [brotliLater, gzipLater, brotli, gzip]) one.mock.restore();
+    syncBuiltinESMExports();
+  }
+});
+
+test('a runtime file is hashed once, not on every request', async () => {
+  const zubra = production({ compress: true });
+  const ask = () => zubra.fetch(new Request(`http://x${BASE}`, { headers: { 'accept-encoding': 'gzip' } }));
+  await ask();
+  const hashes = mock.method(crypto, 'createHash');
+  syncBuiltinESMExports();
+  try {
+    for (let i = 0; i < 5; i++) await ask();
+    assert.equal(hashes.mock.callCount(), 0);
+  } finally {
+    hashes.mock.restore();
+    syncBuiltinESMExports();
+  }
+});
+
+test('send: a page in Brotli or gzip with `compress`, as it is without, and the status and headers it is given', async () => {
+  const html = `<!doctype html><html><body>${'<p>A paragraph of the page, more than a packet of it.</p>'.repeat(60)}</body></html>`;
+  const sending = (zubra, options) => {
+    const server = createServer((request, response) => {
+      if (request.url === '/typed') response.setHeader('content-type', 'application/xhtml+xml');
+      zubra.send(request, response, request.url === '/small' ? '<p>hi</p>' : html, options);
+    });
+    servers.push(server);
+    return new Promise((done) => server.listen(0, '127.0.0.1', () => done(server.address().port)));
+  };
+  const port = await sending(production({ compress: true }));
+  const br = await get(port, '/', { 'accept-encoding': 'gzip, br' });
+  assert.equal(br.status, 200);
+  assert.equal(br.headers['content-type'], 'text/html; charset=utf-8');
+  assert.equal(br.headers['content-encoding'], 'br');
+  assert.equal(br.headers.vary, 'accept-encoding');
+  assert.equal(br.headers['content-length'], String(br.body.length));
+  assert.equal(brotliDecompressSync(br.body).toString(), html);
+  assert.ok(br.body.length < html.length / 4, `${br.body.length} of ${html.length}`);
+  const gz = await get(port, '/', { 'accept-encoding': 'gzip' });
+  assert.equal(gz.headers['content-encoding'], 'gzip');
+  assert.equal(gunzipSync(gz.body).toString(), html);
+  const plain = await get(port, '/');
+  assert.equal(plain.headers['content-encoding'], undefined);
+  assert.equal(plain.headers.vary, 'accept-encoding');
+  assert.equal(plain.body.toString(), html);
+  // A few bytes go as they are; a content type the response has is kept.
+  assert.equal((await get(port, '/small', { 'accept-encoding': 'br' })).headers['content-encoding'], undefined);
+  assert.equal((await get(port, '/typed', { 'accept-encoding': 'br' })).headers['content-type'], 'application/xhtml+xml');
+  // Without `compress`, the page as it is; the status and headers given go with it.
+  const off = await sending(production(), { status: 404, headers: { 'x-page': 'missing' } });
+  const asIs = await get(off, '/', { 'accept-encoding': 'br' });
+  assert.equal(asIs.status, 404);
+  assert.equal(asIs.headers['x-page'], 'missing');
+  assert.equal(asIs.headers['content-encoding'], undefined);
+  assert.equal(asIs.body.toString(), html);
 });
