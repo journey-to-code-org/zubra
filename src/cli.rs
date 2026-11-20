@@ -356,6 +356,7 @@ pub fn spec() -> Value {
         "version": env!("CARGO_PKG_VERSION"),
         "commands": COMMANDS.iter().map(|command| json!({
             "name": command.name,
+            "synopsis": command.synopsis(),
             "home": match command.home { Home::Both => "both", Home::Npm => "npm" },
             "flags": command.flags.iter().map(|flag| json!({
                 "name": flag.name,

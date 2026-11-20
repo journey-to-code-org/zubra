@@ -108,6 +108,9 @@ function componentsOf(uri, text) {
 // Type errors (`zubra check --types`, the project's own TypeScript), by document: worked out when
 // a TypeScript component opens and each time it's saved, in a process of their own, and shown
 // with the compiler's own diagnostics.
+/** Where a diagnostic code is explained: its row in docs/diagnostics.md. */
+const codeHref = (code) => `https://github.com/zubra-js/zubra/blob/main/docs/diagnostics.md#${code.toLowerCase()}`;
+
 const typeErrors = new Map(); // uri → LSP diagnostics
 const compileErrors = new Map(); // uri → LSP diagnostics
 const typeRuns = new Map(); // uri → the running check, to stop when a newer one starts
@@ -174,6 +177,8 @@ function validate(document) {
           range: { start: { line, character }, end: { line, character: character + Math.max(word.length, 1) } },
           severity: diagnostic.severity === 'warning' ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
           source: 'zubra',
+          // The stable code (ZB2001), linked to what it means; a compiler from before codes has none.
+          ...(diagnostic.code ? { code: diagnostic.code, codeDescription: { href: codeHref(diagnostic.code) } } : {}),
           message: diagnostic.help ? `${diagnostic.message}\n${diagnostic.help}` : diagnostic.message,
         };
       });

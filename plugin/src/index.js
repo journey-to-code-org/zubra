@@ -157,6 +157,8 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
   }
   const runtime = options.runtime ?? '@zubra/runtime';
   let project = options.framework && options.framework !== 'auto' ? options.framework : null;
+  // `vanilla` is no framework: plain files get the element. (`element`, `none` and `plain` say the same.)
+  if (['vanilla', 'none', 'plain'].includes(project)) project = 'element';
   const typings = options.dts ?? true;
   // `dts: { dir }`: the typings go in the app's own folder instead of beside each component.
   const typingsDir = typeof typings === 'object' && typings.dir ? typings.dir : null;

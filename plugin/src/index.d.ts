@@ -5,7 +5,7 @@ export interface ZubraOptions {
   /** The compiler CLI to run. Default: `$ZUBRA_COMPILER`, then `@zubra/compiler` (WebAssembly), then `zubra` on PATH. */
   compiler?: string;
   /** What a `.zb` import gives plain `.js`/`.ts` files. Default: `'auto'` (detected from the React or Vue Vite plugin). */
-  framework?: 'auto' | 'react' | 'vue' | 'element';
+  framework?: 'auto' | 'react' | 'vue' | 'vanilla' | 'element' | 'none' | 'plain';
   /**
    * Write typings (`x.d.zb.ts`) next to each component. Default: `true`. `{ dir }` writes them
    * under that folder of the app instead (with a `tsconfig.json` there to extend), for

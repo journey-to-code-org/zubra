@@ -106,6 +106,9 @@ test('diagnostics as you type, at the right place, with the fix in the message',
   const error = diagnostics.find((diagnostic) => diagnostic.severity === 1);
   assert.equal(error.message, '<zb-badge> has no prop `lable`\ndid you mean `label`?');
   assert.deepEqual(error.range.start, { line: 4, character: 12 });
+  // The stable code, linked to its meaning (docs/diagnostics.md).
+  assert.equal(error.code, 'ZB4005');
+  assert.equal(error.codeDescription.href, 'https://github.com/zubra-js/zubra/blob/main/docs/diagnostics.md#zb4005');
   assert.ok(diagnostics.some((diagnostic) => diagnostic.severity === 2 && /prop `title`/.test(diagnostic.message)), 'warnings too');
 
   notify('textDocument/didChange', { textDocument: { uri, version: 2 }, contentChanges: [{ text: PAGE.replace('lable={1}', 'label="one"') }] });

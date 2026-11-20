@@ -81,7 +81,7 @@ With Vite, a component's `<style>` is a CSS module in Vite's pipeline, so PostCS
 ```js
 zubra({
   compiler: '/path/to/zubra',    // default: $ZUBRA_COMPILER, then @zubra/compiler, then `zubra` on PATH
-  framework: 'auto',           // or 'react' | 'vue' | 'element': the default for plain files
+  framework: 'auto',           // or 'react' | 'vue' | 'vanilla' (the element; also 'element'): the default for plain files
   dts: true,                   // write typings next to each component; { dir: '.zubra/types' } writes them
                                // in the app instead (see Types), false writes none
   runtime: '@zubra/runtime',     // the runtime module compiled code imports
@@ -162,7 +162,7 @@ Set the option in every app that builds the shared folder and delete the `*.d.zb
 npx zubra types src ../ui && tsc --noEmit
 ```
 
-`zubra types` (from `@zubra/compiler`) takes the files and folders of components to type (default: the folder it runs in), the framework from the app's `package.json` (`--framework react|vue|svelte|solid|none` says otherwise) and the folder from `--dir` (default `.zubra/types`).
+`zubra types` (from `@zubra/compiler`) takes the files and folders of components to type (default: the folder it runs in), the framework from the app's `package.json` (`--framework react|vue|svelte|solid|solid2|vanilla` says otherwise) and the folder from `--dir` (default `.zubra/types`).
 
 In the editor you don't need these files: the VS Code extension's TypeScript plugin types `.zb` imports from the components directly, updated each time one is saved (see [Editor support](../docs/editor-support.md)). They're for `tsc` in builds and CI.
 
