@@ -41,6 +41,8 @@ for (const framework of Object.keys(FRAMEWORKS).filter((framework) => framework 
       assert.match(page, new RegExp(`<(${tag}|${component})[\\s>/]|page\\.render\\('${tag}'`), `${tag} in the ${framework} page`);
     }
     assert.match(page, /heading(="|: ')My App/);
+    // An icon of its own, so the first page load doesn't log a 404 for /favicon.ico.
+    assert.match(page, /<link rel="icon" href="data:,"/);
     // What the docs in the app say is there, is there: every component is in both tables.
     for (const doc of ['AGENTS.md', 'README.md']) {
       const text = readFileSync(join(dir, doc), 'utf8');
@@ -127,8 +129,18 @@ test('the server app: a Node server, a form with a server function, no bundler, 
   for (const name of Object.keys(manifest.dependencies)) assert.equal(manifest.dependencies[name], `^${version}`);
   assert.deepEqual(Object.keys(manifest.devDependencies), ['playwright']);
   // Restarts for src/ too: a 'use server' function is loaded once, at start.
-  assert.equal(manifest.scripts.dev, 'node --watch-path=src --watch-path=server.js server.js');
+  // Development is a flag the server reads (no `NODE_ENV=… node`, which Windows' cmd can't run);
+  // `start` is production, the default.
+  assert.equal(manifest.scripts.dev, 'node --watch-path=src --watch-path=server.js server.js --dev');
+  assert.equal(manifest.scripts.start, 'node server.js');
   const server = readFileSync(join(dir, 'server.js'), 'utf8');
+  assert.match(server, /if \(process\.argv\.includes\('--dev'\)\) process\.env\.NODE_ENV = 'development';/);
+  // Compiled once and kept, in development too (an edit is still picked up); the page compressed
+  // as the modules are; and an icon, so the first load logs no 404.
+  assert.match(server, /createZubra\(\{ components, cache: true, compress: true,/);
+  assert.match(server, /createActions\(\{ components, compress: true \}\)/);
+  assert.match(server, /zubra\.send\(req, res, html\);/);
+  assert.match(server, /<link rel="icon" href="data:,">/);
   assert.match(server, /heading: 'My Shop'/);
   assert.match(server, /<title>My Shop<\/title>/);
   // The handlers in the order that works, and one page object that renders and finishes.
