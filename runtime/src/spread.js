@@ -8,6 +8,9 @@ import { effect } from './effect.js';
 // property names (custom ones included).
 const ATTRIBUTE_NAME = /^[A-Za-z_:][A-Za-z0-9_.:-]*$/;
 const CSS_PROPERTY = /^(?:--[A-Za-z0-9_-]+|[A-Za-z][A-Za-z0-9-]*)$/;
+// A single CSS value, as the server checks a spread's style values: no `;`, braces, `<`,
+// backslash, url(), expression() or @import.
+const NOT_ONE_CSS_VALUE = /[;{}<\\]|url\(|expression\(|@import/i;
 
 const see = (section) => ` (see https://github.com/zubra-js/zubra#${section})`;
 
@@ -112,6 +115,10 @@ export function spread(part, node) {
           }
           if (own.has(`style:${css}`)) continue;
           if (propertyValue == null || propertyValue === false) continue;
+          if (typeof propertyValue === 'object' || NOT_ONE_CSS_VALUE.test(String(propertyValue))) {
+            console.error(`zubra: a spread's style value isn't a single CSS value, so "${css}" was left out${see('safety')}:`, propertyValue);
+            continue;
+          }
           nextStyles.add(css);
           if (node.style.getPropertyValue(css) !== String(propertyValue)) node.style.setProperty(css, String(propertyValue));
         }
