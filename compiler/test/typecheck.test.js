@@ -36,7 +36,7 @@ const badge = `<script lang="ts">
   declare const count: number
   function clear() { emit<{ cleared: boolean }>('clear', { cleared: true }) }
 </script>
-<zb-badge count={0} label="New"><span onclick={clear}>{label}: {count}</span></zb-badge>
+<my-badge count={0} label="New"><span onclick={clear}>{label}: {count}</span></my-badge>
 `;
 
 test('finds the components in folders, skipping node_modules', { skip }, () => {
@@ -57,8 +57,8 @@ test('type errors in templates, child props and handlers land on their .zb lines
   function cleared(event: CustomEvent<{ cleared: boolean }>) { if (event.detail.cleared) unread = 0 }
 </script>
 <zb-inbox>
-  <zb-badge count={unread + total} onclear={cleared}></zb-badge>
-  <zb-badge count={"many"} onclear={(event) => event.detail.clearedd}></zb-badge>
+  <my-badge count={unread + total} onclear={cleared}></my-badge>
+  <my-badge count={"many"} onclear={(event) => event.detail.clearedd}></my-badge>
   <ul><zb-each items={messages} as="message"><li>{message.subjet}</li></zb-each></ul>
   <button onclick={(event) => event.clientXX}>x</button>
   <zb-if test={unread > 0}><p>{unread.toFixed(0)}</p></zb-if>
@@ -85,7 +85,7 @@ test('a clean project has no errors, and nothing is left beside the components',
 });
 
 test('one component, with the components it imports, and unsaved text in place of the file', { skip }, () => {
-  const inbox = "<script lang=\"ts\">\n  import './badge.zb'\n</script>\n<zb-inbox><zb-badge count={1}></zb-badge></zb-inbox>\n";
+  const inbox = "<script lang=\"ts\">\n  import './badge.zb'\n</script>\n<zb-inbox><my-badge count={1}></my-badge></zb-inbox>\n";
   const root = project({ 'src/badge.zb': badge.replace('{count}', '{count.nope}'), 'src/inbox.zb': inbox });
   const file = join(root, 'src/inbox.zb');
   // Only what was asked for is reported: badge.zb's own error isn't.
@@ -202,7 +202,7 @@ test('props: a text default, Props with extends and methods, a keyword name, a .
 test('files stay inside the generated folder, and an editor\'s stopped check is cleaned up', { skip }, () => {
   const root = project({
     'shared/b.zb': badge,
-    'app/src/a.zb': "<script lang=\"ts\">\n  import '../../shared/b.zb'\n</script>\n<zb-a><zb-badge count={1}></zb-badge></zb-a>\n",
+    'app/src/a.zb': "<script lang=\"ts\">\n  import '../../shared/b.zb'\n</script>\n<zb-a><my-badge count={1}></my-badge></zb-a>\n",
   });
   const app = join(root, 'app');
   writeFileSync(join(app, 'tsconfig.json'), JSON.stringify({ extends: '../tsconfig.json' }));

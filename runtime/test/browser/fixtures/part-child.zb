@@ -2,6 +2,6 @@
 <style>
   h3 { margin: 0 }
 </style>
-<zb-part-child heading="Child">
+<my-part-child heading="Child">
   <h3 part="title">{heading}</h3><span part="title note">note</span><zb-slot></zb-slot>
-</zb-part-child>
+</my-part-child>

@@ -50,7 +50,7 @@ function diagnosticsFor(uri) {
 before(async () => {
   execFileSync('cargo', ['build', '--quiet'], { cwd: repo, stdio: 'inherit' });
   dir = mkdtempSync(join(tmpdir(), 'zb-lsp-'));
-  writeFileSync(join(dir, 'badge.zb'), '<!-- A small badge. -->\n<script>\n  import { emit } from \'@zubra/runtime\'\n  emit(\'pick\', 1)\n</script>\n<zb-badge label="new" count={0}>\n  <b>{label}</b><zb-slot name="icon"></zb-slot>\n</zb-badge>\n');
+  writeFileSync(join(dir, 'badge.zb'), '<!-- A small badge. -->\n<script>\n  import { emit } from \'@zubra/runtime\'\n  emit(\'pick\', 1)\n</script>\n<my-badge label="new" count={0}>\n  <b>{label}</b><zb-slot name="icon"></zb-slot>\n</my-badge>\n');
   // For type errors: the repository's @zubra/compiler/typecheck, against the native CLI, and
   // TypeScript and @zubra/runtime's types where the project would have them.
   writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', strict: true, lib: ['ES2022', 'DOM'] } }));
@@ -97,14 +97,14 @@ after(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-const PAGE = "<script>\n  import './badge.zb'\n</script>\n<zb-page title=\"x\" items={[]}>\n  <zb-badge lable={1}></zb-badge>\n</zb-page>\n";
+const PAGE = "<script>\n  import './badge.zb'\n</script>\n<zb-page title=\"x\" items={[]}>\n  <my-badge lable={1}></my-badge>\n</zb-page>\n";
 
 test('diagnostics as you type, at the right place, with the fix in the message', async () => {
   const uri = pathToFileURL(join(dir, 'page.zb')).href;
   notify('textDocument/didOpen', { textDocument: { uri, languageId: 'zubra', version: 1, text: PAGE } });
   const diagnostics = await diagnosticsFor(uri);
   const error = diagnostics.find((diagnostic) => diagnostic.severity === 1);
-  assert.equal(error.message, '<zb-badge> has no prop `lable`\ndid you mean `label`?');
+  assert.equal(error.message, '<my-badge> has no prop `lable`\ndid you mean `label`?');
   assert.deepEqual(error.range.start, { line: 4, character: 12 });
   assert.ok(diagnostics.some((diagnostic) => diagnostic.severity === 2 && /prop `title`/.test(diagnostic.message)), 'warnings too');
 
@@ -210,10 +210,10 @@ test('TypeScript in a component with CRLF line endings: positions as the editor 
 
 test('completion: directives and imported components, their props and events', async () => {
   const uri = pathToFileURL(join(dir, 'complete.zb')).href;
-  const text = "<script>\n  import './badge.zb'\n</script>\n<zb-page heading=\"\">\n  <zb-\n  <zb-badge \n  <p>{}</p>\n</zb-page>\n";
+  const text = "<script>\n  import './badge.zb'\n</script>\n<zb-page heading=\"\">\n  <zb-\n  <my-badge \n  <p>{}</p>\n</zb-page>\n";
   notify('textDocument/didOpen', { textDocument: { uri, languageId: 'zubra', version: 1, text } });
   const labels = async (line, character) => (await call('textDocument/completion', { textDocument: { uri }, position: { line, character } })).map((item) => item.label);
-  assert.deepEqual((await labels(4, 6)).sort(), ['zb-await', 'zb-badge', 'zb-case', 'zb-catch', 'zb-each', 'zb-else', 'zb-if', 'zb-pending', 'zb-slot', 'zb-switch', 'zb-then']);
+  assert.deepEqual((await labels(4, 6)).sort(), ['zb-await', 'my-badge', 'zb-case', 'zb-catch', 'zb-each', 'zb-else', 'zb-if', 'zb-pending', 'zb-slot', 'zb-switch', 'zb-then']);
   assert.deepEqual(await labels(5, 12), ['label', 'count', 'onpick', 'zb-if', 'zb-else-if', 'zb-else']);
   assert.deepEqual(await labels(6, 6), ['heading'], 'props in expressions');
   const items = await call('textDocument/completion', { textDocument: { uri }, position: { line: 5, character: 12 } });
@@ -224,7 +224,7 @@ test('completion: directives and imported components, their props and events', a
 test('hover shows the component; go to definition opens it', async () => {
   const uri = pathToFileURL(join(dir, 'page.zb')).href;
   const hover = await call('textDocument/hover', { textDocument: { uri }, position: { line: 4, character: 5 } });
-  assert.match(hover.contents.value, /\*\*<zb-badge>\*\*\n\nA small badge\./);
+  assert.match(hover.contents.value, /\*\*<my-badge>\*\*\n\nA small badge\./);
   assert.match(hover.contents.value, /\| `count` \| `number` \| `0` \|/);
   assert.match(hover.contents.value, /Events: `pick`/);
   assert.match(hover.contents.value, /Slots: `icon`/);

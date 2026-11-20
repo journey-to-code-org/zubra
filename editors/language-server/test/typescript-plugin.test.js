@@ -69,7 +69,7 @@ function start(root) {
 
 const errors = async (send, file) => (await send('semanticDiagnosticsSync', { file })).body.map((d) => `${d.start.line}:${d.start.offset} TS${d.code}`);
 
-const badge = (type) => `<script lang="ts">\n  declare const count: ${type}\n</script>\n<zb-badge count={0}><p>{count}</p></zb-badge>\n`;
+const badge = (type) => `<script lang="ts">\n  declare const count: ${type}\n</script>\n<my-badge count={0}><p>{count}</p></my-badge>\n`;
 
 test('a .ts file gets a component\'s typings, and their changes when it\'s saved', { timeout: 60_000 }, async (t) => {
   const root = project({

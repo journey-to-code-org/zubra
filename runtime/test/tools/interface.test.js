@@ -160,7 +160,7 @@ test('events are in the manifest and type their listeners', () => {
   writeFileSync(join(dir, 'rating.d.ts'), compileFixture('dts'));
   const good = typecheck('events-good', `
     import './rating.js';
-    const el = document.querySelector('zb-rating')!;
+    const el = document.querySelector('my-rating')!;
     el.addEventListener('change', (event) => { const detail: null = event.detail; void detail; });
     el.addEventListener('valuechange', (event) => { const detail: unknown = event.detail; void detail; });
     el.addEventListener('beforevaluechange', (event) => event.preventDefault());
@@ -172,7 +172,7 @@ test('events are in the manifest and type their listeners', () => {
   assert.equal(good, '');
   const bad = typecheck('events-bad', `
     import './rating.js';
-    const el = document.querySelector('zb-rating')!;
+    const el = document.querySelector('my-rating')!;
     el.addEventListener('change', (event) => { const detail: string = event.detail; void detail; });
     export {};
   `);
@@ -296,13 +296,13 @@ test('HTML custom data drives completions in the HTML language service (what VS 
     return service.doComplete(document, document.positionAt(offset), service.parseHTMLDocument(document));
   };
   const tags = complete('<body><zb-|').items.map((item) => item.label);
-  assert.ok(tags.includes('zb-rating'), tags.join(', '));
-  const attributes = complete('<body><zb-rating |></zb-rating>').items;
+  assert.ok(tags.includes('my-rating'), tags.join(', '));
+  const attributes = complete('<body><my-rating |></my-rating>').items;
   const value = attributes.find((item) => item.label === 'value');
   assert.ok(value, attributes.map((item) => item.label).join(', '));
   assert.match(value.documentation?.value ?? value.documentation, /Type: `number`\. Default: `0`\./);
   assert.ok(attributes.some((item) => item.label === 'onvaluechange'));
-  const hover = service.doHover(TextDocument.create('file:///p.html', 'html', 1, '<zb-rating></zb-rating>'), { line: 0, character: 3 },
-    service.parseHTMLDocument(TextDocument.create('file:///p.html', 'html', 1, '<zb-rating></zb-rating>')));
+  const hover = service.doHover(TextDocument.create('file:///p.html', 'html', 1, '<my-rating></my-rating>'), { line: 0, character: 3 },
+    service.parseHTMLDocument(TextDocument.create('file:///p.html', 'html', 1, '<my-rating></my-rating>')));
   assert.match(JSON.stringify(hover), /A two-star rating/);
 });

@@ -3,6 +3,6 @@
   import './badge.zb'
 </script>
 <spread-onto rest={{}}>
-  <zb-badge class="own" {...rest}></zb-badge>
-  <zb-badge label="fixed" {...rest}></zb-badge>
+  <my-badge class="own" {...rest}></my-badge>
+  <my-badge label="fixed" {...rest}></my-badge>
 </spread-onto>

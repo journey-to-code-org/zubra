@@ -14,13 +14,13 @@ useBrowser({
 
 const settle = (page) => page.evaluate(async () => {
   await new Promise((resolve) => setTimeout(resolve));
-  await Promise.all([...document.querySelectorAll('zb-rating, zb-panel, zb-badge')].map((el) => el.updateComplete));
+  await Promise.all([...document.querySelectorAll('my-rating, zb-panel, my-badge')].map((el) => el.updateComplete));
 });
 
 test('a JSX component: props, state, derived values, events, lists and conditionals', async () => {
-  const { page, messages } = await open('<zb-rating label="Stars"></zb-rating>', { modules: ['rating'] });
+  const { page, messages } = await open('<my-rating label="Stars"></my-rating>', { modules: ['rating'] });
   const read = () => page.evaluate(() => {
-    const el = document.querySelector('zb-rating');
+    const el = document.querySelector('my-rating');
     return {
       label: el.querySelector('.label').textContent,
       classes: [...el.querySelectorAll('button')].map((button) => button.className),
@@ -29,15 +29,15 @@ test('a JSX component: props, state, derived values, events, lists and condition
     };
   });
   assert.deepEqual(await read(), { label: 'Stars', classes: ['off', 'off'], output: '0', great: false });
-  assert.deepEqual(await page.evaluate(() => customElements.get('zb-rating').zubra.events), ['valuechange', 'change']);
+  assert.deepEqual(await page.evaluate(() => customElements.get('my-rating').zubra.events), ['valuechange', 'change']);
 
   await page.evaluate(() => {
     window.log = [];
-    const el = document.querySelector('zb-rating');
+    const el = document.querySelector('my-rating');
     el.addEventListener('valuechange', (event) => window.log.push(['valuechange', event.detail]));
     el.addEventListener('change', (event) => window.log.push(['change', event.detail]));
   });
-  await page.hover('zb-rating button:nth-of-type(2)');
+  await page.hover('my-rating button:nth-of-type(2)');
   await settle(page);
   assert.deepEqual((await read()).classes, ['on', 'on'], 'state set by a handler; the derived value followed');
   assert.equal((await read()).output, '2');
@@ -45,14 +45,14 @@ test('a JSX component: props, state, derived values, events, lists and condition
   await settle(page);
   assert.deepEqual(await read(), { label: 'Stars', classes: ['off', 'off'], output: '0', great: false });
 
-  await page.click('zb-rating button:nth-of-type(2)');
+  await page.click('my-rating button:nth-of-type(2)');
   await page.mouse.move(0, 0);
   await settle(page);
   assert.deepEqual(await page.evaluate(() => window.log), [['valuechange', 2], ['change', null]], 'onValueChange(2) fired valuechange');
   assert.deepEqual(await read(), { label: 'Stars', classes: ['on', 'on'], output: '2', great: true }, 'assigning the prop updated it');
-  assert.equal(await page.evaluate(() => document.querySelector('zb-rating').value), 2);
+  assert.equal(await page.evaluate(() => document.querySelector('my-rating').value), 2);
 
-  await page.evaluate(() => { document.querySelector('zb-rating').value = 1; });
+  await page.evaluate(() => { document.querySelector('my-rating').value = 1; });
   await settle(page);
   assert.deepEqual(await read(), { label: 'Stars', classes: ['on', 'off'], output: '1', great: false }, 'setting the prop from outside');
   assert.deepEqual(messages, []);
@@ -68,10 +68,10 @@ test('a TSX component using an .zb and a JSX component, with slots', async () =>
     return {
       heading: el.querySelector('h2').textContent,
       actions: el.querySelector('header').textContent.trim(),
-      badges: [...el.querySelectorAll('li')].map((li) => [li.dataset.index, li.querySelector('zb-badge b').textContent, li.querySelector('zb-badge i').textContent]),
+      badges: [...el.querySelectorAll('li')].map((li) => [li.dataset.index, li.querySelector('my-badge b').textContent, li.querySelector('my-badge i').textContent]),
       closed: !!el.querySelector('.closed'),
       summary: el.querySelector('.summary').textContent,
-      stars: el.querySelector('zb-rating output').textContent,
+      stars: el.querySelector('my-rating output').textContent,
       footer: el.querySelector('footer').innerHTML.replace(/<!--.*?-->/g, ''),
     };
   });

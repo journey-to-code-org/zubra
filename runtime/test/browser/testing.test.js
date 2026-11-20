@@ -70,7 +70,7 @@ test('one scenario through plain HTML, React and Vue', async () => {
   assert.deepEqual(found, ['html', 'react', 'vue'], 'React and Vue are installed here');
   for (const framework of found) {
     assert.deepEqual(results[framework], {
-      tag: 'zb-rating', start: '1', after: 2, valuechange: [2], all: ['beforevaluechange', 'valuechange', 'change'],
+      tag: 'my-rating', start: '1', after: 2, valuechange: [2], all: ['beforevaluechange', 'valuechange', 'change'],
       kept: 2, set: [0, '0'], removed: true, slots: ['Custom', 'Body'],
     }, framework);
   }

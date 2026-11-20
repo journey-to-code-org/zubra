@@ -34,7 +34,7 @@ const firefoxScopeSharing = (page) => page.evaluate(() => Number(/Firefox\/(\d+)
 
 test("a component's styles apply to its own elements and stop at content slotted into it", async (t) => {
   const { page, messages } = await open(
-    '<zb-styled-card id="empty"></zb-styled-card><zb-styled-card id="filled"><h2 slot="title">Mine</h2><p>mine</p></zb-styled-card>',
+    '<my-styled-card id="empty"></my-styled-card><my-styled-card id="filled"><h2 slot="title">Mine</h2><p>mine</p></my-styled-card>',
     { modules: ['styled-card'] },
   );
   assert.equal(await color(page, '#empty h2'), RED);
@@ -47,7 +47,7 @@ test("a component's styles apply to its own elements and stop at content slotted
     assert.equal(await color(page, '#filled p'), BLACK);
   }
   assert.deepEqual(await page.$$eval('#filled [data-zb-slotted]', (els) => els.map((el) => [el.localName, el.dataset.zbSlotted])),
-    [['h2', 'zb-styled-card'], ['p', 'zb-styled-card']]);
+    [['h2', 'my-styled-card'], ['p', 'my-styled-card']]);
   assert.equal(await page.evaluate(() => document.adoptedStyleSheets.length), 1, 'one sheet, shared by every instance');
   assert.deepEqual(messages, []);
   await page.close();
@@ -62,39 +62,39 @@ test('content added and removed later is marked and unmarked; utilities and page
       @layer utilities { .u-green { color: rgb(0, 128, 0) } }
       .page-blue { color: rgb(0, 0, 255) }
     </style>
-    <zb-styled-card></zb-styled-card>`,
+    <my-styled-card></my-styled-card>`,
     { modules: ['styled-card'] },
   );
   await page.evaluate(() => {
-    const card = document.querySelector('zb-styled-card');
+    const card = document.querySelector('my-styled-card');
     window.added = Object.assign(document.createElement('p'), { textContent: 'added' });
     card.appendChild(window.added);
     card.shadowFree = true;
   });
   await settle(page);
-  assert.equal(await page.evaluate(() => window.added.dataset.zbSlotted), 'zb-styled-card');
+  assert.equal(await page.evaluate(() => window.added.dataset.zbSlotted), 'my-styled-card');
   assert.equal(await page.evaluate(() => getComputedStyle(window.added).color), BLACK);
-  await page.evaluate(() => document.querySelector('zb-styled-card').removeChild(window.added));
+  await page.evaluate(() => document.querySelector('my-styled-card').removeChild(window.added));
   await settle(page);
   assert.equal(await page.evaluate(() => window.added.hasAttribute('data-zb-slotted')), false, "our mark doesn't stay on the caller's element");
-  assert.equal(await page.evaluate(() => document.querySelector('zb-styled-card h2').hasAttribute('data-zb-slotted')), false, 'the fallback that shows again is still its own');
-  assert.equal(await color(page, 'zb-styled-card h2'), RED, 'so its own style applies');
+  assert.equal(await page.evaluate(() => document.querySelector('my-styled-card h2').hasAttribute('data-zb-slotted')), false, 'the fallback that shows again is still its own');
+  assert.equal(await color(page, 'my-styled-card h2'), RED, 'so its own style applies');
 
   // The component's own h2 is red; a utility class (the `utilities` layer) and unlayered page CSS win.
-  await page.evaluate(() => document.querySelector('zb-styled-card h2').classList.add('u-green'));
-  assert.equal(await color(page, 'zb-styled-card h2'), GREEN);
-  await page.evaluate(() => document.querySelector('zb-styled-card h2').classList.replace('u-green', 'page-blue'));
-  assert.equal(await color(page, 'zb-styled-card h2'), BLUE);
+  await page.evaluate(() => document.querySelector('my-styled-card h2').classList.add('u-green'));
+  assert.equal(await color(page, 'my-styled-card h2'), GREEN);
+  await page.evaluate(() => document.querySelector('my-styled-card h2').classList.replace('u-green', 'page-blue'));
+  assert.equal(await color(page, 'my-styled-card h2'), BLUE);
   await page.close();
 });
 
 test("a parent's content in a child's slot is the parent's to style, including content it adds later", async () => {
   const { page, messages } = await open('<zb-styled-page></zb-styled-page>', { modules: ['styled-page'] });
   assert.equal(await color(page, '.mine'), BLUE, "the page's style");
-  assert.equal(await color(page, 'zb-styled-card h2'), RED, "the card's own heading");
+  assert.equal(await color(page, 'my-styled-card h2'), RED, "the card's own heading");
   await page.evaluate(() => { document.querySelector('zb-styled-page').show = true; });
   await settle(page);
-  assert.equal(await page.$eval('.later', (el) => el.dataset.zbSlotted), 'zb-styled-card');
+  assert.equal(await page.$eval('.later', (el) => el.dataset.zbSlotted), 'my-styled-card');
   assert.notEqual(await color(page, '.later'), GREEN, "the card's `p` rule doesn't reach the page's content");
   assert.deepEqual(messages, []);
   await page.close();
@@ -108,7 +108,7 @@ test('server-rendered markup carries the marks, so styles are right before and a
   const { page: plain } = await open(`<link rel="stylesheet" href="/page.css">${html}`, {});
   await plain.waitForFunction(() => document.querySelector('link').sheet?.cssRules.length > 0);
   assert.equal(await color(plain, '.mine'), BLUE);
-  assert.equal(await color(plain, 'zb-styled-card h2'), RED);
+  assert.equal(await color(plain, 'my-styled-card h2'), RED);
   await plain.close();
 
   const { page, messages } = await open(html, { modules: ['styled-page'] });
@@ -156,7 +156,7 @@ test('a declarative shadow root from the server is hydrated, its <style> replace
 });
 
 test("content removed through its real parent loses the mark too", async () => {
-  const { page } = await open('<zb-styled-card><p id="mine">mine</p></zb-styled-card>', { modules: ['styled-card'] });
+  const { page } = await open('<my-styled-card><p id="mine">mine</p></my-styled-card>', { modules: ['styled-card'] });
   await page.evaluate(() => { window.mine = document.getElementById('mine'); window.mine.parentNode.removeChild(window.mine); });
   await settle(page);
   assert.equal(await page.evaluate(() => window.mine.hasAttribute('data-zb-slotted')), false);
@@ -167,7 +167,7 @@ test('a styled light-DOM component inside a shadow root brings its styles there'
   const { page, messages } = await open('<zb-styled-panel></zb-styled-panel>', { modules: ['styled-panel', 'styled-card'] });
   const inner = await page.evaluate(async () => {
     const root = document.querySelector('zb-styled-panel').shadowRoot;
-    const card = document.createElement('zb-styled-card');
+    const card = document.createElement('my-styled-card');
     root.append(card);
     await card.updateComplete;
     return getComputedStyle(card.querySelector('h2')).color;
@@ -310,7 +310,7 @@ const layout = (page, selector) => page.$eval(selector, (el) => {
 test('::slotted() rules in light DOM style the slotted elements themselves, and nothing deeper', async () => {
   const { page, messages } = await open(
     `<style>.page-end { align-self: end }</style>
-    <zb-slotted-grid><div class="item">one</div><p class="wide">two <span class="deep">deep</span></p><div class="page-end">three</div></zb-slotted-grid>`,
+    <my-slotted-grid><div class="item">one</div><p class="wide">two <span class="deep">deep</span></p><div class="page-end">three</div></my-slotted-grid>`,
     { modules: ['slotted-grid'] },
   );
   await settle(page);
@@ -350,15 +350,15 @@ test('::part() reaches into a light-DOM child, and a shadow child keeps the real
   writeFileSync(join(site, 'part-parent.css'), css);
   const { page: plain } = await open(`<link rel="stylesheet" href="/part-parent.css">${html}`, {});
   await plain.waitForFunction(() => document.querySelector('link').sheet?.cssRules.length > 0);
-  assert.equal(await color(plain, 'zb-part-child h3'), BLUE, 'before JavaScript');
+  assert.equal(await color(plain, 'my-part-child h3'), BLUE, 'before JavaScript');
   await plain.close();
 
   const { page, messages } = await open(html, { modules: ['part-parent'] });
   await settle(page);
-  assert.equal(await color(page, 'zb-part-child h3'), BLUE, 'the part');
-  assert.equal(await color(page, 'zb-part-child span'), GREEN, 'both parts, and the more specific rule wins');
+  assert.equal(await color(page, 'my-part-child h3'), BLUE, 'the part');
+  assert.equal(await color(page, 'my-part-child span'), GREEN, 'both parts, and the more specific rule wins');
   assert.equal(await color(page, '.given'), BLACK, "content slotted into the child isn't the child's part");
-  assert.equal(await page.$eval('zb-part-shadow-child', (el) => getComputedStyle(el.shadowRoot.querySelector('b')).color), GREEN, 'a shadow child: the real ::part()');
+  assert.equal(await page.$eval('my-part-shadow-child', (el) => getComputedStyle(el.shadowRoot.querySelector('b')).color), GREEN, 'a shadow child: the real ::part()');
   assert.deepEqual(messages, []);
   await page.close();
 });

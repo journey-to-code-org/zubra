@@ -140,12 +140,12 @@ before(async () => {
 // WebKit under load did that. `:state(hydrated)` is the signal that they're ready.
 const settle = async (page) => {
   await page.waitForFunction(() => {
-    const elements = [...document.querySelectorAll('zb-rating, zb-card, zb-badge')];
+    const elements = [...document.querySelectorAll('my-rating, zb-card, my-badge')];
     return elements.length > 0 && elements.every((el) => el.matches(':state(hydrated)'));
   });
   await page.evaluate(async () => {
     await new Promise((resolve) => setTimeout(resolve));
-    await Promise.all([...document.querySelectorAll('zb-rating, zb-card, zb-badge')].map((el) => el.updateComplete));
+    await Promise.all([...document.querySelectorAll('my-rating, zb-card, my-badge')].map((el) => el.updateComplete));
   });
 };
 
@@ -153,13 +153,13 @@ const read = (page) => page.evaluate(() => {
   const strip = (html) => html.replace(/<!--.*?-->/g, '');
   const card = document.querySelector('zb-card');
   return {
-    rating: document.querySelector('zb-rating output').textContent,
+    rating: document.querySelector('my-rating output').textContent,
     stars: document.getElementById('stars').textContent,
     header: strip(card.querySelector('header').innerHTML),
     section: strip(card.querySelector('section').innerHTML),
     footer: card.querySelector('footer').textContent,
-    color: document.querySelector('zb-badge .badge').dataset.color,
-    label: document.querySelector('zb-badge b').textContent,
+    color: document.querySelector('my-badge .badge').dataset.color,
+    label: document.querySelector('my-badge b').textContent,
   };
 });
 
@@ -170,21 +170,21 @@ for (const version of ['react19', 'react18']) {
     assert.deepEqual(await read(page), {
       rating: '1', stars: '1', header: '<h2 slot="title">Custom</h2>', section: '<p>a</p>', footer: 'Hi footer', color: 'red', label: 'x',
     });
-    assert.deepEqual(await page.$eval('zb-rating', (el) => [el.id, el.className, el === window.ratingRef]), ['r', 'big', true],
+    assert.deepEqual(await page.$eval('my-rating', (el) => [el.id, el.className, el === window.ratingRef]), ['r', 'big', true],
       'other props and the ref reach the element');
     assert.equal(await page.evaluate(() => window.cardRef.current === document.querySelector('zb-card')), true, 'object refs too');
     // A script that seeds state from a prop sees it: React 19 sets the props as it creates the
     // element, and in React 18 the element reads them from `zb-props` when it starts (2.8).
     assert.equal(await page.textContent('zb-seeded output'), '5');
 
-    await page.click('zb-rating .two');
+    await page.click('my-rating .two');
     await settle(page);
     // The button's click handler fires the events; the click reaches the host afterwards.
     assert.deepEqual(await page.evaluate(() => window.log), [['valuechange', 2], ['change'], ['click']]);
     assert.equal((await read(page)).stars, '2', 'onValueChange updated the app (the controlled pattern)');
 
     await page.evaluate(() => window.update((set) => set.setCancel(true)));
-    await page.click('zb-rating .one');
+    await page.click('my-rating .one');
     await settle(page);
     assert.equal((await read(page)).rating, '2', 'preventDefault() in onBeforeValueChange kept the value');
 
@@ -222,9 +222,9 @@ test('vue3: props, events, v-model and slots through the Vue adapter', async () 
     rating: '1', stars: '1', header: '<h2 slot="title">Custom</h2><span slot="title">and text</span>', section: '<p>a</p>',
     footer: 'Hi footer', color: 'red', label: 'x',
   });
-  assert.deepEqual(await page.$eval('zb-rating', (el) => [el.id, el.className]), ['r', 'big']);
+  assert.deepEqual(await page.$eval('my-rating', (el) => [el.id, el.className]), ['r', 'big']);
 
-  await page.click('zb-rating .two');
+  await page.click('my-rating .two');
   await settle(page);
   assert.deepEqual(await page.evaluate(() => window.log), [
     ['valuechange', 2], ['update:value', 2], ['update:modelValue', 2], ['change'], ['click'],
@@ -253,7 +253,7 @@ test('vue3: props, events, v-model and slots through the Vue adapter', async () 
   // null is a value the element gets as is (Vue's own DOM-prop path would make it 0 here).
   await page.evaluate(() => window.update((state) => { state.stars.value = null; }));
   await settle(page);
-  assert.equal(await page.$eval('zb-rating', (el) => el.value), null);
+  assert.equal(await page.$eval('my-rating', (el) => el.value), null);
 
   await page.evaluate(() => window.unmount());
   assert.equal(await page.$('zb-card'), null);

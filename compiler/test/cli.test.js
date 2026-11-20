@@ -186,7 +186,7 @@ test('zubra types writes the typings a build with dts: { dir } writes, for the a
   let run = zubra(['types'], app);
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stdout, /typings of 1 component in \.zubra\/types, for the elements/);
-  assert.match(read('.zubra/types/src/own.d.zb.ts'), /export declare class ZbRating extends HTMLElement/);
+  assert.match(read('.zubra/types/src/own.d.zb.ts'), /export declare class MyRating extends HTMLElement/);
   assert.doesNotMatch(read('.zubra/types/src/own.d.zb.ts'), /from "react"/);
   assert.equal(existsSync(join(app, 'src/own.d.zb.ts')), false);
   assert.equal(existsSync(join(app, '.zubra/types/node_modules')), false);

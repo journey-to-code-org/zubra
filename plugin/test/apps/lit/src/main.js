@@ -8,13 +8,13 @@ const state = { stars: 1, items: ['a', 'b'], title: true, info: { color: 'red' }
 const root = document.getElementById('root');
 function update() {
   render(html`
-    <zb-rating .value=${state.stars} @valuechange=${(event) => { state.stars = event.detail; update(); }} @change=${() => { state.log.push('change'); update(); }}></zb-rating>
+    <my-rating .value=${state.stars} @valuechange=${(event) => { state.stars = event.detail; update(); }} @change=${() => { state.log.push('change'); update(); }}></my-rating>
     <p id="stars">${state.stars}</p>
     <zb-card heading="Lit">
       ${state.title ? html`<h2 slot="title">Custom</h2>` : null}
       ${repeat(state.items, (item) => item, (item) => html`<p>${item}</p>`)}
     </zb-card>
-    <zb-badge label="x" .info=${state.info}></zb-badge>
+    <my-badge label="x" .info=${state.info}></my-badge>
     <p id="log">${state.log.join(',')}</p>`, root);
 }
 update();
