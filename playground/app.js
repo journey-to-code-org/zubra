@@ -149,7 +149,8 @@ const EXAMPLES = {
   'use collection notes' keeps this component's state on the device (IndexedDB, through
   @zubra/sync), as the document keyed by its doc prop. Type something, then reload the page:
   it's still there. Every preview shows the same document, so they follow each other as you
-  type, and so would this playground in another tab. No server is involved.
+  type, and so would this playground in another tab. Each component and page pair has its own
+  stored data, so editing either starts a separate preview. No server is involved.
 -->
 <script>
   'use collection notes'
@@ -459,6 +460,51 @@ const importMap = () => JSON.stringify({
   },
 });
 
+// Opaque-origin previews use the parent for storage and for messages between previews.
+function previewBridge() {
+  let next = 0;
+  const pending = new Map();
+  const channels = new Set();
+  const call = (operation, args) => new Promise((resolve, reject) => {
+    const id = ++next;
+    pending.set(id, { resolve, reject });
+    parent.postMessage({ zubraPreviewStore: { id, operation, args } }, '*');
+  });
+  window.zubraPreviewStore = {
+    get: (collection, key) => call('get', [collection, key]),
+    set: (collection, key, fields) => call('set', [collection, key, fields]),
+  };
+  window.BroadcastChannel = class extends EventTarget {
+    constructor(name) { super(); this.name = String(name); this.onmessage = null; this.closed = false; channels.add(this); }
+    postMessage(data) {
+      if (this.closed) throw new DOMException('BroadcastChannel is closed', 'InvalidStateError');
+      parent.postMessage({ zubraPreviewBroadcast: { name: this.name, data } }, '*');
+    }
+    close() { this.closed = true; channels.delete(this); }
+  };
+  window.addEventListener('message', (event) => {
+    if (event.source !== parent) return;
+    const reply = event.data?.zubraPreviewStoreReply;
+    if (reply && pending.has(reply.id)) {
+      const request = pending.get(reply.id);
+      pending.delete(reply.id);
+      if (reply.error) request.reject(new Error(reply.error));
+      else request.resolve(reply.value);
+    }
+    const message = event.data?.zubraPreviewBroadcast;
+    if (message) for (const channel of channels) if (channel.name === message.name) {
+      const received = new MessageEvent('message', { data: message.data });
+      channel.dispatchEvent(received);
+      channel.onmessage?.(received);
+    }
+  });
+  window.addEventListener('zubra:open', (event) => {
+    event.preventDefault();
+    parent.postMessage({ zubraPreviewOpen: event.detail }, '*');
+  });
+  window.addEventListener('error', (event) => parent.postMessage({ zubraPreviewError: String(event.message) }, '*'));
+}
+
 /** The compiled module as an inline script (its default export kept as `Component`). */
 const inline = (code) => code.replace(/^export default /m, 'const Component = ').replace(/<\/script/gi, '<\\/script');
 
@@ -496,38 +542,6 @@ function readPage(markup, meta) {
     .filter((node) => node !== null);
 }
 
-// What a preview using @zubra/sync stores, it asks the playground to keep: the sandboxed frame
-// has no IndexedDB of its own (an opaque origin has no storage), and no BroadcastChannel shared
-// with the other previews, so the playground also passes each change on to them. Set before the
-// component starts.
-const SYNC_STORE = `import { configure as configureSync, receive as receiveSync } from '@zubra/sync';
-let relaying = false;
-const pendingStore = new Map();
-let storeAsks = 0;
-const askStore = (op, collection, key, fields) => new Promise((resolve) => {
-  const id = ++storeAsks;
-  pendingStore.set(id, resolve);
-  parent.postMessage({ zubraStore: { id, op, collection, key, fields } }, '*');
-});
-window.addEventListener('message', ({ source, data }) => {
-  if (source !== parent) return;
-  const reply = data?.zubraStoreReply;
-  if (reply && pendingStore.has(reply.id)) {
-    pendingStore.get(reply.id)(reply.value);
-    pendingStore.delete(reply.id);
-  }
-  // Another preview's change, already kept: show it here without storing it again.
-  const changed = data?.zubraStoreChanged;
-  if (changed) {
-    relaying = true;
-    try { receiveSync(changed.collection, changed.key, changed.fields); } finally { relaying = false; }
-  }
-});
-configureSync({ store: {
-  get: (collection, key) => askStore('get', collection, key),
-  set: (collection, key, fields) => (relaying ? Promise.resolve() : askStore('set', collection, key, fields)),
-} });`;
-
 const document_ = (body, script) => `<!doctype html><meta charset="utf-8">
 <style>
 /* The frame follows the playground's scheme and has no background of its own, so the preview pane
@@ -540,14 +554,8 @@ body { margin: 0; padding: 1rem 1.1rem; font: 15px system-ui, sans-serif; color:
 </style>
 <script type="importmap">${importMap()}</script>
 <body>${body}</body>
+<script>(${previewBridge.toString()})();</script>
 <script type="module">
-// The frame is sandboxed (an opaque origin), so it tells the playground what it needs to know.
-window.addEventListener('error', (event) => parent.postMessage({ zubraPreviewError: String(event.message) }, '*'));
-// The Zubra DevTools extension's "open in editor": the playground selects the line in the source.
-window.addEventListener('zubra:open', (event) => {
-  event.preventDefault();
-  parent.postMessage({ zubraOpen: { line: Number(event.detail?.line) } }, '*');
-});
 // A form that posts to a 'use server' function has no server here: say what would be sent.
 document.addEventListener('submit', (event) => {
   const form = event.target;
@@ -564,7 +572,7 @@ document.addEventListener('submit', (event) => {
   }
   note.textContent = \`POST \${action} (\${fields || 'no fields'}). With @zubra/actions on a server, the function runs there, and its result comes back as the form's "action" event.\`;
 }, true);
-${/['"]@zubra\/sync['"]/.test(script) ? SYNC_STORE : ''}
+${script.includes('@zubra/sync') ? "(await import('@zubra/sync')).configure({ store: window.zubraPreviewStore });" : ''}
 ${script}
 window.previewReady = true;
 </script>`;
@@ -625,37 +633,44 @@ createApp({ render: () => readPage(page, Component.zubra).map(toVue) }).mount('#
   },
 };
 
-// The Zubra DevTools extension reads `__ZUBRA_DEVTOOLS__` from the page it inspects. The
-// components run in the preview frames, each with its own hook; the frames are sandboxed (a
-// shared link's code runs there, not on this site's origin), so this page can't reach into them,
-// and the extension inspects each frame itself. Its "open in editor" comes back as a message.
-
-// The previews' @zubra/sync store, kept here (see SYNC_STORE): @zubra/sync's own IndexedDB layout
-// (database `zubra-sync`, one record per document, fields merged on write), on this origin.
-let syncDb = null;
-const syncDocs = (mode, work) => (syncDb ??= new Promise((resolve, reject) => {
-  const request = indexedDB.open('zubra-sync', 1);
-  request.onupgradeneeded = () => request.result.createObjectStore('docs');
-  request.onsuccess = () => resolve(request.result);
-  request.onerror = () => reject(request.error);
-})).then((db) => new Promise((resolve, reject) => {
-  const transaction = db.transaction('docs', mode);
-  let result;
-  work(transaction.objectStore('docs'), (value) => (result = value));
-  transaction.oncomplete = () => resolve(result);
-  transaction.onerror = () => reject(transaction.error);
-}));
-const keepForPreview = ({ op, collection, key, fields }) => {
-  if (typeof collection !== 'string' || typeof key !== 'string') return Promise.resolve(undefined);
-  if (op === 'get') return syncDocs('readonly', (docs, done) => { const request = docs.get([collection, key]); request.onsuccess = () => done(request.result); });
-  if (op === 'set' && fields && typeof fields === 'object') {
-    return syncDocs('readwrite', (docs) => {
-      const request = docs.get([collection, key]);
-      request.onsuccess = () => docs.put({ ...request.result, ...fields }, [collection, key]);
-    });
+// Each component and page pair has its own storage namespace, so a shared link cannot read
+// another preview's documents. The pair's previews share changes.
+const previewSources = new WeakMap();
+const previewChannel = new BroadcastChannel('zubra-playground-preview');
+previewChannel.addEventListener('message', ({ data }) => {
+  if (!data || typeof data.source !== 'string' || typeof data.message?.name !== 'string') return;
+  for (const frame of document.querySelectorAll('#previews iframe')) {
+    if (previewSources.get(frame) === data.source) frame.contentWindow.postMessage({ zubraPreviewBroadcast: data.message }, '*');
   }
-  return Promise.resolve(undefined);
-};
+});
+let previewDatabase;
+function previewStore(namespace, operation, args) {
+  if (!['get', 'set'].includes(operation) || !Array.isArray(args) ||
+      typeof args[0] !== 'string' || typeof args[1] !== 'string' ||
+      (operation === 'set' && (!args[2] || typeof args[2] !== 'object' || Array.isArray(args[2])))) {
+    throw new TypeError('Invalid playground store request');
+  }
+  previewDatabase ??= new Promise((resolve, reject) => {
+    const request = indexedDB.open('zubra-playground-preview', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('docs');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  return previewDatabase.then((database) => new Promise((resolve, reject) => {
+    const transaction = database.transaction('docs', operation === 'get' ? 'readonly' : 'readwrite');
+    const docs = transaction.objectStore('docs');
+    const key = [namespace, args[0], args[1]];
+    const request = docs.get(key);
+    let value;
+    request.onsuccess = () => {
+      if (operation === 'get') value = request.result;
+      else docs.put({ ...request.result, ...args[2] }, key);
+    };
+    transaction.oncomplete = () => resolve(value);
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error ?? new Error('Playground store transaction aborted'));
+  }));
+}
 
 /** Select line `line` (1-based) of the source and scroll it into view. */
 function selectLine(line) {
@@ -667,7 +682,7 @@ function selectLine(line) {
   source.scrollTop = Math.max(0, (line - 3) * height);
 }
 
-function showPreviews(code) {
+function showPreviews(code, text, markup) {
   const box = $('#previews');
   const kinds = ['html', ...frameworks];
   box.replaceChildren(...kinds.map((kind) => {
@@ -681,8 +696,9 @@ function showPreviews(code) {
     // The component may come from a shared link: it runs in an opaque origin, with scripts,
     // forms and dialogs, but nothing of this site's (its storage, its cookies, this page's DOM).
     // It reports errors and "open in editor" by postMessage (see document_).
-    frame.sandbox = 'allow-scripts allow-forms allow-modals';
-    frame.srcdoc = PREVIEWS[kind].doc(code, page.value);
+    frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-modals');
+    previewSources.set(frame, JSON.stringify([text, markup]));
+    frame.srcdoc = PREVIEWS[kind].doc(code, markup);
     section.append(heading, frame);
     return section;
   }));
@@ -764,6 +780,7 @@ async function main() {
   async function update() {
     const mine = ++run;
     const text = source.value;
+    const markup = page.value;
     const [js, element, html, dts, manifest, server, preview] = await Promise.all([
       compile(compiler, text, 'js'),
       compile(compiler, text, 'element'),
@@ -811,9 +828,9 @@ async function main() {
     // The server half: what @zubra/actions serves, when the component has 'use server' functions.
     const hasServer = server.ok && /^export (async )?function /m.test(server.output);
     show('#out-server', hasServer ? server.output : "// No 'use server' functions in this component.\n// Export one, and its code shows here instead of in the browser module:\n//\n//   export async function save(formData) { 'use server'; … }", 'js');
-    showPreviews(preview.ok ? preview.output : js.output);
+    showPreviews(preview.ok ? preview.output : js.output, text, markup);
     status.textContent = `Compiled (${compiler.kind})`;
-    const hash = await encode({ source: text, page: page.value });
+    const hash = await encode({ source: text, page: markup });
     history.replaceState(null, '', `#${hash}`);
   }
 
@@ -884,27 +901,30 @@ async function main() {
     }
   });
   window.addEventListener('message', (event) => {
-    // Only the preview frames' messages.
-    const frames = [...document.querySelectorAll('#previews iframe')].map((frame) => frame.contentWindow);
-    if (!frames.includes(event.source)) return;
-    const line = event.data?.zubraOpen?.line;
-    if (Number.isInteger(line) && line > 0) selectLine(line);
-    const ask = event.data?.zubraStore;
-    if (ask) {
-      keepForPreview(ask).then(
-        (value) => {
-          event.source.postMessage({ zubraStoreReply: { id: ask.id, value } }, '*');
-          if (ask.op !== 'set') return;
-          const { collection, key, fields } = ask;
-          for (const other of frames) if (other !== event.source) other?.postMessage({ zubraStoreChanged: { collection, key, fields } }, '*');
-        },
-        () => event.source.postMessage({ zubraStoreReply: { id: ask.id, value: undefined } }, '*'),
-      );
-    }
+    const frames = [...document.querySelectorAll('#previews iframe')];
+    const frame = frames.find((candidate) => candidate.contentWindow === event.source);
+    if (!frame) return;
     if (event.data?.zubraPreviewError) {
       const error = $('#error');
       error.hidden = false;
       error.textContent = `In the preview: ${event.data.zubraPreviewError}`;
+    }
+    const open = event.data?.zubraPreviewOpen;
+    if (open?.file === PATH && Number.isInteger(open.line) && open.line > 0) selectLine(open.line);
+    const message = event.data?.zubraPreviewBroadcast;
+    if (message && typeof message.name === 'string') {
+      for (const other of frames) {
+        if (other !== frame && previewSources.get(other) === previewSources.get(frame)) {
+          other.contentWindow.postMessage({ zubraPreviewBroadcast: message }, '*');
+        }
+      }
+      previewChannel.postMessage({ source: previewSources.get(frame), message });
+    }
+    const request = event.data?.zubraPreviewStore;
+    if (request && Number.isSafeInteger(request.id)) {
+      Promise.resolve().then(() => previewStore(previewSources.get(frame), request.operation, request.args))
+        .then((value) => event.source.postMessage({ zubraPreviewStoreReply: { id: request.id, value } }, '*'),
+          (error) => event.source.postMessage({ zubraPreviewStoreReply: { id: request.id, error: String(error.message) } }, '*'));
     }
   });
   await update();

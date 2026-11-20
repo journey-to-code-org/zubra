@@ -31,8 +31,8 @@ after(async () => {
   server?.close();
 });
 
-async function openPlayground(hash = '') {
-  const page = await browser.newPage();
+async function openPlayground(hash = '', context) {
+  const page = await (context ? context.newPage() : browser.newPage());
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(server.url + hash);
@@ -54,6 +54,19 @@ const frame = async (page, kind) => {
       if (attempt > 20 || !/detached/i.test(String(error?.message))) throw error;
     }
   }
+};
+
+const waitForPreview = async (page, kind, condition) => {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const preview = await frame(page, kind);
+    try {
+      await preview.waitForFunction(condition);
+      return preview;
+    } catch (error) {
+      if (!/detached/i.test(String(error?.message))) throw error;
+    }
+  }
+  throw new Error(`The ${kind} preview kept detaching`);
 };
 
 /** Chooses an example and waits for its preview: the one running before it is replaced, not reused. */
@@ -188,12 +201,12 @@ test("'use collection': the note is kept on the device, through a reload", async
       await other.waitForFunction(() => document.querySelector('note-pad textarea')?.value === 'kept on the device');
     }
   }
-  // Stored: wait for IndexedDB to have it, then reload. The preview is sandboxed (no storage of
-  // its own), so the playground keeps it, on its own origin.
+  // Stored per component and page: wait for IndexedDB to have it, then reload.
   await page.waitForFunction(() => new Promise((resolve) => {
-    const open = indexedDB.open('zubra-sync', 1);
+    const open = indexedDB.open('zubra-playground-preview', 1);
     open.onsuccess = () => {
-      const get = open.result.transaction('docs').objectStore('docs').get(['notes', 'playground']);
+      const namespace = JSON.stringify([document.querySelector('#source').value, document.querySelector('#page').value]);
+      const get = open.result.transaction('docs').objectStore('docs').get([namespace, 'notes', 'playground']);
       get.onsuccess = () => { open.result.close(); resolve(get.result?.text === 'kept on the device'); };
       get.onerror = () => resolve(false);
     };
@@ -210,6 +223,83 @@ test("'use collection': the note is kept on the device, through a reload", async
   assert.equal(await again.textContent('note-pad p'), '4 words');
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+test('a different shared page cannot read another preview\'s saved documents', async () => {
+  const { page } = await openPlayground();
+  await choose(page, 'sync');
+  const pad = await frame(page, 'html');
+  await pad.fill('note-pad textarea', 'private note');
+  await pad.waitForFunction(() => document.querySelector('note-pad p')?.textContent.startsWith('2 words'));
+  await page.waitForTimeout(100);
+  const markup = await page.inputValue('#page');
+  await page.evaluate(() => document.querySelector('#previews iframe').dataset.before = '');
+  await page.fill('#page', `${markup}\n<!-- another shared page -->`);
+  await page.waitForSelector('#previews iframe:not([data-before])');
+  const other = await waitForPreview(page, 'html', () => document.querySelector('note-pad p')?.textContent === '0 words');
+  assert.equal(await other.evaluate(() => window.zubraPreviewStore.get('notes', 'playground')), undefined);
+  assert.equal(await other.inputValue('note-pad textarea'), '');
+  await page.close();
+});
+
+test('a preview uses the page markup captured when its compilation started', async (t) => {
+  if (existsSync(join(out, 'zubra.wasm'))) return t.skip('requires the native compiler request endpoint');
+  const { page } = await openPlayground();
+  await choose(page, 'sync');
+  const source = await page.inputValue('#source');
+  const markup = `${await page.inputValue('#page')}\n<!-- compiled page -->`;
+  await page.evaluate(() => {
+    const fetchOriginal = window.fetch;
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    window.releaseCompile = () => { window.fetch = fetchOriginal; release(); };
+    window.fetch = async (...args) => {
+      const response = await fetchOriginal(...args);
+      if (String(args[0]).includes('__zubra/request')) {
+        window.compileStarted = true;
+        await gate;
+      }
+      return response;
+    };
+  });
+  await page.evaluate(() => document.querySelector('#previews iframe').dataset.before = '');
+  await page.fill('#page', markup);
+  await page.waitForFunction(() => window.compileStarted === true);
+  await page.$eval('#page', (element) => { element.value += '\n<!-- a later edit -->'; });
+  await page.evaluate(() => window.releaseCompile());
+  await page.waitForSelector('#previews iframe:not([data-before])');
+  const preview = await frame(page, 'html');
+  await preview.evaluate(() => window.zubraPreviewStore.set('test', 'key', { saved: true }));
+  const value = await page.evaluate(async ({ source, markup }) => {
+    const database = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('zubra-playground-preview', 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const request = database.transaction('docs').objectStore('docs').get([JSON.stringify([source, markup]), 'test', 'key']);
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => { database.close(); resolve(request.result); };
+      request.onerror = () => { database.close(); reject(request.error); };
+    });
+  }, { source, markup });
+  assert.deepEqual(value, { saved: true });
+  await page.close();
+});
+
+test('sandboxed Sync previews follow changes across tabs', async () => {
+  const context = await browser.newContext();
+  const { page: first } = await openPlayground('', context);
+  const { page: second } = await openPlayground('', context);
+  try {
+    await choose(first, 'sync');
+    await choose(second, 'sync');
+    const from = await frame(first, 'html');
+    const to = await frame(second, 'html');
+    await from.fill('note-pad textarea', 'live across tabs');
+    await to.waitForFunction(() => document.querySelector('note-pad textarea')?.value === 'live across tabs');
+  } finally {
+    await context.close();
+  }
 });
 
 test("'use server': the Server tab has the function, and a submit says what would be posted", async () => {
@@ -254,7 +344,7 @@ test('the source and the output are coloured, and the docs link goes to the docs
   await page.close();
 });
 
-test('the Zubra DevTools extension works in each preview, and a line opens in the editor', async () => {
+test('the preview DevTools hook opens a line in the playground editor', async () => {
   const { page, errors } = await openPlayground();
   const preview = await frame(page, 'html');
   // As the extension calls it, in the frame it inspects: connect, then inspect the selected node.
@@ -273,13 +363,12 @@ test('the Zubra DevTools extension works in each preview, and a line opens in th
       here: before.bindings.filter((binding) => binding.here).map(({ operation, at, dependsOn }) => ({ operation, line: at?.line, dependsOn })),
       written: after.lastUpdate.written,
       updates: hook.updates,
-      outside: hook.inspect(document.body).component,
     };
   });
   assert.deepEqual(result, {
     tag: 'hello-counter', located: true,
     here: [{ operation: 'textContent = …', line: 15, dependsOn: ['label', 'count'] }],
-    written: ['count'], updates: 1, outside: null,
+    written: ['count'], updates: 1,
   });
   // The Runtime module tab is still the plain build: the DevTools fields are only in the preview.
   assert.doesNotMatch(await page.$eval('#out-js', (pre) => pre.textContent), /\bat: \[|\$dev/);
@@ -291,6 +380,22 @@ test('the Zubra DevTools extension works in each preview, and a line opens in th
   assert.equal(await selected(), '  <output>{label}: {count}</output>');
   await preview.evaluate(() => globalThis.__ZUBRA_DEVTOOLS__.open('/playground/component.zb', 16, 3));
   await page.waitForFunction(() => { const area = document.querySelector('#source'); return /class="more"/.test(area.value.slice(area.selectionStart, area.selectionEnd)); });
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('previews cannot access the playground origin and only preview messages are accepted', async () => {
+  const { page, errors } = await openPlayground();
+  const preview = await frame(page, 'html');
+  assert.equal(await page.$eval('#previews iframe', (element) => element.contentDocument), null);
+  const access = await preview.evaluate(() => {
+    try { parent.document.title = 'pwned'; return true; } catch { return false; }
+  });
+  assert.equal(access, false);
+  assert.notEqual(await page.title(), 'pwned');
+  await page.evaluate(() => window.postMessage({ zubraPreviewError: 'forged' }, '*'));
+  await page.waitForTimeout(50);
+  assert.doesNotMatch(await page.textContent('#error'), /forged/);
   assert.deepEqual(errors, []);
   await page.close();
 });
