@@ -22,7 +22,7 @@ A component can also be a function in a `.zb.jsx` or `.zb.tsx` file. It compiles
 ```jsx
 // rating.zb.jsx
 /** A two-star rating. */
-export default function ZbRating({ value = 0, onValueChange }) {
+export default function MyRating({ value = 0, onValueChange }) {
   let hovered = null                         // state: assigning it updates the DOM
   const shown = hovered ?? value             // derived from props and state: stays in sync
   function rate(stars) {
@@ -41,7 +41,7 @@ export default function ZbRating({ value = 0, onValueChange }) {
 }
 ```
 
-- **The function's name is the tag**: `ZbRating` is `<zb-rating>` (custom elements need a hyphen, so `Rating` is an error). Return the host itself (`<zb-rating shadow>…</zb-rating>`) to set `shadow` or `form-associated`.
+- **The function's name is the tag**: `MyRating` is `<my-rating>` (custom elements need a hyphen, so `Rating` is an error). Return the host itself (`<my-rating shadow>…</my-rating>`) to set `shadow` or `form-associated`.
 - **Destructured parameters are props**, with their defaults; one without a default is required. **`on<Name>` parameters are events**: calling `onValueChange(x)` fires `valuechange` with `detail: x`, so React users pass `onValueChange` and everyone else listens for `valuechange`. **`children`** is the default slot; `<zb-slot name="…">` declares named ones.
 - **The body runs once per element**, not on every change. A top-level `let` is state, a top-level `const` that reads props or state is derived, and everything in the returned JSX is a fine-grained binding.
 - **In the JSX**: `cond && <X/>` and `cond ? <A/> : <B/>` are conditionals, `list.map((item, i) => <li key={item.id}>…</li>)` is a keyed list, imported components are used by name (`import Badge from './badge.zb'`, then `<Badge label="x" />`), and `className`, `htmlFor` and `onClick` mean `class`, `for` and `onclick`. Any JavaScript expression works, as in `.zb` templates.
@@ -50,6 +50,8 @@ export default function ZbRating({ value = 0, onValueChange }) {
 `plan/decisions/jsx-components.md` in the project docs records the design.
 
 ## Directives
+
+The `zb-` prefix is reserved for Zubra's own elements: the directives below, and `<zb-outlet>` and `<zb-context>`, which `@zubra/runtime` defines. Since 6.0 any other `<zb-…>` element in a template is an error, with the nearest of them as help (`<zb-iff>` gets "did you mean `<zb-if>`?"), so name your own components with another prefix (`<app-card>`, `<my-card>`).
 
 - `<zb-if test={…}>`, with `<zb-else-if test={…}>` and an optional final `<zb-else>` inside it. For one element, the condition can be an attribute: `<p zb-if={…}>`, with `zb-else-if={…}` and `zb-else` on the siblings right after it. Both forms compile to the same thing. The `zb-` attribute prefix is reserved: any other `zb-` attribute is an error.
 - **Markup in braces**, in the three forms that are directives: `{a && <p>…</p>}` is a `zb-if`, `{a ? <b>…</b> : <i>…</i>}` a `zb-if` with a `zb-else` (either side may be text, an expression or `null`), and `{list.map((item, i) => <li key={item.id}>…</li>)}` a `zb-each`, keyed by the element's `key`. The markup inside is the template's HTML, one element per brace. Other markup in braces, and markup in an attribute's braces, are errors that say what to write instead.
@@ -77,12 +79,12 @@ CSS animates content coming in on its own: `@starting-style` gives a transition 
   .toast[data-leaving] { opacity: 0; translate: 0 8px; }       /* going out */
   li { --zb-move-duration: 300ms; --zb-move-easing: ease-out; } /* gliding */
 </style>
-<zb-x open={false} items={[]}>
+<my-x open={false} items={[]}>
   <p class="toast" zb-if={open} zb-animate>Saved</p>
   <ul>
     <zb-each items={items} as="item" key={item.id} animate><li>{item.name}</li></zb-each>
   </ul>
-</zb-x>
+</my-x>
 ```
 
 - **Leaving.** When a branch goes away, its elements stay where they are with the `data-leaving` attribute and `inert` (no clicks or focus on the way out), and are removed once the transitions and animations that attribute starts have ended. With none, they go at once; an infinite animation inside (a spinner) isn't waited for. The branch replacing it is rendered beside it, so the two can cross-fade. A whole `zb-if` chain animates, and `zb-switch` is one.
@@ -101,7 +103,7 @@ The same behaviour is `leave(nodes, { float })` and `glide(elements, change)` in
   let panel = null                                         // ref={panel} assigns the element
   function save() { … }
 </script>
-<zb-panel tone="teal" size={12}>
+<my-panel tone="teal" size={12}>
   <zb-document onkeydown.escape={() => (open = false)}></zb-document>
   <section ref={panel} class="panel" class:open class:big={size > 20}
            style:--tone={tone} style:font-size={size + "px"}>
@@ -110,7 +112,7 @@ The same behaviour is `leave(nodes, { float })` and `glide(elements, change)` in
     </form>
   </section>
   <zb-if test={size > 20}>Big<zb-else-if test={size > 10}>Medium</zb-else-if><zb-else>Small</zb-else></zb-if>
-</zb-panel>
+</my-panel>
 ```
 
 - **`class:name={…}`** adds the class while the value is truthy; bare `class:open` reads `open`. `class={{ open, big: size > 20 }}` is the same as one toggle per entry. They combine with a static `class`, and with a computed one, whose classes are then added and removed token by token.
@@ -136,12 +138,12 @@ The same behaviour is `leave(nodes, { float })` and `glide(elements, change)` in
   }
   onMount(() => console.log('connected'))
 </script>
-<zb-counter label="Clicks">
+<my-counter label="Clicks">
   <button type="button" onclick={increment}>{label}: {count} ({doubled})</button>
-</zb-counter>
+</my-counter>
 ```
 
-- **A prop's name is the prop**, in the script as in the template: read `label`, assign `label = …` (the element updates as if it were set from outside). So the script can't declare a name a prop has. A default taken from the script uses another name: `<zb-card title={titleDefault}>`.
+- **A prop's name is the prop**, in the script as in the template: read `label`, assign `label = …` (the element updates as if it were set from outside). So the script can't declare a name a prop has. A default taken from the script uses another name: `<my-card title={titleDefault}>`.
 - **A top-level `let` is state.** Reading it in the template, in a `computed` or an effect tracks it, and assigning it (`count++`, `count = 0`, `count += 2`) updates what reads it. Its initial value renders on the server.
 - **Mutating state works too**: `items.push(x)`, `items.splice(i, 1)`, `items[0].done = true`, `form.email = "…"`, `delete form.email`. A `let` holding an array or a plain object holds a reactive proxy of it, which tracks each property separately, so `items[0].done = true` updates only what read it, and nested arrays and objects are wrapped as they're read. Class instances, `Map`, `Set`, `Date`, DOM nodes and functions aren't wrapped. The proxy is the same object each time and works as the original does (`Array.isArray`, `JSON.stringify`, spread, every method), but it isn't the original: `raw(items)` from `@zubra/runtime` gives that back, for `structuredClone`, `postMessage` or a library that compares by identity. Props aren't wrapped (they're the parent's); `let draft = from(items)` is a mutable copy that follows one.
 - **`let left = from(seconds)`** (from `@zubra/runtime`) is state that follows a prop until it's assigned, and starts over when the prop changes: a timer's time left resets when its length does. `let running = from(seconds, false)` starts as `false` instead, again whenever `seconds` changes. A plain `let left = seconds` reads the prop once. `zubra convert` writes `from()` for React's `useState(prop)` plus an effect that resets it.
@@ -154,7 +156,7 @@ Hooks are plain functions called while the script runs (once per element; nothin
 
 | Hook | |
 |---|---|
-| `state(value)`, `computed(fn)` | Signals (`Signal.State`, `Signal.Computed`) |
+| `state(value)`, `computed(fn)` | Zubra's state and computeds: read with `.get()`, write a state with `.set()` (a `Signal.State` and `Signal.Computed` of the TC39 API in signals mode) |
 | `effect(fn)`, `watch(source, (next, prev) => …)` | Run on change; `effect` may return a cleanup |
 | `onMount(fn)`, `onUnmount(fn)` | Connected / disconnected; `onMount` may return a cleanup |
 | `props()` | The element's props as an object, for custom hooks (in the script, use the names) |
@@ -180,13 +182,13 @@ Everything a component's script creates is disposed with the element, so you rar
   const p = props()
   const user = resource(({ signal }) => fetch(`/api/users/${p.userId}`, { signal }).then((r) => r.json()))
 </script>
-<zb-user user-id="1">
+<my-user user-id="1">
   <zb-await value={user}>
     <zb-pending><p>Loading…</p></zb-pending>
     <zb-then as="data"><h2>{data.name}</h2></zb-then>
     <zb-catch as="error"><p class="error">{error.message} <button onclick={retry}>Try again</button></p></zb-catch>
   </zb-await>
-</zb-user>
+</my-user>
 ```
 
 - **The fetcher re-runs** when a signal it read changes (here the `userId` prop). In a `.zb` script (and a `.zb.jsx` or `.zb.tsx` component) that holds for reads that run later too: props, state and a signal's `.get()` read after an `await`, or in a callback such as a `.then()`, whether or not the fetcher is async. The compiler passes them through the run's `track()`, from `@zubra/runtime/track` (experimental, about 0.6 KB gzipped; a compiled module imports it only when a fetcher has such a read, so an import map needs that entry, and `@zubra/server` adds it). Elsewhere, a read after the first `await` is followed only through `track()`: `resource(tracked(async ({ signal, track }) => …))`. A new run aborts the previous one through the `AbortSignal` it was given, and so does the element's removal. An answer that arrives after a newer run started is dropped. While a new run is pending, `value` keeps the previous result.
@@ -211,10 +213,10 @@ Everything a component's script creates is disposed with the element, so you rar
   import { hasSlot } from '@zubra/runtime'
   const hasFooter = hasSlot('footer')
 </script>
-<zb-card>
+<my-card>
   <zb-slot></zb-slot>
   <zb-if test={hasFooter}><footer><zb-slot name="footer"></zb-slot></footer></zb-if>
-</zb-card>
+</my-card>
 ```
 
   The server answers it too, from the slots it was given, so the footer is in the server's HTML (and works without JavaScript) when there's content for it. That holds for a whole `const x = hasSlot('name')` with the name written out; a name in a variable is the browser's to answer.
@@ -224,13 +226,13 @@ Everything a component's script creates is disposed with the element, so you rar
 A slot can't be inside `zb-each`, so a list can't take one piece of content per item that way. An **outlet** asks the app to render it: `<zb-outlet name="row" item={item}>` marks the place, and the app's framework renders into it through a portal, so what it renders keeps the app's context, state and handlers. From React, a `render<Name>` prop fills the outlets of that name:
 
 ```html
-<zb-row-list items={[]}>
+<my-row-list items={[]}>
   <ul>
     <zb-each items={items} as="item" key={item.id}>
       <li><zb-outlet name="row" item={item}></zb-outlet></li>
     </zb-each>
   </ul>
-</zb-row-list>
+</my-row-list>
 ```
 
 ```jsx
@@ -246,13 +248,13 @@ The list keeps its keys and order; a keyed move keeps each row's React state, an
   :host { display: block }
   h2 { color: var(--card-accent, crimson) }
 </style>
-<zb-card heading="">
+<my-card heading="">
   <h2>{heading}</h2>
   <zb-slot></zb-slot>
-</zb-card>
+</my-card>
 ```
 
-- **Scoped with the platform's own `@scope`.** In light DOM, a component's `<style>` applies to its own elements and stops at content callers put in its slots. The runtime and the HTML output mark each slotted element `data-zb-slotted="zb-card"`, and the stylesheet is `@scope (zb-card) to ([data-zb-slotted="zb-card"])`. The marker names the component, so a parent's content placed in a child's slot is still the parent's to style, as with shadow DOM. The marker is removed when content leaves the slot. In shadow DOM the shadow root does the scoping and the CSS is used as written. `:host` means the host either way, so one stylesheet works with or without `shadow`. So does `::slotted()`: in light DOM, `.list > ::slotted(li)` is rewritten to `.list > :where([data-zb-slotted="zb-card"]):is(li)` in a scope with no lower boundary, so a layout component can place what it's given (the slotted elements themselves, not their descendants, with no more specificity than `li`, as in shadow DOM). `::slotted()` attached to a slot (`slot::slotted(li)`) is left as written; the `<zb-slot>` isn't in the light DOM to match. `::part()` works the same way: a rule like `zb-meter::part(label)` in a component that imports a light-DOM `<zb-meter>` becomes `@scope (zb-meter) to ([data-zb-slotted]) { [part~="label"] { … } }`, which reaches the child's own elements with that part and stops at content slotted into it. A shadow-DOM child keeps the real `::part()`. One limit: slotted content is marked only when the child has a `<style>` of its own, so with an unstyled child, a `part` attribute on your own content slotted into it is matched too.
+- **Scoped with the platform's own `@scope`.** In light DOM, a component's `<style>` applies to its own elements and stops at content callers put in its slots. The runtime and the HTML output mark each slotted element `data-zb-slotted="my-card"`, and the stylesheet is `@scope (my-card) to ([data-zb-slotted="my-card"])`. The marker names the component, so a parent's content placed in a child's slot is still the parent's to style, as with shadow DOM. The marker is removed when content leaves the slot. In shadow DOM the shadow root does the scoping and the CSS is used as written. `:host` means the host either way, so one stylesheet works with or without `shadow`. So does `::slotted()`: in light DOM, `.list > ::slotted(li)` is rewritten to `.list > :where([data-zb-slotted="my-card"]):is(li)` in a scope with no lower boundary, so a layout component can place what it's given (the slotted elements themselves, not their descendants, with no more specificity than `li`, as in shadow DOM). `::slotted()` attached to a slot (`slot::slotted(li)`) is left as written; the `<zb-slot>` isn't in the light DOM to match. `::part()` works the same way: a rule like `my-meter::part(label)` in a component that imports a light-DOM `<my-meter>` becomes `@scope (my-meter) to ([data-zb-slotted]) { [part~="label"] { … } }`, which reaches the child's own elements with that part and stops at content slotted into it. A shadow-DOM child keeps the real `::part()`. One limit: slotted content is marked only when the child has a `<style>` of its own, so with an unstyled child, a `part` attribute on your own content slotted into it is matched too.
 - **`host-reset`** (with `shadow`) is for components on pages you don't control: embeds and extensions' widgets. The host is in the page, so a page's `* { … !important }` matches it and beats `:host`, and fonts and colours inherit into the shadow root. `host-reset` starts the host from `all: initial` and makes the component's own top-level `:host` declarations `!important`, which wins across the shadow boundary.
 - **Utilities and app CSS win.** The CSS goes in the `components` cascade layer, and the sheet declares Tailwind's layer order (`theme, base, components, utilities`). Utility classes override a component's defaults, base and reset styles come before them, and unlayered page CSS overrides both, whichever stylesheet loads first. `<style layer="…">` picks another layer; `<style layer="none">` leaves the CSS unlayered.
 - **Page CSS still applies in light DOM.** Tailwind, Bootstrap or your own global classes work on a component's elements as on any element. A parent's styles can also reach into a light-DOM child's elements, as page CSS does; use `shadow` when a component needs full isolation. That cuts both ways: a page rule for a common class name (`.table`, `.card`, `.active`) also matches an element inside the component that has that class, and because the component's CSS is in the `components` layer, an unlayered page rule wins whatever its specificity. A page whose `.table { height: 100% }` styles its own layout will also size a component's `<button class="card table">`. For a component that goes on pages you don't write, name its internal classes for the component, or make variants attributes (`data-size={size}`, styled as `[data-size=table]`) rather than generic class names.
@@ -281,7 +283,7 @@ Light-DOM components need no setup: utility classes in templates are just classe
     emit('valuechange', stars)
   }
 </script>
-<zb-rating value={0}> … </zb-rating>
+<my-rating value={0}> … </my-rating>
 ```
 
 - **Nothing is declared by hand.** Each `emit("name", detail)` call declares an event. The compiler binds `emit` to each element, so handlers and timers can call it at any time. The name must be a string literal, and `emit` must be called directly (not passed around), so the compiler sees every event.
@@ -300,13 +302,13 @@ Light-DOM components need no setup: utility classes in templates are just classe
 <script>
   import './badge.zb'
 </script>
-<zb-inbox items={[]}>
+<my-inbox items={[]}>
   <zb-each items={items} as="item" key={item.name}>
-    <zb-badge label={item.name} info={{ color: item.unread > 0 ? "red" : "gray" }}>
+    <my-badge label={item.name} info={{ color: item.unread > 0 ? "red" : "gray" }}>
       <em slot="icon">{item.unread}</em>new mail
-    </zb-badge>
+    </my-badge>
   </zb-each>
-</zb-inbox>
+</my-inbox>
 ```
 
 - **Importing a `.zb` file** makes its tag a known child, loaded relative to the importing file. Cycles, a component imported twice, and a component importing itself are errors.
@@ -420,7 +422,7 @@ That's the same in the Rust CLI, the WebAssembly build and every server. `compil
 
 **Partial rendering.** A component may use what only the browser can compute: JavaScript expressions, runtime-only script values, or defaults computed in the browser. `--partial` (or `partial: true` in a request) renders everything else and leaves those parts for the element. Their text renders empty, their attributes are left out, and their conditionals and lists become empty `<?zb [??>` regions that the element renders when it starts, without a hydration warning. Without it, the HTML output reports the first such part as an error. `@zubra/compiler`'s `render()` and the plugin's server builds render partially, so every component (JSX ones with state included) can be server-rendered.
 
-In an app's server, **`@zubra/server`** does the whole job with any template engine. It renders components into a page, adds their CSS and module scripts, and serves the browser modules and `@zubra/runtime`, with no bundler. In development an edit to a file in the components folder shows on the next request, with no restart: the server keeps what it compiled (`cache`, on by default) and lets go of it when a file there is written, added or removed. In production, the default (development is `NODE_ENV=development` or `production: false`, and says so at start), it compiles once and never looks again. With `compress: true` it sends the modules, and with `zubra.send(req, res, html)` the page, in Brotli or gzip.
+In an app's server, **`@zubra/server`** does the whole job with any template engine. It renders components into a page, adds their CSS and module scripts, and serves the browser modules and `@zubra/runtime`, with no bundler. In development (`NODE_ENV=development` or `production: false`) an edit to a file in the components folder shows on the next request, with no restart: the server keeps what it compiled (`cache`, on by default) and lets go of it when a file there is written, added or removed. Production is the default: it compiles once and never looks again. With `compress: true` it sends the modules, and with `zubra.send(req, res, html)` the page, in Brotli or gzip.
 
 A page:
 
@@ -490,7 +492,7 @@ Angular needs `CUSTOM_ELEMENTS_SCHEMA` and nothing else for props (`[heading]="x
 @Component({
   imports: [FormsModule, ZubraModel],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
-  template: `<zb-rating zubraModel [(ngModel)]="stars"></zb-rating>`,
+  template: `<my-rating zubraModel [(ngModel)]="stars"></my-rating>`,
 })
 ```
 
@@ -556,11 +558,13 @@ export const Default = { args: { value: 2, max: 5 } };
 `zubra convert` rewrites a React function component as a Zubra JSX component next to it (`TodoItem.jsx` becomes `todo-item.zb.jsx`, `<todo-item>`):
 
 ```sh
-zubra convert src/TodoItem.jsx              # or npx zubra convert, from @zubra/compiler (without --component)
+zubra convert src/TodoItem.jsx              # or npx zubra convert, from @zubra/compiler
 zubra convert src/Counter.jsx --prefix app  # one-word names need a prefix: <app-counter>
 zubra convert src/Menu.jsx --component MenuItem   # one of several exported components
 zubra convert src/TodoItem.jsx --as zubra     # the HTML-first .zb file instead of JSX (once nothing is left to finish)
 ```
+
+The prefix starts with an ASCII letter and contains only letters, digits and underscores. Converted tags must be lowercase ASCII custom-element names with a hyphen, containing only letters, digits, `.`, `_` and `-`, and no `..`; unsafe output names are refused.
 
 The body of a Zubra component runs once per element, so the hooks become what they stand for:
 
@@ -602,7 +606,7 @@ The result is compiled as part of the conversion, and a compile error is shown a
 ## Describing components to tools
 
 - `--emit manifest` writes a [Custom Elements Manifest](https://github.com/webcomponents/custom-elements-manifest) (`custom-elements.json`, schema 2.1.0): the tag, each prop as an attribute and a field with its type and default, events with their `CustomEvent<…>` types, slots (the default slot is `""`) and the description. Editors, Storybook and documentation tools read this format. `--module-path` sets the module path it records.
-- `--emit dts` writes TypeScript declarations: the element class with typed properties and typed `addEventListener`, a `…Props` interface, an `…EventMap`, the `tag` constant and an `HTMLElementTagNameMap` entry. `--framework react|vue|svelte|solid` types the default export as that framework's wrapper, which is what the plugin writes.
+- `--emit dts` writes TypeScript declarations: the element class with typed properties and typed `addEventListener`, a `…Props` interface, an `…EventMap`, the `tag` constant and an `HTMLElementTagNameMap` entry. `--framework react|vue|svelte|solid|solid2` types the default export as that framework's wrapper, which is what the plugin writes (`vanilla`, the default, the element).
 - Types are inferred from defaults: `{ sample: "…" }` becomes `{ sample: string }`, `["a"]` becomes `string[]`, and a required prop with no default is `unknown`.
 - **`npx zubra mcp`** is an [MCP](https://modelcontextprotocol.io) server for coding agents, built from the manifest: `list_components`, `describe_component` (props, events with their detail types, slots, which props are two-way), `component_usage` (the import and markup for HTML, React, Vue, Svelte, Solid or Angular) and `check_markup` (props a component doesn't have and events it doesn't fire in markup an agent wrote, with the nearest real name). Point it at a components folder, a `custom-elements.json` or an installed library (`npx zubra mcp @acme/ui`); in a client's config: `{ "mcpServers": { "components": { "command": "npx", "args": ["zubra", "mcp", "@acme/ui"] } } }`. It reads the manifest and nothing else: no network, no model.
 
@@ -622,29 +626,48 @@ Each release attaches prebuilt `zubra` binaries to its [GitHub release](https://
 | Windows x64 | `…x86_64-pc-windows-msvc.zip` |
 
 ```sh
-version=5.5.0 target=x86_64-unknown-linux-gnu   # 5.5.0 is the first release with binaries
+version=6.0.0 target=x86_64-unknown-linux-gnu   # any release from 5.5.0, the first with binaries
 curl -fsSLO "https://github.com/zubra-js/zubra/releases/download/v$version/zubra-$version-$target.tar.gz"
 curl -fsSL "https://github.com/zubra-js/zubra/releases/download/v$version/SHA256SUMS" | grep "zubra-$version-$target" | sha256sum -c -
 tar -xzf "zubra-$version-$target.tar.gz" && echo "<hi-x></hi-x>" | "zubra-$version-$target/zubra" fmt --stdin
 ```
 
-`SHA256SUMS` is uploaded last, so a release that has it has all seven archives. (Binaries are attached from the first release after this one is merged; earlier releases have none. Or `cargo install --path .` from a checkout, or the npm package.)
+`SHA256SUMS` is uploaded last, so a release that has it has all seven archives. (Releases before 5.5.0 have none. Or `cargo install --path .` from a checkout, or the npm package.)
 
 ## The CLI
 
+Both CLIs, the native `zubra` (the release binaries, or `cargo install`) and `npx zubra` (`@zubra/compiler`, WebAssembly), take these commands with the same flags, values, help and exit codes; they parse with one table, `src/cli.rs`:
+
 ```sh
-zubra check <component.zb | folder>... [--format human|json] [--server] [--client] [--stdin]
-zubra fmt <file.zb | folder>... [--check] [--indent <n> | --tabs] [--width <n>]   (--stdin: source in, formatted out)
-zubra compile <component.zb> [--emit html|js|element|css|dts|manifest|html-data|interface] [--props <props.json>] [--slots <slots.json> [--slots-html]] [--partial]
-                             [--runtime <module>] [--keep-imports] [--no-imports] [--devtools] [--framework react|vue|svelte|solid|none]
-                             [--css-import <specifier> --css-import-inline <specifier>]
-                             [--module-path <path>] [--output <file>]
-zubra convert <Component.jsx | my-element.js> [--prefix <word>] [--component <Name>] [--as jsx|zubra] [--out <file> | --stdout]
+zubra check <file | folder>... [--format human|json] [--server] [--client] [--stdin] [--deny-warnings] [--types] [--keep]
+zubra compile <file> [--emit html|js|element|css|dts|manifest|html-data|interface|server|tsx]
+                     [--props <props.json>] [--slots <slots.json>] [--slots-html] [--partial]
+                     [--runtime <module>] [--keep-imports] [--no-imports] [--devtools] [--binder-entries]
+                     [--client-only] [--css-import <specifier>] [--css-import-inline <specifier>]
+                     [--framework react|vue|svelte|solid|solid2|vanilla] [--module-path <path>] [--output <file>]
+zubra convert <Component.jsx | my-element.js> [--prefix <word>] [--component <Name>] [--as jsx|zubra] [--out <file>] [--stdout]
+zubra fmt <file | folder>... [--check] [--stdin] [--indent <n>] [--tabs] [--width <n>]
 zubra request < request.json
 zubra serve
 ```
 
-`zubra check` reports every error and warning in the given files, and in every component under a folder it's given (`zubra check src`; not `node_modules`, `dist`, `target` or hidden folders), without writing anything (exit status 1 on errors; `--format json` for editors and CI annotations; `--stdin` checks unsaved text as if it were at the one path given). It runs every check that doesn't need prop values; what the HTML output can't render is reported only with `--server`, as warnings (errors for `checked`, `selected`, `value` and `disabled`). `--emit html` (the default) writes server-rendered HTML. `--emit css` writes the scoped stylesheets of a component and the components it imports (`--no-imports` for its own only). `--props` and `--slots` supply values (defaults come from the component); `--slots-html` reads the slots as server-rendered HTML, kept as written, and `--partial` leaves what only the browser can compute for the element. `--emit js` writes the element module: `--runtime` changes the runtime import (default `@zubra/runtime`), the script's own `@zubra/runtime` imports with it (`@zubra/runtime/primitives` becomes the file beside it, or the entry under it), so a page needs no import map, and `--keep-imports` leaves `./x.zb` imports for a bundler (otherwise they become `./x.js`), and `--css-import <specifier> --css-import-inline <specifier>` imports the `<style>` through the bundler instead of inlining it, and `--devtools` adds what the browser DevTools panel reads (each part's source location, the script's signals by name, the file's path; for development builds, which `@zubra/unplugin` makes in Vite's dev server). `--emit element` writes the same element as one file with no runtime to install (see [Plain elements](plain-elements.md)). `--emit dts` writes declarations (`--framework` for a wrapper's) and `--emit manifest` the manifest. Output goes to stdout, or to `--output <file>` with an atomic write. Warnings go to stderr. `zubra check --server` also reports what a server without JavaScript leaves out (see "What the server can render"). `zubra check --client` says, for each file, whether the component needs its module in the browser at all, and why (state, handlers, imports, values computed in the browser, in it or the components it uses). One that doesn't is complete as server HTML (0 KB of JavaScript), and `@zubra/server`'s `clientModules: 'needed'` leaves its module out. `zubra request` takes one JSON request on stdin and writes the JSON response, the interface the WebAssembly build exposes (see `src/request.rs`). `{ "requests": [ … ] }` is a batch, answered as `{ "ok", "responses": [ … ] }`. `zubra serve` keeps running and answers one request (or batch) per line on stdin with one response per line on stdout, for servers in other languages that render often (clients: the [Python package](../clients/python), with Jinja and Django template tags, which the Flask garden uses; the [Ruby gem](../clients/ruby), with Rails helpers; and the [PHP package](../clients/php), with Blade directives for Laravel).
+`zubra build`, `zubra add`, `zubra types` and `zubra mcp` need Node (the registry, TypeScript, an MCP server), so they are in the npm package only; the native CLI names them and says so, with exit code 2. So is `check --types`, which runs the project's TypeScript.
+
+`zubra --help` lists every command with every flag, and `zubra <command> --help` (or `zubra help <command>`) one command's, with what each flag does; `-h` is the same, and `-V` or `--version` prints the version (except after `build`, whose `--version` is the package's). Both come before anything else, so `zubra mcp --help` starts no server. An unknown command, flag or value is named, with "did you mean" when one is close.
+
+**Exit codes** (Stable):
+
+| Code | Means |
+|---|---|
+| 0 | Success, warnings included |
+| 1 | Errors in the input: a component that doesn't compile, a missing file, what `convert` couldn't convert; with `check --deny-warnings`, a warning too |
+| 2 | A usage error: an unknown command, flag or value, a missing argument, or a command the other CLI has |
+
+**Diagnostic codes.** Every error and warning has a stable code, shown as `error[ZB2001]: unknown reference …` and given as `code` by `check --format json` (`[{ file, code, line, column, severity, message, help }]`), the request protocol and the language server. The codes are Stable and the message text is Supported: a tool should key on the code. [docs/diagnostics.md](diagnostics.md) lists every one.
+
+**No framework is `vanilla`.** `--framework vanilla` (the default) types the element itself; `element`, `none` and `plain` are accepted as other names for it, here, in `zubra types`, `npm create zubra` and `@zubra/unplugin`'s `framework` option.
+
+`zubra check` reports every error and warning in the given files, and in every component under a folder it's given (`zubra check src`; not `node_modules`, `dist`, `target` or hidden folders), without writing anything (exit status 1 on errors, and on warnings with `--deny-warnings`; `--format json` for editors and CI annotations; `--stdin` checks unsaved text as if it were at the one path given). It runs every check that doesn't need prop values; what the HTML output can't render is reported only with `--server`, as warnings (errors for `checked`, `selected`, `value` and `disabled`). `--emit html` (the default) writes server-rendered HTML. `--emit css` writes the scoped stylesheets of a component and the components it imports (`--no-imports` for its own only). `--props` and `--slots` supply values (defaults come from the component); `--slots-html` reads the slots as server-rendered HTML, kept as written, and `--partial` leaves what only the browser can compute for the element. `--emit js` writes the element module: `--runtime` changes the runtime import (default `@zubra/runtime`), the script's own `@zubra/runtime` imports with it (`@zubra/runtime/primitives` becomes the file beside it, or the entry under it), so a page needs no import map, and `--keep-imports` leaves `./x.zb` imports for a bundler (otherwise they become `./x.js`), and `--css-import <specifier> --css-import-inline <specifier>` imports the `<style>` through the bundler instead of inlining it, and `--devtools` adds what the browser DevTools panel reads (each part's source location, the script's signals by name, the file's path; for development builds, which `@zubra/unplugin` makes in Vite's dev server). `--emit element` writes the same element as one file with no runtime to install (see [Plain elements](plain-elements.md)). `--client-only` (`--emit js`) leaves hydration out, for apps that never render on a server, and `--binder-entries` imports each binder from its own runtime entry (what `@zubra/server` asks for). `--emit html-data` writes VS Code HTML data, `--emit interface` the prop and event interface, `--emit server` the server renderer and `--emit tsx` the TypeScript `check --types` hands to `tsc`. `--emit dts` writes declarations (`--framework` for a wrapper's) and `--emit manifest` the manifest. Output goes to stdout, or to `--output <file>` with an atomic write. Warnings go to stderr. `zubra check --server` also reports what a server without JavaScript leaves out (see "What the server can render"). `zubra check --client` says, for each file, whether the component needs its module in the browser at all, and why (state, handlers, imports, values computed in the browser, in it or the components it uses). One that doesn't is complete as server HTML (0 KB of JavaScript), and `@zubra/server`'s `clientModules: 'needed'` leaves its module out. `zubra request` takes one JSON request on stdin and writes the JSON response, the interface the WebAssembly build exposes (see `src/request.rs`). `{ "requests": [ … ] }` is a batch, answered as `{ "ok", "responses": [ … ] }`. `zubra serve` keeps running and answers one request (or batch) per line on stdin with one response per line on stdout, for servers in other languages that render often (clients: the [Python package](../clients/python), with Jinja and Django template tags, which the Flask garden uses; the [Ruby gem](../clients/ruby), with Rails helpers; and the [PHP package](../clients/php), with Blade directives for Laravel).
 
 ### Formatting
 

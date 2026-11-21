@@ -1,6 +1,6 @@
 {
   "name": "create-zubra",
-  "version": "6.0.0-rc.0",
+  "version": "6.0.0",
   "description": "Start an app with Zubra web components: `npm create zubra`",
   "license": "ISC",
   "repository": {
@@ -8,6 +8,19 @@
     "url": "git+https://github.com/zubra-js/zubra.git",
     "directory": "create"
   },
+  "homepage": "https://github.com/zubra-js/zubra/tree/main/create#readme",
+  "bugs": {
+    "url": "https://github.com/zubra-js/zubra/issues"
+  },
+  "keywords": [
+    "zubra",
+    "web components",
+    "custom elements",
+    "create",
+    "starter",
+    "template",
+    "scaffold"
+  ],
   "type": "module",
   "bin": {
     "create-zubra": "index.js"

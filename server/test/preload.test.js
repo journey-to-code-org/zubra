@@ -88,14 +88,15 @@ test("the runtime's modules come from its own list, so they are there in either 
   for (const [name, imports] of Object.entries(modules)) {
     for (const file of [name, ...imports]) assert.ok(existsSync(join(runtime, 'src', file)) && existsSync(join(runtime, 'dist/production', file)), file);
   }
-  // A development server (the default) preloads the runtime's modules file by file, the
+  // A development server preloads the runtime's modules file by file, the
   // development build's hook left out; a production one the core as one file.
   const links = (options) => {
     const page = createZubra({ components, ...options }).page();
     page.render('hello-there', { name: 'Ada', items: [] });
     return preloaded(page.finish(layout(''))).filter((link) => link.startsWith('/_zubra/runtime/'));
   };
-  assert.ok(links({}).length > 3 && links({}).includes('/_zubra/runtime/base.js') && !links({}).some((link) => link.includes('devhook')));
+  const development = links({ production: false });
+  assert.ok(development.length > 3 && development.includes('/_zubra/runtime/base.js') && !development.some((link) => link.includes('devhook')));
   assert.deepEqual(links({ production: true }), ['/_zubra/runtime/zubra.js']);
 });
 
@@ -144,7 +145,7 @@ test('with a nonce, each link carries it; with inline: false, the links follow t
   assert.ok(links.length > 1);
   for (const link of links) assert.ok(link.includes(` nonce="${nonce}"`), link);
 
-  const plain = createZubra({ components, inline: false }).page();
+  const plain = createZubra({ components, inline: false, production: false }).page();
   plain.render('hello-there', { name: 'Ada', items: [] });
   const linked = plain.finish(layout(''));
   assert.doesNotMatch(linked, /importmap/);

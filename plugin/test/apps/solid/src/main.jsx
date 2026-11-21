@@ -13,13 +13,13 @@ function App() {
   Object.assign(window, { app: { setItems, setTitle, setInfo } });
   return (
     <>
-      <zb-rating prop:value={stars()} on:valuechange={(event) => setStars(event.detail)} on:change={() => setLog([...log(), 'change'])} />
+      <my-rating prop:value={stars()} on:valuechange={(event) => setStars(event.detail)} on:change={() => setLog([...log(), 'change'])} />
       <p id="stars">{stars()}</p>
       <zb-card heading="Solid">
         <Show when={title()}><h2 slot="title">Custom</h2></Show>
         <For each={items()}>{(item) => <p>{item}</p>}</For>
       </zb-card>
-      <zb-badge label="x" prop:info={info()} />
+      <my-badge label="x" prop:info={info()} />
       <p id="log">{log().join(',')}</p>
     </>
   );

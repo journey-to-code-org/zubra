@@ -7,8 +7,8 @@
       "declarations": [
         {
           "kind": "class",
-          "name": "ZbHeader",
-          "tagName": "zb-header",
+          "name": "MyHeader",
+          "tagName": "my-header",
           "customElement": true,
           "superclass": {
             "name": "HTMLElement",
@@ -60,15 +60,15 @@
           "kind": "js",
           "name": "default",
           "declaration": {
-            "name": "ZbHeader",
+            "name": "MyHeader",
             "module": "header.js"
           }
         },
         {
           "kind": "custom-element-definition",
-          "name": "zb-header",
+          "name": "my-header",
           "declaration": {
-            "name": "ZbHeader",
+            "name": "MyHeader",
             "module": "header.js"
           }
         }

@@ -69,7 +69,7 @@ function start(root) {
 
 const errors = async (send, file) => (await send('semanticDiagnosticsSync', { file })).body.map((d) => `${d.start.line}:${d.start.offset} TS${d.code}`);
 
-const badge = (type) => `<script lang="ts">\n  declare const count: ${type}\n</script>\n<zb-badge count={0}><p>{count}</p></zb-badge>\n`;
+const badge = (type) => `<script lang="ts">\n  declare const count: ${type}\n</script>\n<my-badge count={0}><p>{count}</p></my-badge>\n`;
 
 test('a .ts file gets a component\'s typings, and their changes when it\'s saved', { timeout: 60_000 }, async (t) => {
   const root = project({
@@ -128,7 +128,7 @@ test('a .ts file gets a component\'s typings, and their changes when it\'s saved
 
 test('a component that doesn\'t compile imports as any, and a missing one is TypeScript\'s error', { timeout: 60_000 }, async (t) => {
   const root = project({
-    'src/broken.zb': '<script lang="ts">\n  const x =\n</script>\n<zb-broken></zb-broken>\n',
+    'src/broken.zb': '<script lang="ts">\n  const x =\n</script>\n<my-broken></my-broken>\n',
     'src/main.ts': "import Broken from './broken.zb';\nimport Missing from './missing.zb';\nnew Broken();\n",
   });
   const { send, stop } = start(root);

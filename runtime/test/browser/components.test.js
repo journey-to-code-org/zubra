@@ -36,12 +36,12 @@ useBrowser({
 // ---- fresh rendering and updates -----------------------------------------------------------
 
 test('renders from its defaults and updates when props change', async () => {
-  const { page, messages } = await open('<zb-header></zb-header>', { modules: ['header'] });
-  const read = () => page.$$eval('zb-header h1, zb-header li', (nodes) => nodes.map((node) => node.textContent));
+  const { page, messages } = await open('<my-header></my-header>', { modules: ['header'] });
+  const read = () => page.$$eval('my-header h1, my-header li', (nodes) => nodes.map((node) => node.textContent));
   assert.deepEqual(await read(), ['Mikey Nichols', 'sample data', 'additional data']);
 
   await page.evaluate(async () => {
-    const el = document.querySelector('zb-header');
+    const el = document.querySelector('my-header');
     el.title = 'Journey to Code';
     el.data = { sample: 'one', sampleTwo: 'two' };
     await el.updateComplete;
@@ -49,7 +49,7 @@ test('renders from its defaults and updates when props change', async () => {
   assert.deepEqual(await read(), ['Journey to Code', 'one', 'two']);
 
   await page.evaluate(async () => {
-    const el = document.querySelector('zb-header');
+    const el = document.querySelector('my-header');
     el.setAttribute('data', '{"sample":"from","sampleTwo":"json"}');
     await el.updateComplete;
   });
@@ -84,9 +84,9 @@ test('an enum prop\'s attribute takes a member\'s value or its name', async () =
 });
 
 test('batches several writes into one DOM update', async () => {
-  const { page } = await open('<zb-header></zb-header>', { modules: ['header'] });
+  const { page } = await open('<my-header></my-header>', { modules: ['header'] });
   const result = await page.evaluate(async () => {
-    const el = document.querySelector('zb-header');
+    const el = document.querySelector('my-header');
     const h1 = el.querySelector('h1');
     let mutations = 0;
     new MutationObserver((records) => { mutations += records.length; }).observe(h1, { childList: true, characterData: true, subtree: true });
@@ -103,11 +103,11 @@ test('batches several writes into one DOM update', async () => {
 });
 
 test('keeps properties set before the element was defined', async () => {
-  const { page } = await open('<zb-header></zb-header>', {
-    beforeModules: `document.querySelector('zb-header').title = 'Set early';`,
+  const { page } = await open('<my-header></my-header>', {
+    beforeModules: `document.querySelector('my-header').title = 'Set early';`,
     modules: ['header'],
   });
-  assert.equal(await page.$eval('zb-header h1', (h1) => h1.textContent), 'Set early');
+  assert.equal(await page.$eval('my-header h1', (h1) => h1.textContent), 'Set early');
   await page.close();
 });
 
@@ -158,12 +158,12 @@ test('hydrates server markup in place, keeping every node', { skip: runtimeOnly 
   const html = compiler(join(repo, 'examples/header.zb'), '--props', props);
   const { page, messages } = await open(html, {
     beforeModules: `
-      window.before = [...document.querySelectorAll('zb-header *')];
-      window.textBefore = document.querySelector('zb-header h1').firstChild;`,
+      window.before = [...document.querySelectorAll('my-header *')];
+      window.textBefore = document.querySelector('my-header h1').firstChild;`,
     modules: ['header'],
   });
   const result = await page.evaluate(async () => {
-    const el = document.querySelector('zb-header');
+    const el = document.querySelector('my-header');
     const after = [...el.querySelectorAll('*')];
     const sameNodes = after.length === window.before.length && after.every((node, i) => node === window.before[i]);
     const sameText = el.querySelector('h1').firstChild === window.textBefore;
@@ -185,11 +185,11 @@ test('hydrates dynamic text beside other nodes through its anchor', async () => 
   const html = compiler(join(here, 'fixtures/greeting.zb'));
   assert.match(html, /<b>there<\/b><\?zb \?>, Ada! <i>glad<\/i>/);
   const { page, messages } = await open(html, {
-    beforeModules: `window.p = document.querySelector('zb-greeting p'); window.nodes = [...window.p.childNodes];`,
+    beforeModules: `window.p = document.querySelector('my-greeting p'); window.nodes = [...window.p.childNodes];`,
     modules: ['greeting'],
   });
   const result = await page.evaluate(async () => {
-    const el = document.querySelector('zb-greeting');
+    const el = document.querySelector('my-greeting');
     const same = [...window.p.childNodes].every((node, i) => node === window.nodes[i]);
     el.name = 'Grace';
     el.mood = 'happy';
@@ -211,15 +211,15 @@ test('hydrates dynamic text beside other nodes through its anchor', async () => 
 });
 
 test('a fresh element with anchored text renders it too', async () => {
-  const { page } = await open('<zb-greeting name="Linus"></zb-greeting>', { modules: ['greeting'] });
-  assert.equal(await page.$eval('zb-greeting p', (p) => p.textContent), 'Hello there, Linus! glad to see you.');
+  const { page } = await open('<my-greeting name="Linus"></my-greeting>', { modules: ['greeting'] });
+  assert.equal(await page.$eval('my-greeting p', (p) => p.textContent), 'Hello there, Linus! glad to see you.');
   await page.close();
 });
 
 test('markup that does not match the template is re-rendered, with a warning', { skip: runtimeOnly }, async () => {
-  const { page, messages } = await open('<zb-header><p>stale markup</p></zb-header>', { modules: ['header'] });
-  assert.equal(await page.$eval('zb-header h1', (h1) => h1.textContent), 'Mikey Nichols');
-  assert.equal(await page.$('zb-header > p'), null);
+  const { page, messages } = await open('<my-header><p>stale markup</p></my-header>', { modules: ['header'] });
+  assert.equal(await page.$eval('my-header h1', (h1) => h1.textContent), 'Mikey Nichols');
+  assert.equal(await page.$('my-header > p'), null);
   assert.ok(reported(messages, (message) => message.startsWith('warning:') && message.includes("doesn't match its template")));
   await page.close();
 });
@@ -589,7 +589,7 @@ test('hasSlot() follows whether a slot has content, in light and shadow DOM', as
 
 test('an empty URL leaves the attribute off, quietly; "[object Object]" from a framework is not given yet', async () => {
   // A prop's "" default before the app sets it (a link's href) isn't an unsafe URL to report.
-  const { page, messages } = await open('<zb-link href=""></zb-link><zb-header data="[object Object]"></zb-header>', { modules: ['link', 'header'] });
+  const { page, messages } = await open('<zb-link href=""></zb-link><my-header data="[object Object]"></my-header>', { modules: ['link', 'header'] });
   assert.equal(await page.$eval('zb-link a', (a) => a.hasAttribute('href')), false);
   await page.evaluate(() => { document.querySelector('zb-link').href = 'javascript:alert(1)'; });
   await page.evaluate(() => document.querySelector('zb-link').updateComplete);
@@ -597,7 +597,7 @@ test('an empty URL leaves the attribute off, quietly; "[object Object]" from a f
   assert.equal(messages.filter((message) => message.includes('blocked an unsafe URL')).length, production ? 0 : 1, 'and reported');
   // Svelte's server HTML writes an object prop as "[object Object]", then sets the object: the
   // element keeps its default meanwhile, without a warning.
-  assert.deepEqual(await page.$$eval('zb-header li', (items) => items.map((item) => item.textContent)), ['sample data', 'additional data']);
+  assert.deepEqual(await page.$$eval('my-header li', (items) => items.map((item) => item.textContent)), ['sample data', 'additional data']);
   assert.deepEqual(messages.filter((message) => !message.includes('blocked an unsafe URL')), []);
   await page.close();
 });

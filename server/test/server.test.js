@@ -7,7 +7,9 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, readFileSyn
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { createZubra } from '../src/index.js';
+import { createZubra as createZubraServer } from '../src/index.js';
+
+const createZubra = (options = {}) => createZubraServer({ production: false, ...options });
 
 // What these tests call development is NODE_ENV=development (since 6.0 an unset NODE_ENV is
 // production: production-default.test.js); a test of production passes `production: true`.

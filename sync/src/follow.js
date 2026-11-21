@@ -26,12 +26,20 @@ export function follow({ url = '/_zb/sync', interval = 2000, live = true, scope 
   const scoped = scope ? `&scope=${encodeURIComponent(JSON.stringify(scope))}` : '';
   const cursorName = scope ? `zubra-sync:cursor:${JSON.stringify(scope)}` : 'zubra-sync:cursor';
   let cursor = remember(cursorName, () => '0');
+  let warnedRead = false;
 
   async function pull() {
     let body;
     try {
       const response = await fetch(`${base}/pull?since=${encodeURIComponent(cursor)}${scoped}`);
-      if (!response.ok) return;
+      if (!response.ok) {
+        if (response.status === 403 && !warnedRead) {
+          warnedRead = true;
+          const why = await response.json().then((body) => body?.error, () => '');
+          console.warn(`@zubra/sync: the server refused this page's reads${why ? `: ${why}` : ''}`);
+        }
+        return;
+      }
       body = await response.json();
     } catch {
       return;

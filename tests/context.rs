@@ -4,8 +4,8 @@
 use zubra::compile_html_with;
 
 const THEME: &str = "import { createContext } from '@zubra/runtime';\nexport const theme = createContext('light');\n";
-const THEMED: &str = "<script>\n  import { inject } from '@zubra/runtime'\n  import { theme } from './theme.js'\n  const mode = inject(theme)\n</script>\n<zb-themed>\n  <p class={mode}>{mode}</p>\n</zb-themed>";
-const SHELL: &str = "<script>\n  import { provide } from '@zubra/runtime'\n  import { theme } from './theme.js'\n  import './themed.zb'\n  provide(theme, tone)\n</script>\n<zb-shell tone=\"dark\">\n  <zb-themed></zb-themed><zb-slot></zb-slot>\n</zb-shell>";
+const THEMED: &str = "<script>\n  import { inject } from '@zubra/runtime'\n  import { theme } from './theme.js'\n  const mode = inject(theme)\n</script>\n<my-themed>\n  <p class={mode}>{mode}</p>\n</my-themed>";
+const SHELL: &str = "<script>\n  import { provide } from '@zubra/runtime'\n  import { theme } from './theme.js'\n  import './themed.zb'\n  provide(theme, tone)\n</script>\n<my-shell tone=\"dark\">\n  <my-themed></my-themed><zb-slot></zb-slot>\n</my-shell>";
 
 fn render(source: &str, with_module: bool) -> String {
     let loader = move |specifier: &str, _from: &str| match specifier {
@@ -19,7 +19,7 @@ fn render(source: &str, with_module: bool) -> String {
 
 #[test]
 fn a_provided_value_reaches_what_the_provider_renders_and_no_further() {
-    let page = "<script>\n  import './shell.zb'\n  import './themed.zb'\n</script>\n<zb-page>\n  <zb-shell tone=\"night\"></zb-shell><zb-themed></zb-themed>\n</zb-page>";
+    let page = "<script>\n  import './shell.zb'\n  import './themed.zb'\n</script>\n<my-page>\n  <my-shell tone=\"night\"></my-shell><my-themed></my-themed>\n</my-page>";
     let html = render(page, true);
     assert!(
         html.contains("<p class=\"night\">night</p>"),
@@ -42,8 +42,8 @@ fn a_provided_value_reaches_what_the_provider_renders_and_no_further() {
 
 #[test]
 fn the_nearest_provider_wins_and_its_own_inject_sees_the_one_above() {
-    let inner = "<script>\n  import { provide, inject } from '@zubra/runtime'\n  import { theme } from './theme.js'\n  import './themed.zb'\n  const outer = inject(theme)\n  provide(theme, outer + '-inner')\n</script>\n<zb-inner>\n  <i>{outer}</i><zb-themed></zb-themed>\n</zb-inner>";
-    let page = "<script>\n  import { provide } from '@zubra/runtime'\n  import { theme } from './theme.js'\n  import './inner.zb'\n  provide(theme, 'outer')\n</script>\n<zb-page>\n  <zb-inner></zb-inner>\n</zb-page>";
+    let inner = "<script>\n  import { provide, inject } from '@zubra/runtime'\n  import { theme } from './theme.js'\n  import './themed.zb'\n  const outer = inject(theme)\n  provide(theme, outer + '-inner')\n</script>\n<my-inner>\n  <i>{outer}</i><my-themed></my-themed>\n</my-inner>";
+    let page = "<script>\n  import { provide } from '@zubra/runtime'\n  import { theme } from './theme.js'\n  import './inner.zb'\n  provide(theme, 'outer')\n</script>\n<my-page>\n  <my-inner></my-inner>\n</my-page>";
     let loader = |specifier: &str, _from: &str| match specifier {
         "./themed.zb" => Ok(("/app/themed.zb".to_owned(), THEMED.to_owned())),
         "./inner.zb" => Ok(("/app/inner.zb".to_owned(), inner.to_owned())),
@@ -60,7 +60,7 @@ fn the_nearest_provider_wins_and_its_own_inject_sees_the_one_above() {
 
 #[test]
 fn without_the_module_a_provided_value_still_renders_but_a_default_is_the_browsers() {
-    let page = "<script>\n  import './shell.zb'\n</script>\n<zb-page>\n  <zb-shell></zb-shell>\n</zb-page>";
+    let page = "<script>\n  import './shell.zb'\n</script>\n<my-page>\n  <my-shell></my-shell>\n</my-page>";
     let html = render(page, false);
     assert!(html.contains("<p class=\"dark\">dark</p>"), "{html}");
     // The lone one has no value on the server: it's left for the element.

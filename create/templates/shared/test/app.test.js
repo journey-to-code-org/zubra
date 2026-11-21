@@ -27,21 +27,33 @@ function contrast(element) {
   return (high + 0.05) / (low + 0.05);
 }
 
+/** Chromium for Playwright, or an error that says how to install it. */
+async function launch() {
+  try {
+    return await chromium.launch();
+  } catch (error) {
+    throw new Error(`Chromium didn't start. Install it once with \`npx playwright install chromium\`.\n${error.message}`);
+  }
+}
+
 /** The built app, served, in Chromium: `use(page)` drives it, and nothing may reach the console as an error. */
 async function inBrowser(use) {
-  const dist = await buildApp(root);
-  const server = createServer((request, response) => {
-    let path = join(dist, decodeURIComponent(new URL(request.url, 'http://x').pathname));
-    if (existsSync(path) && statSync(path).isDirectory()) path = join(path, 'index.html');
-    try {
-      response.writeHead(200, { 'content-type': TYPES[extname(path)] ?? 'text/plain' }).end(readFileSync(path));
-    } catch {
-      response.writeHead(404).end();
-    }
-  });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const browser = await chromium.launch();
+  // The browser first: if it's missing, the test fails now, and no server is left open to keep
+  // `npm test` running.
+  const browser = await launch();
+  let server;
   try {
+    const dist = await buildApp(root);
+    server = createServer((request, response) => {
+      let path = join(dist, decodeURIComponent(new URL(request.url, 'http://x').pathname));
+      if (existsSync(path) && statSync(path).isDirectory()) path = join(path, 'index.html');
+      try {
+        response.writeHead(200, { 'content-type': TYPES[extname(path)] ?? 'text/plain' }).end(readFileSync(path));
+      } catch {
+        response.writeHead(404).end();
+      }
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const page = await browser.newPage();
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -51,7 +63,7 @@ async function inBrowser(use) {
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();
-    server.close();
+    server?.close();
   }
 }
 

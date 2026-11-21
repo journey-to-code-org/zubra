@@ -1,7 +1,7 @@
 //! `zubra-sync`: the log that `'use collection'` devices share, as one binary.
 //!
 //! It speaks the same HTTP protocol as `@zubra/sync/server` (docs/sync.md), and keeps the log in
-//! the same SQLite table as `sqliteLog()`, so the two are interchangeable, file included:
+//! the same SQLite tables as `sqliteLog()`, so the two are interchangeable, file included:
 //!
 //!   POST /_zb/sync/push      { changes: [Change] }            → { ok: true }
 //!   GET  /_zb/sync/pull?since=<cursor>[&scope=<json>]         → { changes, cursor }
@@ -17,13 +17,13 @@
 //! (`--read <collection>`, `--read-all`) and write nothing without `--open`, which opens both. Posts from a browser are accepted only from the
 //! binary's own origin and the `--origin`s given, which also get CORS headers.
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, TransactionBehavior};
 use serde_json::{json, Value};
 use std::collections::hash_map::RandomState;
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasher, Hasher};
 use std::io::{Read, Write};
-use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
+use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
@@ -31,15 +31,16 @@ use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 const MOUNT: &str = "/_zb/sync";
 const PAGE: i64 = 1000;
 const MAX_BODY: u64 = 1 << 20;
+const MAX_PENDING_EVENTS: usize = 16;
 
 struct Options {
     db: String,
+    keep_latest: bool,
     host: String,
     port: u16,
     origins: Vec<String>,
     keep_alive: Duration,
-    /// Take writes (push, presence, signal) from pages, and let them read everything. Off by
-    /// default: the binary can't tell who is asking.
+    /// Take reads and writes from pages. Off by default: the binary can't tell who is asking.
     open: bool,
     /// What pages may read without `--open`: nothing by default.
     reads: Reads,
@@ -67,6 +68,7 @@ impl Reads {
 fn options() -> Result<Options, String> {
     let mut options = Options {
         db: "sync.db".into(),
+        keep_latest: false,
         host: "127.0.0.1".into(),
         port: 4000,
         origins: Vec::new(),
@@ -79,6 +81,7 @@ fn options() -> Result<Options, String> {
         let mut value = |name: &str| args.next().ok_or(format!("{name} needs a value"));
         match arg.as_str() {
             "--db" => options.db = value("--db")?,
+            "--keep-latest" => options.keep_latest = true,
             "--host" => options.host = value("--host")?,
             "--port" => {
                 options.port = value("--port")?
@@ -106,7 +109,7 @@ fn options() -> Result<Options, String> {
                 )
             }
             "-h" | "--help" => {
-                println!("usage: zubra-sync [--db sync.db] [--host 127.0.0.1] [--port 4000] [--origin https://app.example]... [--keep-alive 15000] [--read <collection>]... [--read-all] [--open]");
+                println!("usage: zubra-sync [--db sync.db] [--keep-latest] [--host 127.0.0.1] [--port 4000] [--origin https://app.example]... [--keep-alive 15000] [--read <collection>]... [--read-all] [--open]");
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument {other} (try --help)")),
@@ -127,11 +130,12 @@ struct Listener {
     rooms: HashSet<String>,
     /// What the page asked for (`?scope=`); None is everything.
     scope: Option<Value>,
-    events: Sender<String>,
+    events: Option<SyncSender<String>>,
 }
 
 struct State {
     db: Mutex<Connection>,
+    keep_latest: bool,
     listeners: Mutex<Vec<Listener>>,
     /// Peers whose stream ended, with its key and until when only that key may take the id back:
     /// otherwise whoever asked first in the gap would take it, and be sent its signals.
@@ -144,7 +148,7 @@ struct State {
 }
 
 /// What a page is told when the binary wasn't started with --open.
-const NOT_OPEN: &str = "This sync server takes no writes from pages until it is told who may make them: start zubra-sync with --open, behind your app's own sign-in (see its README).";
+const NOT_OPEN: &str = "This sync server takes no reads or writes from pages until it is told who may access them: start zubra-sync with --open, behind your app's own sign-in (see its README).";
 
 fn main() {
     let options = match options() {
@@ -154,7 +158,7 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let db = Connection::open(&options.db).unwrap_or_else(|error| {
+    let mut db = Connection::open(&options.db).unwrap_or_else(|error| {
         eprintln!("zubra-sync: can't open {}: {error}", options.db);
         std::process::exit(1);
     });
@@ -169,6 +173,9 @@ fn main() {
         )",
     )
     .expect("create the changes table");
+    if options.keep_latest {
+        init_latest(&mut db).expect("create the latest log");
+    }
     let address = format!("{}:{}", options.host, options.port);
     let server = Server::http(&address).unwrap_or_else(|error| {
         eprintln!("zubra-sync: can't listen on {address}: {error}");
@@ -185,6 +192,7 @@ fn main() {
     }
     let state = Arc::new(State {
         db: Mutex::new(db),
+        keep_latest: options.keep_latest,
         listeners: Mutex::new(Vec::new()),
         released: Mutex::new(HashMap::new()),
         next: Mutex::new(0),
@@ -360,6 +368,12 @@ fn handle(state: &State, mut request: Request) {
         return respond_json(request, extra, 404, json!({ "error": "Not found" }));
     }
     let route = &path[MOUNT.len()..];
+    if matches!(state.reads, Reads::Nothing)
+        && request.method() == &Method::Get
+        && matches!(route, "/pull" | "/live")
+    {
+        return respond_json(request, extra, 403, json!({ "error": NOT_OPEN }));
+    }
     match (request.method().clone(), route) {
         (Method::Options, _) => {
             let mut response = Response::empty(StatusCode(204));
@@ -527,12 +541,12 @@ fn handle(state: &State, mut request: Request) {
             let clean = json!({ "room": message["room"], "from": message["from"], "to": to, "data": message["data"] });
             let text = event("signal", &clean);
             // Only to a recipient whose own scope lets it into the room.
-            for listener in state.listeners.lock().expect("listeners").iter() {
+            for listener in state.listeners.lock().expect("listeners").iter_mut() {
                 if listener.peer == to
                     && state.reads.allows(collection)
                     && in_scope(&listener.scope, collection, key)
                 {
-                    let _ = listener.events.send(text.clone());
+                    enqueue(listener, text.clone());
                 }
             }
             respond_json(request, extra, 200, json!({ "ok": true }));
@@ -648,13 +662,57 @@ fn valid_signal(message: &Value) -> bool {
     room_ok && peer_ok(message.get("from")) && peer_ok(message.get("to")) && data_ok
 }
 
+fn init_latest(db: &mut Connection) -> rusqlite::Result<()> {
+    let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let exists: bool = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'latest')",
+        [],
+        |row| row.get(0),
+    )?;
+    transaction.execute_batch(
+        "CREATE TABLE IF NOT EXISTS latest (
+            collection TEXT NOT NULL,
+            key TEXT NOT NULL,
+            field TEXT NOT NULL,
+            value TEXT,
+            clock TEXT NOT NULL,
+            seq INTEGER NOT NULL UNIQUE,
+            PRIMARY KEY (collection, key, field)
+        )",
+    )?;
+    if !exists {
+        transaction.execute_batch(
+            "INSERT INTO latest (collection, key, field, value, clock, seq)
+             SELECT collection, key, field, value, clock,
+                    (SELECT COALESCE(MAX(seq), 0) FROM changes) + ROW_NUMBER() OVER (ORDER BY seq)
+             FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY collection, key, field ORDER BY clock DESC, seq DESC) AS rank FROM changes)
+             WHERE rank = 1",
+        )?;
+    }
+    transaction.commit()
+}
+
+fn head_sql(keep_latest: bool) -> &'static str {
+    if keep_latest {
+        "SELECT COALESCE(MAX(seq), 0) FROM latest"
+    } else {
+        "SELECT COALESCE(MAX(seq), 0) FROM changes"
+    }
+}
+
 fn append(state: &State, changes: &[Value]) -> rusqlite::Result<i64> {
     let mut db = state.db.lock().expect("db");
     let transaction = db.transaction()?;
     {
-        let mut insert = transaction.prepare_cached(
-            "INSERT INTO changes (collection, key, field, value, clock) VALUES (?1, ?2, ?3, ?4, ?5)",
-        )?;
+        let sql = if state.keep_latest {
+            "INSERT INTO latest (collection, key, field, value, clock, seq)
+             VALUES (?1, ?2, ?3, ?4, ?5, (SELECT COALESCE(MAX(seq), 0) + 1 FROM latest))
+             ON CONFLICT (collection, key, field) DO UPDATE SET value = excluded.value, clock = excluded.clock, seq = excluded.seq
+             WHERE excluded.clock > latest.clock"
+        } else {
+            "INSERT INTO changes (collection, key, field, value, clock) VALUES (?1, ?2, ?3, ?4, ?5)"
+        };
+        let mut insert = transaction.prepare_cached(sql)?;
         for change in changes {
             insert.execute(params![
                 change["collection"].as_str(),
@@ -670,9 +728,7 @@ fn append(state: &State, changes: &[Value]) -> rusqlite::Result<i64> {
         }
     }
     transaction.commit()?;
-    db.query_row("SELECT COALESCE(MAX(seq), 0) FROM changes", [], |row| {
-        row.get(0)
-    })
+    db.query_row(head_sql(state.keep_latest), [], |row| row.get(0))
 }
 
 /// Where to read from for a device at `since`: from the start, and say so, if it's past the end of
@@ -682,9 +738,7 @@ fn start_from(state: &State, since: i64) -> (i64, bool) {
         .db
         .lock()
         .expect("db")
-        .query_row("SELECT COALESCE(MAX(seq), 0) FROM changes", [], |row| {
-            row.get(0)
-        })
+        .query_row(head_sql(state.keep_latest), [], |row| row.get(0))
         .unwrap_or(0);
     if since > head {
         (0, true)
@@ -695,9 +749,12 @@ fn start_from(state: &State, since: i64) -> (i64, bool) {
 
 fn after(state: &State, since: i64) -> rusqlite::Result<(Vec<Value>, i64)> {
     let db = state.db.lock().expect("db");
-    let mut select = db.prepare_cached(
-        "SELECT seq, collection, key, field, value, clock FROM changes WHERE seq > ?1 ORDER BY seq LIMIT ?2",
-    )?;
+    let sql = if state.keep_latest {
+        "SELECT seq, collection, key, field, value, clock FROM latest WHERE seq > ?1 ORDER BY seq LIMIT ?2"
+    } else {
+        "SELECT seq, collection, key, field, value, clock FROM changes WHERE seq > ?1 ORDER BY seq LIMIT ?2"
+    };
+    let mut select = db.prepare_cached(sql)?;
     let mut cursor = since;
     let rows = select.query_map(params![since, PAGE], |row| {
         let seq: i64 = row.get(0)?;
@@ -770,20 +827,33 @@ fn event(name: &str, data: &Value) -> String {
     format!("event: {name}\ndata: {data}\n\n")
 }
 
+fn enqueue(listener: &mut Listener, text: String) {
+    if listener
+        .events
+        .as_ref()
+        .is_some_and(|events| events.try_send(text).is_err())
+    {
+        eprintln!("zubra-sync: live stream fell behind; closing it to resume from its cursor");
+        listener.events = None;
+    }
+}
+
 /// Changes to every live page, each getting what its scope lets through. A page that may see
 /// none of them hears nothing: an empty event (and its cursor) would tell it that another
-/// business on the log just wrote. A page whose stream is gone is dropped (the heartbeat finds
-/// one that only ever hears nothing).
+/// business on the log just wrote. A slow stream closes and resumes from its last cursor.
 fn broadcast_changes(state: &State, changes: &[Value], cursor: i64) {
     let mut listeners = state.listeners.lock().expect("listeners");
-    listeners.retain(|listener| {
+    for listener in listeners.iter_mut() {
+        if listener.events.is_none() {
+            continue;
+        }
         let visible = scoped(&state.reads, &listener.scope, changes);
         if visible.is_empty() {
-            return true;
+            continue;
         }
         let data = json!({ "changes": visible, "cursor": cursor });
-        listener.events.send(event("changes", &data)).is_ok()
-    });
+        enqueue(listener, event("changes", &data));
+    }
 }
 
 /// Presence to every other live page whose scope has the room's document.
@@ -792,12 +862,14 @@ fn broadcast_presence(state: &State, message: &Value, except_peer: &str) {
     let (collection, key) = room.split_once('/').unwrap_or((room, ""));
     let text = event("presence", message);
     let mut listeners = state.listeners.lock().expect("listeners");
-    listeners.retain(|listener| {
-        listener.peer == except_peer
-            || !state.reads.allows(collection)
-            || !in_scope(&listener.scope, collection, key)
-            || listener.events.send(text.clone()).is_ok()
-    });
+    for listener in listeners.iter_mut() {
+        if listener.peer != except_peer
+            && state.reads.allows(collection)
+            && in_scope(&listener.scope, collection, key)
+        {
+            enqueue(listener, text.clone());
+        }
+    }
 }
 
 /// The live stream. Subscribe first, then send the backlog page by page, so nothing pushed in
@@ -814,7 +886,7 @@ fn live(state: &State, request: Request, url: &str, extra: Vec<Header>) {
     let Ok(scope) = scope_of(url) else {
         return respond_json(request, extra, 400, json!({ "error": BAD_SCOPE }));
     };
-    let (events, receiver) = channel();
+    let (events, receiver) = sync_channel(MAX_PENDING_EVENTS);
     let id = {
         let mut next = state.next.lock().expect("next");
         *next += 1;
@@ -857,39 +929,16 @@ fn live(state: &State, request: Request, url: &str, extra: Vec<Header>) {
             key: key.clone(),
             rooms,
             scope: scope.clone(),
-            events: events.clone(),
+            events: Some(events),
         });
         key
     };
-    let _ = events.send("retry: 1000\n\n".into());
-    let _ = events.send(event("hello", &json!({ "key": key })));
     let (mut since, reset) = start_from(
         state,
         query(url, "since")
             .and_then(|v| v.parse().ok())
             .unwrap_or(0),
     );
-    let mut first = true;
-    while let Ok((changes, cursor)) = after(state, since) {
-        let empty = changes.is_empty();
-        // One event even when there's nothing (the client learns the cursor), and no empty one
-        // after the last full page.
-        if empty && !first {
-            break;
-        }
-        let mut data =
-            json!({ "changes": scoped(&state.reads, &scope, &changes), "cursor": cursor });
-        if reset && first {
-            data["reset"] = json!(true);
-        }
-        first = false;
-        let _ = events.send(event("changes", &data));
-        if empty || cursor == since {
-            break;
-        }
-        since = cursor;
-    }
-    drop(events);
     // The response is written by hand, an event at a time, flushed as it goes: a stream with no
     // length that lasts until the client leaves. A keep-alive comment when it's quiet is also
     // how a client that has gone is noticed (the write fails).
@@ -902,7 +951,40 @@ fn live(state: &State, request: Request, url: &str, extra: Vec<Header>) {
     head.push_str("\r\n");
     let mut writer = request.into_writer();
     let mut send = |text: &[u8]| writer.write_all(text).and_then(|_| writer.flush()).is_ok();
-    if send(head.as_bytes()) {
+    'stream: {
+        if !send(head.as_bytes())
+            || !send(b"retry: 1000\n\n")
+            || !send(event("hello", &json!({ "key": key })).as_bytes())
+        {
+            break 'stream;
+        }
+        let mut first = true;
+        loop {
+            let (changes, cursor) = match after(state, since) {
+                Ok(page) => page,
+                Err(error) => {
+                    eprintln!("zubra-sync: couldn't read the live backlog: {error}");
+                    break 'stream;
+                }
+            };
+            let empty = changes.is_empty();
+            if empty && !first {
+                break;
+            }
+            let mut data =
+                json!({ "changes": scoped(&state.reads, &scope, &changes), "cursor": cursor });
+            if reset && first {
+                data["reset"] = json!(true);
+            }
+            first = false;
+            if !send(event("changes", &data).as_bytes()) {
+                break 'stream;
+            }
+            if empty || cursor == since {
+                break;
+            }
+            since = cursor;
+        }
         loop {
             let text = match receiver.recv_timeout(state.keep_alive) {
                 Ok(text) => text,
@@ -936,5 +1018,81 @@ fn live(state: &State, request: Request, url: &str, extra: Vec<Header>) {
                 &peer,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc::TryRecvError;
+
+    #[test]
+    fn slow_listener_is_disconnected_without_losing_its_peer_or_rooms() {
+        let (events, receiver) = sync_channel(MAX_PENDING_EVENTS);
+        let mut listener = Listener {
+            id: 1,
+            peer: "peer".into(),
+            key: "key".into(),
+            rooms: HashSet::from(["tasks/one".into()]),
+            scope: None,
+            events: Some(events),
+        };
+        for n in 0..MAX_PENDING_EVENTS {
+            enqueue(&mut listener, n.to_string());
+        }
+        enqueue(&mut listener, "overflow".into());
+        assert!(listener.events.is_none());
+        assert!(listener.rooms.contains("tasks/one"));
+        for n in 0..MAX_PENDING_EVENTS {
+            assert_eq!(receiver.try_recv().unwrap(), n.to_string());
+        }
+        assert_eq!(receiver.try_recv(), Err(TryRecvError::Disconnected));
+    }
+
+    #[test]
+    fn a_slow_listener_can_recover_missed_changes_from_its_last_cursor() {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(
+            "CREATE TABLE changes (seq INTEGER PRIMARY KEY AUTOINCREMENT, collection TEXT NOT NULL, key TEXT NOT NULL, field TEXT NOT NULL, value TEXT, clock TEXT NOT NULL)",
+        ).unwrap();
+        let (events, receiver) = sync_channel(MAX_PENDING_EVENTS);
+        let state = State {
+            db: Mutex::new(db),
+            keep_latest: false,
+            listeners: Mutex::new(vec![Listener {
+                id: 1,
+                peer: "peer".into(),
+                key: "key".into(),
+                rooms: HashSet::new(),
+                scope: None,
+                events: Some(events),
+            }]),
+            released: Mutex::new(HashMap::new()),
+            next: Mutex::new(1),
+            origins: Vec::new(),
+            keep_alive: Duration::from_secs(15),
+            open: true,
+            reads: Reads::Everything,
+        };
+        for n in 0..=MAX_PENDING_EVENTS {
+            let change = json!({ "collection": "tasks", "key": "one", "field": "v", "value": n, "clock": "000000000000001-00000-a" });
+            let cursor = append(&state, std::slice::from_ref(&change)).unwrap();
+            broadcast_changes(&state, &[change], cursor);
+        }
+        let mut cursor = 0;
+        while let Ok(text) = receiver.try_recv() {
+            let data = text
+                .lines()
+                .find_map(|line| line.strip_prefix("data: "))
+                .unwrap();
+            cursor = serde_json::from_str::<Value>(data).unwrap()["cursor"]
+                .as_i64()
+                .unwrap();
+        }
+        assert_eq!(cursor, MAX_PENDING_EVENTS as i64);
+        assert_eq!(receiver.try_recv(), Err(TryRecvError::Disconnected));
+        let (remaining, head) = after(&state, cursor).unwrap();
+        assert_eq!(head, cursor + 1);
+        assert_eq!(remaining[0]["value"], json!(MAX_PENDING_EVENTS));
     }
 }

@@ -8,7 +8,7 @@ use zubra::{
 };
 
 fn with_script(script: &str) -> String {
-    format!("<script>\n  import {{ emit }} from '@zubra/runtime'\n{script}\n</script>\n<zb-picker value=\"\">\n  <p>{{value}}</p>\n</zb-picker>")
+    format!("<script>\n  import {{ emit }} from '@zubra/runtime'\n{script}\n</script>\n<my-picker value=\"\">\n  <p>{{value}}</p>\n</my-picker>")
 }
 
 fn js(source: &str) -> Result<String, Diagnostic> {
@@ -33,7 +33,7 @@ fn every_emit_call_declares_an_event_and_binds_emit_per_element() {
 
 #[test]
 fn an_aliased_import_is_bound_under_its_alias() {
-    let source = "<script>\n  import { emit as fire } from '@zubra/runtime'\n  const go = () => fire('go')\n</script>\n<zb-x><p>x</p></zb-x>";
+    let source = "<script>\n  import { emit as fire } from '@zubra/runtime'\n  const go = () => fire('go')\n</script>\n<my-x><p>x</p></my-x>";
     let output = js(source).unwrap();
     assert!(output.contains("const fire = $emit;"), "{output}");
     assert!(output.contains("events: [\"go\"]"), "{output}");
@@ -41,7 +41,7 @@ fn an_aliased_import_is_bound_under_its_alias() {
 
 #[test]
 fn emit_from_another_module_is_not_the_runtimes() {
-    let source = "<script>\n  import { emit } from './bus.js'\n  emit('ready')\n</script>\n<zb-x><p>x</p></zb-x>";
+    let source = "<script>\n  import { emit } from './bus.js'\n  emit('ready')\n</script>\n<my-x><p>x</p></my-x>";
     let output = js(source).unwrap();
     assert!(output.contains("events: [],"), "{output}");
     assert!(!output.contains("$emit;"), "{output}");
@@ -68,17 +68,17 @@ fn detail_types_come_from_the_values_passed() {
         );
     }
     assert!(
-        declarations.contains("export interface ZbPickerEventMap extends HTMLElementEventMap {")
+        declarations.contains("export interface MyPickerEventMap extends HTMLElementEventMap {")
     );
     assert!(declarations.contains(
-        "  addEventListener<K extends keyof ZbPickerEventMap>(type: K, listener: (this: ZbPicker, event: ZbPickerEventMap[K]) => unknown, options?: boolean | AddEventListenerOptions): void;"
+        "  addEventListener<K extends keyof MyPickerEventMap>(type: K, listener: (this: MyPicker, event: MyPickerEventMap[K]) => unknown, options?: boolean | AddEventListenerOptions): void;"
     ));
     assert!(declarations.contains("  removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void;"));
 }
 
 #[test]
 fn a_component_without_events_declares_no_event_map() {
-    let declarations = compile_declarations("<zb-x><p>x</p></zb-x>", "x.zb").unwrap();
+    let declarations = compile_declarations("<my-x><p>x</p></my-x>", "x.zb").unwrap();
     assert!(!declarations.contains("EventMap"), "{declarations}");
     assert!(!declarations.contains("addEventListener"), "{declarations}");
 }
@@ -130,7 +130,7 @@ fn the_compiler_must_see_every_event() {
         .contains("one detail"));
 }
 
-const DOCUMENTED: &str = "<!--\n  A picker.\n  @fires valuechange - The value changed.\n-->\n<script>\n  import { emit } from '@zubra/runtime'\n  const pick = (v) => emit('valuechange', v)\n</script>\n<zb-picker><p>x</p></zb-picker>";
+const DOCUMENTED: &str = "<!--\n  A picker.\n  @fires valuechange - The value changed.\n-->\n<script>\n  import { emit } from '@zubra/runtime'\n  const pick = (v) => emit('valuechange', v)\n</script>\n<my-picker><p>x</p></my-picker>";
 
 #[test]
 fn fires_tags_describe_events_in_the_manifest() {
@@ -193,13 +193,13 @@ fn fires_tags_must_match_the_events_the_code_fires() {
     );
 
     // Without any @fires, nothing needs documenting.
-    let plain = "<!-- Described, but no @fires. -->\n<script>\n  import { emit } from '@zubra/runtime'\n  emit('open')\n</script>\n<zb-x><p>x</p></zb-x>";
+    let plain = "<!-- Described, but no @fires. -->\n<script>\n  import { emit } from '@zubra/runtime'\n  emit('open')\n</script>\n<my-x><p>x</p></my-x>";
     assert!(js(plain).is_ok());
 }
 
 #[test]
 fn a_listener_for_a_near_miss_of_a_childs_event_is_a_typo() {
-    let child = "<script>\n  import { emit } from '@zubra/runtime'\n  emit('valuechange', 1)\n  emit('changes')\n</script>\n<zb-picker><p>x</p></zb-picker>";
+    let child = "<script>\n  import { emit } from '@zubra/runtime'\n  emit('valuechange', 1)\n  emit('changes')\n</script>\n<my-picker><p>x</p></my-picker>";
     let files: HashMap<&str, &str> = HashMap::from([("./picker.zb", child)]);
     let loader = |specifier: &str, _: &str| {
         files
@@ -208,14 +208,14 @@ fn a_listener_for_a_near_miss_of_a_childs_event_is_a_typo() {
             .ok_or_else(|| "not found".to_owned())
     };
     let parent = |listener: &str| {
-        format!("<script>\n  import './picker.zb'\n  function on() {{}}\n</script>\n<zb-form><zb-picker {listener}={{on}}></zb-picker></zb-form>")
+        format!("<script>\n  import './picker.zb'\n  function on() {{}}\n</script>\n<my-form><my-picker {listener}={{on}}></my-picker></my-form>")
     };
     let compile = |source: &str| compile_html_with(source, "form.zb", "{}", "{}", &loader);
     let error = compile(&parent("onvaluchange")).unwrap_err();
     assert!(
         error
             .message
-            .contains("<zb-picker> never fires `valuchange`"),
+            .contains("<my-picker> never fires `valuchange`"),
         "{}",
         error.message
     );
@@ -229,15 +229,15 @@ fn a_listener_for_a_near_miss_of_a_childs_event_is_a_typo() {
 #[test]
 fn framework_declarations_type_the_wrappers() {
     use zubra::{compile_declarations_for, Framework};
-    let source = "<script>\n  import { emit } from '@zubra/runtime'\n  emit('beforevaluechange', 1)\n  emit('valuechange', 1)\n  emit('open')\n</script>\n<zb-picker value={0} label=\"\"><p>x</p></zb-picker>";
+    let source = "<script>\n  import { emit } from '@zubra/runtime'\n  emit('beforevaluechange', 1)\n  emit('valuechange', 1)\n  emit('open')\n</script>\n<my-picker value={0} label=\"\"><p>x</p></my-picker>";
     let react = compile_declarations_for(source, "picker.zb", Framework::React).unwrap();
     assert!(react.starts_with("// Generated by zubra from picker.zb. Do not edit.\n\nimport type * as React from \"react\";"), "{react}");
     for expected in [
-        "  onBeforeValueChange?: (event: ZbPickerEventMap[\"beforevaluechange\"]) => void;",
-        "  onValueChange?: (event: ZbPickerEventMap[\"valuechange\"]) => void;",
-        "  onOpen?: (event: ZbPickerEventMap[\"open\"]) => void;",
-        "export interface ZbPickerReactProps extends Omit<React.HTMLAttributes<ZbPicker>, \"value\" | \"label\" | \"onBeforeValueChange\" | \"onValueChange\" | \"onOpen\"> {",
-        "export default ZbPickerReact;",
+        "  onBeforeValueChange?: (event: MyPickerEventMap[\"beforevaluechange\"]) => void;",
+        "  onValueChange?: (event: MyPickerEventMap[\"valuechange\"]) => void;",
+        "  onOpen?: (event: MyPickerEventMap[\"open\"]) => void;",
+        "export interface MyPickerReactProps extends Omit<React.HTMLAttributes<MyPicker>, \"value\" | \"label\" | \"onBeforeValueChange\" | \"onValueChange\" | \"onOpen\"> {",
+        "export default MyPickerReact;",
     ] {
         assert!(react.contains(expected), "missing {expected:?} in\n{react}");
     }
@@ -248,7 +248,7 @@ fn framework_declarations_type_the_wrappers() {
     );
     assert!(vue.contains("\"update:value\": (value: number) => true; \"update:modelValue\": (value: number) => true }>;"), "{vue}");
     let plain = compile_declarations_for(source, "picker.zb", Framework::None).unwrap();
-    assert!(plain.contains("export default ZbPicker;\n"), "{plain}");
+    assert!(plain.contains("export default MyPicker;\n"), "{plain}");
 }
 
 // ---- types said in the description: `@prop {Type} name` and `@fires {Type} name` (#270)
@@ -349,7 +349,7 @@ fn a_fires_tag_can_say_what_the_detail_is() {
         serde_json::json!({ "name": "bid", "type": { "text": "CustomEvent<number | \"nil\" | \"blind-nil\">" }, "description": "A bid was chosen." })
     );
     // A two-way prop's event carries the prop's type, unless its tag says otherwise.
-    let model = "<!--\n  @fires {string | null} valuechange - Changed.\n-->\n<zb-field value:model=\"\">\n  <input value={value} oninput={(event) => (value = event.target.value)}>\n</zb-field>";
+    let model = "<!--\n  @fires {string | null} valuechange - Changed.\n-->\n<my-field value:model=\"\">\n  <input value={value} oninput={(event) => (value = event.target.value)}>\n</my-field>";
     let declarations = compile_declarations(model, "field.zb").unwrap();
     assert!(
         declarations.contains("  valuechange: CustomEvent<string | null>;"),
@@ -411,7 +411,7 @@ fn a_tag_that_cannot_be_right_is_an_error() {
     let (text, _) = message(&CARD.replace("\"blind-nil\"} bid", "\"blind-nil\" bid"));
     assert!(text.contains("is never closed"), "{text}");
     // Typed in the script as well: one of them is wrong, sooner or later.
-    let twice = "<!--\n  @prop {number} size\n-->\n<script lang=\"ts\">\n  declare const size: number | null\n</script>\n<zb-x size={1}><p>{size}</p></zb-x>";
+    let twice = "<!--\n  @prop {number} size\n-->\n<script lang=\"ts\">\n  declare const size: number | null\n</script>\n<my-x size={1}><p>{size}</p></my-x>";
     let error = js(twice).unwrap_err();
     assert!(
         error.message.contains("`size` is given a type twice"),

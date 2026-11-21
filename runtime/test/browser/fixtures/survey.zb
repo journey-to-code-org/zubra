@@ -10,5 +10,5 @@
   }
 </script>
 <zb-survey>
-  <zb-rating onvaluechange={saved}></zb-rating><p>{last}</p>
+  <my-rating onvaluechange={saved}></my-rating><p>{last}</p>
 </zb-survey>

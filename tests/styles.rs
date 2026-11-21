@@ -4,16 +4,16 @@ use zubra::{
     compile, compile_css, compile_html_with, compile_js, compile_js_for_bundler, StyleImports,
 };
 
-const CARD: &str = "<!-- A card. -->\n<style layer=\"ui\">\n  h2 { color: red }\n</style>\n<script>\n  const headingDefault = \"Card\"\n</script>\n<zb-card heading={headingDefault}>\n  <h2>{heading}</h2><zb-slot></zb-slot>\n</zb-card>";
+const CARD: &str = "<!-- A card. -->\n<style layer=\"ui\">\n  h2 { color: red }\n</style>\n<script>\n  const headingDefault = \"Card\"\n</script>\n<my-card heading={headingDefault}>\n  <h2>{heading}</h2><zb-slot></zb-slot>\n</my-card>";
 
 #[test]
 fn style_and_script_come_in_either_order_and_the_description_is_kept() {
     for source in [
         CARD.to_owned(),
-        "<!-- A card. -->\n<script>\n  const headingDefault = \"Card\"\n</script>\n<style layer=\"ui\">\n  h2 { color: red }\n</style>\n<zb-card heading={headingDefault}>\n  <h2>{heading}</h2><zb-slot></zb-slot>\n</zb-card>".to_owned(),
+        "<!-- A card. -->\n<script>\n  const headingDefault = \"Card\"\n</script>\n<style layer=\"ui\">\n  h2 { color: red }\n</style>\n<my-card heading={headingDefault}>\n  <h2>{heading}</h2><zb-slot></zb-slot>\n</my-card>".to_owned(),
     ] {
         let css = compile_css(&source).unwrap();
-        assert!(css.contains("@layer ui {\n@scope (zb-card) to ([data-zb-slotted=\"zb-card\"]) {\n  h2 { color: red }\n}\n}"), "{css}");
+        assert!(css.contains("@layer ui {\n@scope (my-card) to ([data-zb-slotted=\"my-card\"]) {\n  h2 { color: red }\n}\n}"), "{css}");
         let manifest = zubra::compile_manifest(&source, "card.js").unwrap();
         assert!(manifest.contains("\"description\": \"A card.\""), "{manifest}");
     }
@@ -23,28 +23,28 @@ fn style_and_script_come_in_either_order_and_the_description_is_kept() {
 fn style_attributes_are_checked() {
     for (source, expected) in [
         (
-            "<style scoped=\"x\"></style><zb-x><p>x</p></zb-x>",
+            "<style scoped=\"x\"></style><my-x><p>x</p></my-x>",
             "not `scoped`",
         ),
         (
-            "<style layer=\"a b\"></style><zb-x><p>x</p></zb-x>",
+            "<style layer=\"a b\"></style><my-x><p>x</p></my-x>",
             "isn't a cascade layer name",
         ),
         (
-            "<style lang=\"s c\"></style><zb-x><p>x</p></zb-x>",
+            "<style lang=\"s c\"></style><my-x><p>x</p></my-x>",
             "isn't a stylesheet language",
         ),
         (
-            "<style layer=x></style><zb-x><p>x</p></zb-x>",
+            "<style layer=x></style><my-x><p>x</p></my-x>",
             "needs a quoted value",
         ),
         (
-            "<style></style><style></style><zb-x><p>x</p></zb-x>",
+            "<style></style><style></style><my-x><p>x</p></my-x>",
             "one <style>",
         ),
-        ("<style>p {}<zb-x><p>x</p></zb-x>", "missing </style>"),
+        ("<style>p {}<my-x><p>x</p></my-x>", "missing </style>"),
         (
-            "<zb-x><style>p {}</style></zb-x>",
+            "<my-x><style>p {}</style></my-x>",
             "<style> elements are not supported inside a template",
         ),
     ] {
@@ -56,9 +56,9 @@ fn style_attributes_are_checked() {
         );
     }
     let css =
-        compile_css("<style layer=\"none\">p { margin: 0 }</style><zb-x><p>x</p></zb-x>").unwrap();
+        compile_css("<style layer=\"none\">p { margin: 0 }</style><my-x><p>x</p></my-x>").unwrap();
     assert!(!css.contains("@layer"), "{css}");
-    assert!(compile_css("<zb-x><p>x</p></zb-x>").unwrap().is_empty());
+    assert!(compile_css("<my-x><p>x</p></my-x>").unwrap().is_empty());
 }
 
 #[test]
@@ -71,14 +71,14 @@ fn html_marks_content_slotted_into_styled_components_only() {
                 .map(|source| ("card.zb".to_owned(), source.clone()))
                 .ok_or_else(|| "missing".to_owned())
         };
-        compile_html_with("<script>import './card.zb'</script>\n<zb-page><zb-card><p>mine</p>text</zb-card></zb-page>", "page.zb", "{}", "{}", &loader).unwrap()
+        compile_html_with("<script>import './card.zb'</script>\n<my-page><my-card><p>mine</p>text</my-card></my-page>", "page.zb", "{}", "{}", &loader).unwrap()
     };
     let styled = page(CARD);
     assert!(
-        styled.contains("<?zb [!?><p data-zb-slotted=\"zb-card\">mine</p>text<?zb ]?>"),
+        styled.contains("<?zb [!?><p data-zb-slotted=\"my-card\">mine</p>text<?zb ]?>"),
         "{styled}"
     );
-    let plain = page("<zb-card><zb-slot></zb-slot></zb-card>");
+    let plain = page("<my-card><zb-slot></zb-slot></my-card>");
     assert!(!plain.contains("data-zb-slotted"), "{plain}");
     // Light-DOM styles aren't repeated in the HTML: the page gets them once, from --emit css.
     assert!(!styled.contains("<style"), "{styled}");
@@ -86,16 +86,16 @@ fn html_marks_content_slotted_into_styled_components_only() {
 
 #[test]
 fn shadow_components_carry_their_styles_in_the_shadow_root() {
-    let source = "<style>:host { display: block }</style>\n<zb-panel shadow><h3>x</h3></zb-panel>";
+    let source = "<style>:host { display: block }</style>\n<my-panel shadow><h3>x</h3></my-panel>";
     let html = compile(source, "{}").unwrap();
-    assert!(html.starts_with("<zb-panel><template shadowrootmode=\"open\"><style data-zubra>@layer theme, base, components, utilities;\n@layer components {\n:host { display: block }\n}\n</style><h3>x</h3></template>"), "{html}");
+    assert!(html.starts_with("<my-panel><template shadowrootmode=\"open\"><style data-zubra>@layer theme, base, components, utilities;\n@layer components {\n:host { display: block }\n}\n</style><h3>x</h3></template>"), "{html}");
 }
 
 #[test]
 fn javascript_inlines_the_stylesheet_or_imports_it_through_the_bundler() {
     let inline = compile_js(CARD, "@zubra/runtime", "card.zb").unwrap();
     assert!(
-        inline.contains("  styled: true,\n  styles: \"@layer ui {\\n@scope (zb-card)"),
+        inline.contains("  styled: true,\n  styles: \"@layer ui {\\n@scope (my-card)"),
         "{inline}"
     );
 
@@ -117,7 +117,7 @@ fn javascript_inlines_the_stylesheet_or_imports_it_through_the_bundler() {
         "the bundler adds the CSS to the page, its only copy; a shadow root gets the rules from there: {light}"
     );
     let shadow = compile_js_for_bundler(
-        "<style>p{}</style><zb-panel shadow><p>x</p></zb-panel>",
+        "<style>p{}</style><my-panel shadow><p>x</p></my-panel>",
         "panel.zb",
         "@zubra/runtime",
         imports,
@@ -133,7 +133,7 @@ fn javascript_inlines_the_stylesheet_or_imports_it_through_the_bundler() {
         "{shadow}"
     );
 
-    let none = compile_js("<zb-x><p>x</p></zb-x>", "@zubra/runtime", "x.zb").unwrap();
+    let none = compile_js("<my-x><p>x</p></my-x>", "@zubra/runtime", "x.zb").unwrap();
     assert!(
         !none.contains("styled") && !none.contains("styles"),
         "{none}"
@@ -142,7 +142,7 @@ fn javascript_inlines_the_stylesheet_or_imports_it_through_the_bundler() {
 
 #[test]
 fn preprocessor_languages_need_a_bundler() {
-    let source = "<style lang=\"scss\">$c: red; p { color: $c }</style>\n<zb-x><p>x</p></zb-x>";
+    let source = "<style lang=\"scss\">$c: red; p { color: $c }</style>\n<my-x><p>x</p></my-x>";
     for error in [
         compile(source, "{}").unwrap_err(),
         compile_js(source, "@zubra/runtime", "x.zb").unwrap_err(),
@@ -167,7 +167,7 @@ fn server_rendered_slot_html_is_marked_slotted_too() {
     use zubra::{compile_html_from, SlotSource};
     let loader = |_: &str, _: &str| -> Result<(String, String), String> { Err("none".into()) };
     let source =
-        "<style>p { color: red }</style>\n<zb-card><p>Own</p><zb-slot></zb-slot></zb-card>";
+        "<style>p { color: red }</style>\n<my-card><p>Own</p><zb-slot></zb-slot></my-card>";
     let html = compile_html_from(
         source,
         "card.zb",
@@ -178,7 +178,7 @@ fn server_rendered_slot_html_is_marked_slotted_too() {
     )
     .unwrap();
     assert!(
-        html.contains(r#"<p class="x" data-zb-slotted="zb-card">{theirs}</p>"#),
+        html.contains(r#"<p class="x" data-zb-slotted="my-card">{theirs}</p>"#),
         "{html}"
     );
 }

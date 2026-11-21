@@ -3,21 +3,20 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createActions as createNode } from '../src/index.js';
 import { createActions as createEdge } from '../src/edge.js';
 import { buildActions } from '../src/build.js';
 
-const components = new URL('./components', import.meta.url).pathname;
+const components = fileURLToPath(new URL('./components', import.meta.url));
 let dir;
 let node;
 let edge;
 
 before(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'zubra-actions-edge-'));
+  dir = mkdtempSync(join(fileURLToPath(new URL('..', import.meta.url)), '.tmp-edge-'));
   await buildActions({ components, out: join(dir, 'actions') });
   const { actions } = await import(pathToFileURL(join(dir, 'actions', 'index.js')).href);
   const options = { onError() {}, context: ({ request }) => ({ who: request.headers.get('x-user') }), maxBytes: 300 };
@@ -126,7 +125,7 @@ test('the build: one file per component with server functions, imports that stil
 });
 
 test('the build reaches a component in a nested folder, its static and dynamic imports included, and both entries agree', async () => {
-  const nested = new URL('./nested', import.meta.url).pathname;
+  const nested = fileURLToPath(new URL('./nested', import.meta.url));
   const out = join(dir, 'nested-out');
   const routes = await buildActions({ components: nested, out });
   assert.deepEqual(routes, ['/_zb/action/note-form/save']);
@@ -145,20 +144,20 @@ test('the build reaches a component in a nested folder, its static and dynamic i
 
 test('the build refuses two components defining one URL, and the command says how to use it', async () => {
   const src = mkdirp(join(dir, 'twice'));
-  const source = readFileSync(join(components, 'login-form.zb'), 'utf8').replace("'../users.js'", `'${join(components, '..', 'users.js')}'`);
+  const source = readFileSync(join(components, 'login-form.zb'), 'utf8');
   writeFileSync(join(src, 'login-form.zb'), source);
   mkdirp(join(src, 'again'));
   writeFileSync(join(src, 'again', 'login-form.zb'), source);
   await assert.rejects(buildActions({ components: src, out: join(dir, 'twice-out') }), /two components define \/_zb\/action\/login-form\/login/);
-  const bin = new URL('../bin/zubra-actions.js', import.meta.url).pathname;
+  const bin = fileURLToPath(new URL('../bin/zubra-actions.js', import.meta.url));
   assert.throws(() => execFileSync(process.execPath, [bin, 'build', components], { stdio: 'pipe' }), (error) => /Usage: zubra-actions build/.test(error.stderr) && error.status === 2);
   const output = execFileSync(process.execPath, [bin, 'build', components, '--out', join(dir, 'cli')], { encoding: 'utf8' });
-  assert.match(output, /^3 actions → .*cli\/index\.js/);
+  assert.match(output, /^3 actions → .*cli[\\/]index\.js/);
   assert.ok(existsSync(join(dir, 'cli', 'login-form.server.js')));
 });
 
 function mkdirp(path) {
-  execFileSync('mkdir', ['-p', path]);
+  mkdirSync(path, { recursive: true });
   return path;
 }
 

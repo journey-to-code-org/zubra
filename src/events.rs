@@ -57,6 +57,7 @@ fn braced(text: &str) -> Option<(&str, &str)> {
 fn tag<'a>(kind: &str, rest: &'a str, span: Span) -> Result<Tag<'a>, Diagnostic> {
     let unclosed = || {
         Diagnostic::new(
+            crate::codes::DOC_TYPE,
             span,
             format!("`@{kind} {}`: the type's `{{` is never closed", rest.trim()),
         )
@@ -80,7 +81,7 @@ fn tag<'a>(kind: &str, rest: &'a str, span: Span) -> Result<Tag<'a>, Diagnostic>
     }
     if let Some(text) = declared {
         if !crate::typescript::is_type(text) {
-            return Err(Diagnostic::new(
+            return Err(Diagnostic::new(crate::codes::DOC_TYPE,
                 span,
                 format!("`@{kind} {{{text}}} {name}`: `{text}` isn't a TypeScript type"),
             )
@@ -123,7 +124,7 @@ pub fn prop_docs(
         if !props.iter().any(|prop| prop.name == name) {
             let names: Vec<&str> = props.iter().map(|prop| prop.name.as_str()).collect();
             return Err(crate::validate::with_suggestion(
-                Diagnostic::new(
+                Diagnostic::new(crate::codes::DOC_UNKNOWN_PROP,
                     span,
                     format!("the description documents `@prop {name}`, but there's no prop `{name}` on the host tag"),
                 ),
@@ -133,6 +134,7 @@ pub fn prop_docs(
         }
         if docs.iter().any(|doc| doc.name == name) {
             return Err(Diagnostic::new(
+                crate::codes::DOC_PROP_TWICE,
                 span,
                 format!("the description documents `@prop {name}` twice"),
             ));
@@ -140,7 +142,7 @@ pub fn prop_docs(
         if declared.is_some() {
             if let Some((_, _, typed)) = script.prop_types.iter().find(|(prop, _, _)| prop == name)
             {
-                return Err(Diagnostic::new(
+                return Err(Diagnostic::new(crate::codes::PROP_TYPED_TWICE,
                     *typed,
                     format!("`{name}` is given a type twice: here, and by `@prop {{…}} {name}` in the description"),
                 )
@@ -215,14 +217,14 @@ pub fn events(
             about,
         } = tag("fires", rest, component.tag_span)?;
         if !is_event_name(name) {
-            return Err(Diagnostic::new(
+            return Err(Diagnostic::new(crate::codes::EVENT_NAME,
                 component.tag_span,
                 format!("`@fires {name}`: event names are lowercase letters and digits"),
             )
             .with_help("lowercase names are what HTML `on…` attributes and every framework's template syntax can listen for"));
         }
         let Some(event) = events.iter_mut().find(|event| event.name == name) else {
-            let error = Diagnostic::new(
+            let error = Diagnostic::new(crate::codes::DOC_EVENT_NEVER_EMITTED,
                 component.tag_span,
                 format!("the description documents `@fires {name}`, but the script never emits `{name}`"),
             );
@@ -251,6 +253,7 @@ pub fn events(
                 .find(|emit| emit.name == missing.name)
                 .map_or(component.tag_span, |emit| emit.span);
             return Err(Diagnostic::new(
+                crate::codes::EVENT_UNDOCUMENTED,
                 span,
                 format!(
                     "`{}` is emitted but not documented; add `@fires {} - …` to the description",

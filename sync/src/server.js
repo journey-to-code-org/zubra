@@ -13,11 +13,12 @@
 // `write` is true for the last two. A 'change' also has the `field` and `value` it sets, so an
 // app can keep fields (or whole collections) for the server alone.
 //
-// Without `authorize`, pages may neither read nor write: pull and live send them nothing, and
-// every push, presence and signal is refused with a 403 saying so. Say who may see and change
+// Without `authorize`, pages may neither read nor write: pull and live are refused, as are pushes,
+// presence and signals. Say who may see and change
 // what; `authorize: allowReads(['notes'])` for collections anyone may read and nobody may write
-// (`allowReads()` for every collection), or, for a page everyone may edit (a shared board on a
-// trusted network), `authorize: allowAnyone`. The server's own `write()` is never asked.
+// (`allowReads()` for every collection, or `({ write }) => !write`), or, for a page everyone may
+// edit (a shared board on a trusted network), `authorize: allowAnyone`. The server's own
+// `write()` is never asked.
 //
 // The server can take part too. `await sync.documents()` is every document as the devices see
 // it (last writer wins, per field), kept current; `sync.write(collection, key, fields)` writes as
@@ -88,6 +89,9 @@ export function memoryLog({ keep = 'all' } = {}) {
 
 function latestInMemory() {
   const rows = new Map(); // collection, key, field → { change, seq }
+  // Sequence order permits a binary search by cursor. Rewrites leave tombstones until compaction.
+  let ordered = [];
+  let obsolete = 0;
   let seq = 0;
   return {
     async append(more) {
@@ -95,13 +99,38 @@ function latestInMemory() {
         const id = JSON.stringify([change.collection, change.key, change.field]);
         const had = rows.get(id);
         if (had && had.change.clock >= change.clock) continue;
-        rows.set(id, { change: structuredClone(change), seq: ++seq });
+        const row = { change: structuredClone(change), seq: ++seq, live: true };
+        if (had) {
+          had.live = false;
+          obsolete++;
+        }
+        rows.set(id, row);
+        ordered.push(row);
+      }
+      if (obsolete > rows.size) {
+        ordered = ordered.filter((row) => row.live);
+        obsolete = 0;
       }
       return seq;
     },
     async after(cursor, limit = 1000) {
       const from = Number(cursor) || 0;
-      const page = [...rows.values()].filter((row) => row.seq > from).sort((a, b) => a.seq - b.seq).slice(0, limit);
+      let low = 0;
+      let high = ordered.length;
+      while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        if (ordered[mid].seq <= from) low = mid + 1;
+        else high = mid;
+      }
+      const count = Number(limit);
+      const max = Number.isNaN(count) ? 0 : Math.trunc(count);
+      let page = [];
+      for (let i = low; i < ordered.length; i++) {
+        if (max === 0) break;
+        if (ordered[i].live) page.push(ordered[i]);
+        if (max > 0 && page.length >= max) break;
+      }
+      if (max < 0) page = page.slice(0, max);
       return { changes: page.map((row) => structuredClone(row.change)), cursor: page.length ? page[page.length - 1].seq : from };
     },
     head: async () => seq,
@@ -251,7 +280,8 @@ export function allowReads(collections) {
 
 /** The default, since 6.0: pages read nothing and write nothing until `authorize` says who may. */
 const closed = () => false;
-const NO_AUTHORIZE = 'This sync server takes no writes from pages until it is told who may make them: pass createSyncServer({ authorize }) (or authorize: allowAnyone, for a page anyone may edit). See docs/sync.md, "Who may read and write".';
+const NO_AUTHORIZE = 'This sync server takes no reads or writes from pages until it is told who may access them: pass createSyncServer({ authorize }) (or authorize: allowAnyone, for a page anyone may edit). See docs/sync.md, "Who may read and write".';
+const NO_WRITES = 'This sync server takes no writes from pages until it is told who may make them: pass createSyncServer({ authorize }) (or authorize: allowAnyone, for a page anyone may edit). See docs/sync.md, "Who may read and write".';
 
 /** How many of a collection's documents `notice` counts, at most. */
 const NOTICE_KEYS = 1000;
@@ -265,8 +295,8 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
   if (!/^[\w-]{1,40}$/.test(device)) throw new Error('createSyncServer: `device` names the server in its clocks: letters, digits, - and _');
   if (given !== undefined && typeof given !== 'function') throw new TypeError('createSyncServer: `authorize` is a function ({ request, collection, key, field, value, write, kind }) => boolean');
   const authorize = given ?? closed;
-  /** What a refused write says: why, when nothing given takes writes; the app's own refusal otherwise. */
-  const refused = (fallback) => json(403, { error: given && !given[READS_ONLY] ? fallback : NO_AUTHORIZE });
+  /** Explain the closed-by-default policy, or preserve the app's own refusal. */
+  const refused = (fallback) => json(403, { error: !given ? NO_AUTHORIZE : given[READS_ONLY] ? NO_WRITES : fallback });
   const base = mount.replace(/\/$/, '');
   // Appends, one after another, so the log's order is the order they were made in.
   let appending = Promise.resolve();
@@ -522,6 +552,8 @@ export function createSyncServer({ log = memoryLog(), mount = MOUNT, authorize: 
   }
 
   async function answer(request, url) {
+    if (!given && ((request.method === 'GET' && (url.pathname === `${base}/pull` || url.pathname === `${base}/live`)) ||
+      (request.method === 'POST' && (url.pathname === `${base}/push` || url.pathname === `${base}/presence` || url.pathname === `${base}/signal`)))) return refused('Not yours');
     if (url.pathname === `${base}/push` && request.method === 'POST') {
       if (!sameOrigin(request)) return json(403, { error: 'Cross-site writes are refused' });
       const read = await readJson(request);

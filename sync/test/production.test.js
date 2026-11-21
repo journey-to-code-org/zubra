@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { BROWSER } from '../scripts/build-production.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -17,8 +17,8 @@ test('dist/production is built from the current src (npm run build)', () => {
 
 test('each browser module keeps its exports and imports, and is about half the bytes', async () => {
   for (const file of BROWSER) {
-    const source = await import(join(root, 'src', file));
-    const built = await import(join(root, 'dist/production', file));
+    const source = await import(pathToFileURL(join(root, 'src', file)).href);
+    const built = await import(pathToFileURL(join(root, 'dist/production', file)).href);
     assert.deepEqual(Object.keys(built).sort(), Object.keys(source).sort(), file);
     // (Comment lines left out: the source's own examples import things too.)
     const imports = (code) => [...code.replace(/^\s*\/\/.*$/gm, '').matchAll(/\b(?:from\s*|import\s*\(\s*)["']([^"']+)["']/g)].map((match) => match[1]).sort();

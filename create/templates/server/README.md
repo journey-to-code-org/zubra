@@ -11,10 +11,11 @@ npm test        # starts the server and uses the page in Chromium, with JavaScri
 
 ## What's here
 
-- `server.js` is the whole server, about sixty lines: `@zubra/server` renders the page and serves the components' browser modules, and `@zubra/actions` runs the functions the components mark `'use server'`.
+- `server.js` is the whole server, about ninety lines with its comments (sixty without): `@zubra/server` renders the page and serves the components' browser modules, and `@zubra/actions` runs the functions the components mark `'use server'`.
 - `src/components/` holds the components: one `.zb` file each, with its script, styles and template. The server compiles them as they're asked for.
 - `src/notes.js` is the data, an array in memory. Put a database behind it.
 - The page works before its JavaScript arrives, and the form works with JavaScript off. `npm test` checks both.
+- A recent `@zubra/server` compresses the page as well as modules. Older releases serve the page uncompressed and print a warning; upgrade or configure your proxy to compress it.
 - `AGENTS.md` and `skills/` tell a coding agent how to write the components and the server, so it doesn't have to learn Zubra from the source. `AGENTS.md` is also the quickest summary for a person.
 
 ## The page you see
@@ -35,4 +36,4 @@ Each component is an example to read and copy from:
 
 `zubra-welcome.zb`, `zubra-examples.zb` and `example-card.zb` are only the starter page. Delete them, take them out of `home()` in `server.js`, and delete the examples test in `test/app.test.js`. Then add your own: a new `src/components/my-thing.zb`, rendered with `page.render('my-thing', props)`. `npx zubra add --list` shows tested, accessible components you can copy in to start from.
 
-For more than one page, `@zubra/router` adds routes, layouts and a `load` per page to this same server: see the [tutorial](https://zubra-js.github.io/zubra/docs/).
+For more than one page, `@zubra/router` adds routes, layouts and a `load` per page to this same server: see [the router's page](https://zubra-js.github.io/zubra/docs/router/) in the documentation.

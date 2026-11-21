@@ -24,7 +24,9 @@
 
 mod ast;
 mod bundle;
+pub mod cli;
 mod client;
+pub mod codes;
 mod components;
 mod convert;
 mod convert_element;
@@ -71,6 +73,7 @@ pub use refactor::{extract, Edit, Extraction};
 fn parse_json(text: &str, what: &str) -> Result<serde_json::Value, Diagnostic> {
     serde_json::from_str(text).map_err(|error| {
         Diagnostic::new(
+            crate::codes::INVALID_JSON,
             Span::new(error.line(), error.column()),
             format!("invalid {what} JSON: {:?}", error.classify()),
         )
@@ -275,6 +278,7 @@ pub fn convert_as_zb(conversion: &mut convert::Conversion) -> Option<Diagnostic>
 fn read(path: &str) -> Result<String, Diagnostic> {
     std::fs::read_to_string(path).map_err(|error| {
         Diagnostic::new(
+            crate::codes::SOURCE_UNREADABLE,
             Span::new(1, 1),
             format!("{path}: unable to read source: {error}"),
         )
@@ -452,7 +456,7 @@ pub fn describe_gaps(gaps: Vec<validate::Gap>) -> Vec<(Diagnostic, bool)> {
                 );
             }
             let help = "the server renders literals, props, member access, arithmetic, comparisons, logic, ternaries, template literals, the script's functions (loops and `if` included) and deterministic built-ins (the list: https://zubra-js.github.io/zubra/docs/javascript-support/); compute the rest before rendering and pass it as a prop";
-            (Diagnostic::new(span, message).with_help(help), form)
+            (Diagnostic::new(crate::codes::SERVER_GAP, span, message).with_help(help), form)
         })
         .collect();
     found.sort_by_key(|(diagnostic, _)| (diagnostic.span.line, diagnostic.span.column));
@@ -523,13 +527,18 @@ fn html(
     slots: &serde_json::Value,
     slot_source: SlotSource,
 ) -> Result<String, Diagnostic> {
-    let slot_values = slots
-        .as_object()
-        .ok_or_else(|| Diagnostic::new(Span::new(1, 1), "component slots must be a JSON object"))?;
+    let slot_values = slots.as_object().ok_or_else(|| {
+        Diagnostic::new(
+            crate::codes::SLOTS_NOT_OBJECT,
+            Span::new(1, 1),
+            "component slots must be a JSON object",
+        )
+    })?;
     let mut slot_nodes = std::collections::HashMap::new();
     for (name, source) in slot_values {
         let source = source.as_str().ok_or_else(|| {
             Diagnostic::new(
+                crate::codes::SLOT_NOT_STRING,
                 Span::new(1, 1),
                 format!("slot `{name}` must contain a zubra template string"),
             )
@@ -909,7 +918,7 @@ fn dropped_load_keys(component: &ast::ComponentAst) -> Vec<Diagnostic> {
         .iter()
         .filter(|(key, _)| key != "title" && !component.props.iter().any(|prop| &prop.name == key))
         .map(|(key, span)| {
-            Diagnostic::new(
+            Diagnostic::new(crate::codes::LOAD_RETURNS_UNDECLARED,
                 *span,
                 format!(
                     "`load` returns `{key}`, which <{}> doesn't declare as a prop, so it never reaches the page",
@@ -922,6 +931,77 @@ fn dropped_load_keys(component: &ast::ComponentAst) -> Vec<Diagnostic> {
             ))
         })
         .collect()
+}
+
+/// `<TodoList />` in a `.zb` template: a JSX habit, where it names a component; here it is an
+/// element nothing defines (a custom element's name is lowercase, with a hyphen). Not in JSX
+/// components, where a capitalized tag is a function component.
+fn pascal_case_elements(nodes: &[ast::Node]) -> Vec<Diagnostic> {
+    fn walk(nodes: &[ast::Node], found: &mut Vec<Diagnostic>) {
+        for node in nodes {
+            match node {
+                ast::Node::Element(element) => {
+                    let name = &element.name;
+                    if name.starts_with(|character: char| character.is_ascii_uppercase())
+                        && name.chars().any(|character| character.is_ascii_lowercase())
+                        && name
+                            .chars()
+                            .all(|character| character.is_ascii_alphanumeric())
+                    {
+                        let mut kebab = String::new();
+                        for (index, character) in name.chars().enumerate() {
+                            if character.is_ascii_uppercase() && index > 0 {
+                                kebab.push('-');
+                            }
+                            kebab.push(character.to_ascii_lowercase());
+                        }
+                        let help = if kebab.contains('-') {
+                            format!("did you mean `<{kebab}>` (import './{kebab}.zb')?")
+                        } else {
+                            format!("name the component with a hyphen, as `<app-{kebab}>`, and import its file")
+                        };
+                        found.push(
+                            Diagnostic::new(
+                                crate::codes::INVALID_TAG_NAME,
+                                element.span,
+                                format!("<{name}> isn't a component here: custom element names are lowercase with a hyphen"),
+                            )
+                            .with_help(help),
+                        );
+                    }
+                    walk(&element.children, found);
+                }
+                ast::Node::If {
+                    consequent,
+                    alternate,
+                    ..
+                } => {
+                    walk(consequent, found);
+                    walk(alternate, found);
+                }
+                ast::Node::Each { children, .. } | ast::Node::Else { children, .. } => {
+                    walk(children, found)
+                }
+                ast::Node::Slot { fallback, .. } => walk(fallback, found),
+                ast::Node::Await {
+                    pending,
+                    then,
+                    catch,
+                    ..
+                } => {
+                    walk(pending, found);
+                    for branch in then.iter().chain(catch) {
+                        walk(&branch.children, found);
+                    }
+                }
+                ast::Node::Settled { branch, .. } => walk(&branch.children, found),
+                ast::Node::Text(_) => {}
+            }
+        }
+    }
+    let mut found = Vec::new();
+    walk(nodes, &mut found);
+    found
 }
 
 fn warnings_of(source: &str) -> Vec<Diagnostic> {
@@ -948,6 +1028,7 @@ fn warnings_of(source: &str) -> Vec<Diagnostic> {
         .iter()
         .cloned()
         .chain(dropped_load_keys(&component))
+        .chain(if lowered.is_none() { pascal_case_elements(&component.nodes) } else { Vec::new() })
         .chain(
             validate::enum_props(&component)
                 .into_iter()
@@ -962,7 +1043,7 @@ fn warnings_of(source: &str) -> Vec<Diagnostic> {
                 let tag = &component.tag;
                 let written = matches!(prop.default, ast::PropDefault::Text(_));
                 return Some(
-                    Diagnostic::new(
+                    Diagnostic::new(crate::codes::HOST_CLASS_PROP,
                         prop.span,
                         if written {
                             format!("`class` on the host tag declares a prop named `class`, and its value is that prop's default: <{tag}> is rendered without the class")
@@ -979,7 +1060,7 @@ fn warnings_of(source: &str) -> Vec<Diagnostic> {
                 .iter()
                 .find(|(name, _)| *name == prop.name)?;
             Some(
-                Diagnostic::new(
+                Diagnostic::new(crate::codes::PROP_SHADOWS_BUILTIN,
                     prop.span,
                     format!(
                         "prop `{}` is also every element's built-in `{}`: {effect}",
@@ -1061,7 +1142,7 @@ fn unknown_child_warnings(
                     });
                     if let Some(extension) = beside {
                         out.push(
-                            Diagnostic::new(
+                            Diagnostic::new(crate::codes::COMPONENT_NOT_IMPORTED,
                                 element.span,
                                 format!(
                                     "<{name}> is the component in `./{name}{extension}`, which this file doesn't import: the tag is an unknown element here, left empty on the server and never started in the browser"
@@ -1076,7 +1157,7 @@ fn unknown_child_warnings(
                         distance == 1 || (distance == 2 && name.len().min(child.ast.tag.len()) >= 8)
                     }) {
                         out.push(
-                            Diagnostic::new(
+                            Diagnostic::new(crate::codes::COMPONENT_TAG_TYPO,
                                 element.span,
                                 format!(
                                     "<{name}> isn't a component this file imports, and is close to one that is: <{}>. As written it's an unknown element: empty on the server, and its props aren't checked",
@@ -1183,7 +1264,7 @@ fn attribute_case_warnings(
                     });
                     if !declared {
                         out.push(
-                            Diagnostic::new(
+                            Diagnostic::new(crate::codes::REACT_ATTRIBUTE_NAME,
                                 attribute.span,
                                 format!(
                                     "`{}` is React's name for the `{html}` attribute, and HTML has no such attribute: <{}> gets no {html}",
@@ -1208,7 +1289,7 @@ fn attribute_case_warnings(
                                 && prop.name.to_ascii_lowercase() == *name
                         }) {
                             out.push(
-                                Diagnostic::new(
+                                Diagnostic::new(crate::codes::CAMEL_CASE_PROP,
                                     attribute.span,
                                     format!(
                                         "`{name}` isn't a prop of <{}>, so the element ignores it: HTML lowercases attribute names, and the prop `{}` is the attribute `{}`",

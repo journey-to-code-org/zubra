@@ -19,7 +19,7 @@
       onkeydown={helper}
     ></textarea>
     <button type="button" class="jsx-style" onclick={after}>JSX style</button>
-    <zb-swatch value:bind={color}></zb-swatch>
+    <my-swatch value:bind={color}></my-swatch>
     <output>{typed} {color}</output>
   </form>
 </zb-reply>

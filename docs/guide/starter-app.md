@@ -7,7 +7,9 @@ npm install
 npm run dev
 ```
 
-It asks for a framework (none, React, Vue, Svelte, Solid, Preact, Lit, Angular or Astro, or a server-rendered app with no bundler) and whether components should be TypeScript. `npm run dev` opens a page made of small example components. Each one is a file you can open, change and save while the page is running: it updates in place and keeps its state.
+It asks for a framework (none, React, Vue, Svelte, Solid, Preact, Lit, Angular or Astro, or a server-rendered app with no bundler) and whether components should be TypeScript. Open the URL printed by `npm run dev` to see a page made of small example components. Each one is a file you can open, change and save while the page is running: it updates in place and keeps its state.
+
+The creator reports the Node version required by the framework you choose. To run the app's browser tests, install Chromium once with `npx playwright install chromium`.
 
 This page says what's in the app, so you can go straight to the part you need. The [tutorial](01-first-component.md) explains each idea in turn.
 
@@ -51,7 +53,7 @@ With `--typescript`, `hello-counter.zb` is `<script lang="ts">` with an `interfa
 
 | Path | What |
 |---|---|
-| `server.js` | The whole server, about sixty lines, in the order the handlers have to go: `actions.handle` (a form posted to a server function), `zubra.handle` (the components' modules), then the page, rendered and finished by one `zubra.page()`. |
+| `server.js` | The whole server, about ninety lines with its comments (sixty without), in the order the handlers have to go: `actions.handle` (a form posted to a server function), `zubra.handle` (the components' modules), then the page, rendered and finished by one `zubra.page()`. |
 | `src/components/guest-book.zb` | A form whose `action` is a `'use server'` function, and a list that starts from what the server rendered (`from(saved)`) and follows the function's answer. It works with JavaScript off: the form posts, the server redirects, and the page comes back with the new note. |
 | `src/notes.js` | The data, read and written only on the server. |
 | `test/app.test.js` | Starts the server and uses the page in Chromium twice, with JavaScript and without. |

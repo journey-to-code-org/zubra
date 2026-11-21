@@ -8,7 +8,7 @@ export { MOUNT };
 
 /**
  * `owner` is the object: its `authorize(…)`, if it has one, decides as `createSyncServer`'s does;
- * without one, pages may read and not write.
+ * without one, pages may neither read nor write.
  * `heartbeat` is shorter than on Node (2 s, not 15): a Durable Object isn't told when a page's
  * connection is cut, only that a keep-alive couldn't be written, which on workerd is the third
  * after the cut. So a crashed page's presence lingers about three keep-alives (6 s). A page that

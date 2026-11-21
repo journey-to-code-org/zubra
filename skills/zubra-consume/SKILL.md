@@ -7,7 +7,7 @@ Every framework uses the element the same way underneath: **properties in, DOM e
 
 ## Steps
 
-1. **Check how the project builds.** Vite, Rollup, webpack, esbuild or Rspack: `@zubra/unplugin` (`zubra()` in the bundler config; `npm create zubra` wrote it). Next.js: `@zubra/unplugin/loader` in `turbopack.rules`. The Angular CLI: compile with `zubra compile --emit js` and import the `.js`. No bundler: import the compiled module as a `<script type="module">`.
+1. **Check how the project builds.** Vite, Rollup, webpack, esbuild or Rspack: `@zubra/unplugin` (`zubra()` in the bundler config; `npm create zubra` wrote it; its `engine` option is `'zubra'` by default, `'signals'` for the experimental TC39 Signals engine). Next.js: `@zubra/unplugin/loader` in `turbopack.rules`. The Angular CLI: compile with `zubra compile --emit js` and import the `.js`. No bundler: import the compiled module as a `<script type="module">`.
 2. **Import the component** and write the tag. What the import gives depends on the importing file (table below). Typings are written next to the `.zb` file, so props and events are checked.
 3. **Pass objects and arrays as properties, never as attribute strings.** Through the plugin, the wrappers and every framework listed below, a bound value *is* a property. In raw HTML, an attribute is the fallback: JSON for arrays and objects (`data='{"a":1}'`).
 4. **Listen for the DOM event name**: all lowercase (`valuechange`), with the data in `event.detail`. Each framework's spelling is in the table.
@@ -52,7 +52,7 @@ A `form-associated` control already submits with a native form. For a form libra
 | React Hook Form | `<Seats {...registerProps(register('seats'))} />`, or `<Controller render={({ field }) => <Seats {...fieldProps(field)} />} />` |
 | TanStack Form | `<form.Field name="seats">{(field) => <Seats {...fieldProps(field)} />}</form.Field>` |
 | VeeValidate | `<Seats v-bind="vueFieldProps(useField('seats'))" />`, or `v-bind="vueFieldProps(field)"` in a `<Field v-slot="{ field }">` |
-| Felte | `<zb-seats use:felteControl={createField('seats')}>` (or `felteControl(element, createField('seats'))`) |
+| Felte | `<my-seats use:felteControl={createField('seats')}>` (or `felteControl(element, createField('seats'))`) |
 | Angular forms | `zubraModel` from `@zubra/runtime/angular` (see the table above) |
 
 Each reports changes, focus leaving the control as a blur (for touched state and on-blur validation), and writes the library's `reset()` back into the control.

@@ -4,13 +4,13 @@ use std::collections::HashMap;
 
 use zubra::{compile, compile_html_with, compile_js_with, Diagnostic};
 
-const BADGE: &str = r#"<zb-badge label="new" count={0} info={{ color: "gray" }}>
+const BADGE: &str = r#"<my-badge label="new" count={0} info={{ color: "gray" }}>
   <span data-color={info.color}><zb-slot name="icon"></zb-slot><b>{label}</b> {count}<zb-slot></zb-slot></span>
-</zb-badge>"#;
+</my-badge>"#;
 
-const CARD: &str = r#"<zb-card shadow heading="">
+const CARD: &str = r#"<my-card shadow heading="">
   <h2>{heading}</h2><zb-slot></zb-slot>
-</zb-card>"#;
+</my-card>"#;
 
 /// An in-memory "filesystem": specifiers resolve to the names in `files`, ignoring the importer.
 fn files(files: &[(&str, &str)]) -> HashMap<String, String> {
@@ -57,15 +57,15 @@ fn js(
 const INBOX: &str = r#"<script>
   import './badge.zb'
 </script>
-<zb-inbox who="Ada" unread={3}>
-  <zb-badge label={who} count={unread} info={{ color: unread > 0 ? "red" : "gray" }} class="row"><em slot="icon">{unread}</em>mail</zb-badge>
-</zb-inbox>"#;
+<my-inbox who="Ada" unread={3}>
+  <my-badge label={who} count={unread} info={{ color: unread > 0 ? "red" : "gray" }} class="row"><em slot="icon">{unread}</em>mail</my-badge>
+</my-inbox>"#;
 
 #[test]
 fn renders_children_inline_with_props_as_values_and_content_in_their_slots() {
     let html = html(INBOX, &files(&[("./badge.zb", BADGE)])).unwrap();
     assert!(
-        html.contains(r#"<zb-badge class="row" label="Ada" count="3" info="{&quot;color&quot;:&quot;red&quot;}" data-zb-filled="default icon">"#),
+        html.contains(r#"<my-badge class="row" label="Ada" count="3" info="{&quot;color&quot;:&quot;red&quot;}" data-zb-filled="default icon">"#),
         "{html}"
     );
     assert!(
@@ -77,21 +77,21 @@ fn renders_children_inline_with_props_as_values_and_content_in_their_slots() {
 #[test]
 fn shadow_children_render_a_declarative_shadow_root_with_content_in_light_dom() {
     let source = r#"<script>import './card.zb'</script>
-<zb-page><zb-card heading="Hi"><p>body</p></zb-card></zb-page>"#;
+<my-page><my-card heading="Hi"><p>body</p></my-card></my-page>"#;
     let html = html(source, &files(&[("./card.zb", CARD)])).unwrap();
     assert!(
-        html.contains(r#"<zb-card heading="Hi"><template shadowrootmode="open">"#),
+        html.contains(r#"<my-card heading="Hi"><template shadowrootmode="open">"#),
         "{html}"
     );
     assert!(html.contains("<h2>Hi</h2><slot></slot>"), "{html}");
-    assert!(html.contains("</template><p>body</p></zb-card>"), "{html}");
+    assert!(html.contains("</template><p>body</p></my-card>"), "{html}");
 }
 
 #[test]
 fn child_props_are_checked_against_the_childs_defaults() {
     let children = files(&[("./badge.zb", BADGE)]);
     let wrong_type = r#"<script>import './badge.zb'</script>
-<zb-x><zb-badge count={"three"}></zb-badge></zb-x>"#;
+<my-x><my-badge count={"three"}></my-badge></my-x>"#;
     let error = html(wrong_type, &children).unwrap_err();
     assert!(error.message.contains("count"), "{}", error.message);
     assert_eq!(error.span.line, 2);
@@ -101,7 +101,7 @@ fn child_props_are_checked_against_the_childs_defaults() {
     );
 
     let typo = r#"<script>import './badge.zb'</script>
-<zb-x><zb-badge lable={"x"}></zb-badge></zb-x>"#;
+<my-x><my-badge lable={"x"}></my-badge></my-x>"#;
     let error = html(typo, &children).unwrap_err();
     assert_eq!(
         error.help.as_deref(),
@@ -110,7 +110,7 @@ fn child_props_are_checked_against_the_childs_defaults() {
     );
 
     let unknown_slot = r#"<script>import './badge.zb'</script>
-<zb-x><zb-badge><i slot="nope">x</i></zb-badge></zb-x>"#;
+<my-x><my-badge><i slot="nope">x</i></my-badge></my-x>"#;
     assert!(html(unknown_slot, &children)
         .unwrap_err()
         .message
@@ -119,8 +119,8 @@ fn child_props_are_checked_against_the_childs_defaults() {
 
 #[test]
 fn errors_inside_an_imported_component_name_that_file() {
-    let broken = "<zb-badge><p>{missing}</p></zb-badge>";
-    let source = "<script>import './badge.zb'</script>\n<zb-x><zb-badge></zb-badge></zb-x>";
+    let broken = "<my-badge><p>{missing}</p></my-badge>";
+    let source = "<script>import './badge.zb'</script>\n<my-x><my-badge></my-badge></my-x>";
     let error = html(source, &files(&[("./badge.zb", broken)])).unwrap_err();
     let (path, _) = error.file.clone().expect("the error is in the child");
     assert_eq!(path, "badge.zb");
@@ -135,12 +135,12 @@ fn errors_inside_an_imported_component_name_that_file() {
 
 #[test]
 fn imports_are_checked_for_cycles_duplicates_and_missing_files() {
-    let a = "<script>import './b.zb'</script>\n<zb-a><zb-b></zb-b></zb-a>";
-    let b = "<script>import './a.zb'</script>\n<zb-b><zb-a></zb-a></zb-b>";
+    let a = "<script>import './b.zb'</script>\n<my-a><my-b></my-b></my-a>";
+    let b = "<script>import './a.zb'</script>\n<my-b><my-a></my-a></my-b>";
     let error = html(a, &files(&[("./a.zb", a), ("./b.zb", b)])).unwrap_err();
     assert!(error.message.contains("import cycle"), "{}", error.message);
 
-    let twice = "<script>import './badge.zb'\nimport './again.zb'</script>\n<zb-x></zb-x>";
+    let twice = "<script>import './badge.zb'\nimport './again.zb'</script>\n<my-x></my-x>";
     let error = html(
         twice,
         &files(&[("./badge.zb", BADGE), ("./again.zb", BADGE)]),
@@ -152,7 +152,7 @@ fn imports_are_checked_for_cycles_duplicates_and_missing_files() {
         error.message
     );
 
-    let missing = "<script>import './gone.zb'</script>\n<zb-x></zb-x>";
+    let missing = "<script>import './gone.zb'</script>\n<my-x></my-x>";
     let error = html(missing, &files(&[])).unwrap_err();
     assert!(
         error.message.contains("can't load `./gone.zb`"),
@@ -161,7 +161,7 @@ fn imports_are_checked_for_cycles_duplicates_and_missing_files() {
     );
     assert_eq!(error.span.line, 1);
 
-    let error = compile("<script>import './badge.zb'</script>\n<zb-x></zb-x>", "{}").unwrap_err();
+    let error = compile("<script>import './badge.zb'</script>\n<my-x></my-x>", "{}").unwrap_err();
     assert!(
         error.message.contains("compile it from a file"),
         "{}",
@@ -299,10 +299,10 @@ fn a_bundler_keeps_zb_import_specifiers() {
 
 #[test]
 fn a_child_default_computed_in_the_browser_must_be_passed_to_render_html() {
-    let child = "<script>const start = Date.now()</script>\n<zb-clock since={start}><p>{since}</p></zb-clock>";
+    let child = "<script>const start = Date.now()</script>\n<my-clock since={start}><p>{since}</p></my-clock>";
     let children = files(&[("./clock.zb", child)]);
     let error = html(
-        "<script>import './clock.zb'</script>\n<zb-x><zb-clock></zb-clock></zb-x>",
+        "<script>import './clock.zb'</script>\n<my-x><my-clock></my-clock></my-x>",
         &children,
     )
     .unwrap_err();
@@ -315,7 +315,7 @@ fn a_child_default_computed_in_the_browser_must_be_passed_to_render_html() {
     );
     assert_eq!(error.span.line, 2);
     assert!(html(
-        "<script>import './clock.zb'</script>\n<zb-x><zb-clock since={5}></zb-clock></zb-x>",
+        "<script>import './clock.zb'</script>\n<my-x><my-clock since={5}></my-clock></my-x>",
         &children
     )
     .unwrap()
@@ -327,24 +327,24 @@ fn both_outputs_check_how_a_child_is_used() {
     let children = files(&[("./badge.zb", BADGE)]);
     for (usage, expected) in [
         (
-            "<zb-badge count={\"three\"}></zb-badge>",
+            "<my-badge count={\"three\"}></my-badge>",
             "prop `count` must be a number",
         ),
-        ("<zb-badge lable={\"x\"}></zb-badge>", "has no prop `lable`"),
-        ("<zb-badge onlabelchang={go}></zb-badge>", "never fires"),
+        ("<my-badge lable={\"x\"}></my-badge>", "has no prop `lable`"),
+        ("<my-badge onlabelchang={go}></my-badge>", "never fires"),
     ] {
         let source = format!(
-            "<script>import './badge.zb'\nfunction go() {{}}</script>\n<zb-x>{usage}</zb-x>"
+            "<script>import './badge.zb'\nfunction go() {{}}</script>\n<my-x>{usage}</my-x>"
         );
         let source = if expected == "never fires" {
             source
                 .replace("./badge.zb'", "./emitter.zb'")
-                .replace("zb-badge", "zb-emitter")
+                .replace("my-badge", "my-emitter")
         } else {
             source
         };
         let children = if expected == "never fires" {
-            files(&[("./emitter.zb", "<script>import { emit } from '@zubra/runtime'\nemit('labelchange')</script>\n<zb-emitter><p>x</p></zb-emitter>")])
+            files(&[("./emitter.zb", "<script>import { emit } from '@zubra/runtime'\nemit('labelchange')</script>\n<my-emitter><p>x</p></my-emitter>")])
         } else {
             children.clone()
         };
@@ -361,25 +361,25 @@ fn both_outputs_check_how_a_child_is_used() {
         );
         assert_eq!(in_js.help, in_html.help);
     }
-    let required = "<zb-req name><p>{name}</p></zb-req>";
+    let required = "<my-req name><p>{name}</p></my-req>";
     let children = files(&[("./req.zb", required)]);
-    let source = "<script>import './req.zb'</script>\n<zb-x><zb-req></zb-req></zb-x>";
+    let source = "<script>import './req.zb'</script>\n<my-x><my-req></my-req></my-x>";
     assert!(js(source, &children, None)
         .unwrap_err()
         .message
         .contains("requires the prop `name`"));
     // Values only known in the browser aren't checked at build time.
     let source =
-        "<script>import './badge.zb'</script>\n<zb-x n={1}><zb-badge count={n}></zb-badge></zb-x>";
+        "<script>import './badge.zb'</script>\n<my-x n={1}><my-badge count={n}></my-badge></my-x>";
     assert!(js(source, &files(&[("./badge.zb", BADGE)]), None).is_ok());
 }
 
 #[test]
 fn class_and_style_directives_set_a_childs_host_in_both_outputs() {
     let children = files(&[("./badge.zb", BADGE)]);
-    let source = "<script>import './badge.zb'\nlet out = true;\nlet off = false;\nlet hue = \"red\";</script>\n<zb-x><zb-badge count={1} class:out={out} class:off={off} style:color={hue}></zb-badge></zb-x>";
+    let source = "<script>import './badge.zb'\nlet out = true;\nlet off = false;\nlet hue = \"red\";</script>\n<my-x><my-badge count={1} class:out={out} class:off={off} style:color={hue}></my-badge></my-x>";
     let rendered = html(source, &children).unwrap();
-    assert!(rendered.contains("<zb-badge class=\"out\""), "{rendered}");
+    assert!(rendered.contains("<my-badge class=\"out\""), "{rendered}");
     assert!(rendered.contains("style=\"color: red\""), "{rendered}");
     assert!(!rendered.contains("off"), "{rendered}");
     let module = js(source, &children, Some(".js")).unwrap();
@@ -399,8 +399,8 @@ fn class_and_style_directives_set_a_childs_host_in_both_outputs() {
 
 #[test]
 fn a_camelcase_prop_written_in_lowercase_on_a_child_warns() {
-    let meter = "<zb-meter max-value={5} label=\"x\"><p>{maxValue}</p></zb-meter>";
-    let app = "<script>\n  import './meter.zb'\n</script>\n<zb-app>\n  <zb-meter maxvalue=\"8\" label=\"a\"></zb-meter>\n  <zb-meter maxValue={9}></zb-meter>\n  <zb-if test={true}><zb-meter max-value={3}></zb-meter><zb-meter maxvalue={2}></zb-meter></zb-if>\n</zb-app>";
+    let meter = "<my-meter max-value={5} label=\"x\"><p>{maxValue}</p></my-meter>";
+    let app = "<script>\n  import './meter.zb'\n</script>\n<my-app>\n  <my-meter maxvalue=\"8\" label=\"a\"></my-meter>\n  <my-meter maxValue={9}></my-meter>\n  <zb-if test={true}><my-meter max-value={3}></my-meter><my-meter maxvalue={2}></my-meter></zb-if>\n</my-app>";
     let loader = |specifier: &str, _from: &str| {
         (specifier == "./meter.zb")
             .then(|| ("meter.zb".to_owned(), meter.to_owned()))
@@ -415,7 +415,7 @@ fn a_camelcase_prop_written_in_lowercase_on_a_child_warns() {
     assert_eq!(found[0].0, 5);
     assert_eq!(found[1].0, 7);
     assert!(
-        found[0].1.contains("`maxvalue` isn't a prop of <zb-meter>")
+        found[0].1.contains("`maxvalue` isn't a prop of <my-meter>")
             && found[0]
                 .1
                 .contains("the prop `maxValue` is the attribute `max-value`"),
@@ -497,10 +497,10 @@ fn a_sibling_used_without_its_import_and_a_tag_a_slip_from_an_imported_one_warn(
 
 #[test]
 fn a_parent_needs_the_browser_when_a_child_does() {
-    let counter = "<script>\n  let n = 0\n</script>\n<zb-counter><button onclick={() => n++}>{n}</button></zb-counter>";
-    let label = "<zb-label text=\"x\"><b>{text}</b></zb-label>";
+    let counter = "<script>\n  let n = 0\n</script>\n<my-counter><button onclick={() => n++}>{n}</button></my-counter>";
+    let label = "<my-label text=\"x\"><b>{text}</b></my-label>";
     let page = |child: &str| {
-        format!("<script>\n  import './{child}.zb'\n</script>\n<zb-page><zb-{child}></zb-{child}></zb-page>")
+        format!("<script>\n  import './{child}.zb'\n</script>\n<my-page><my-{child}></my-{child}></my-page>")
     };
     let loader = |specifier: &str, _from: &str| match specifier {
         "./counter.zb" => Ok(("counter.zb".to_owned(), counter.to_owned())),
@@ -514,8 +514,8 @@ fn a_parent_needs_the_browser_when_a_child_does() {
     assert_eq!(
         zubra::client_reasons(&page("counter"), "page.zb", &loader).unwrap(),
         vec![
-            "<zb-counter>: state `n`".to_owned(),
-            "<zb-counter>: handles `click`".to_owned()
+            "<my-counter>: state `n`".to_owned(),
+            "<my-counter>: handles `click`".to_owned()
         ]
     );
 }
@@ -523,8 +523,8 @@ fn a_parent_needs_the_browser_when_a_child_does() {
 #[test]
 fn reacts_names_for_class_and_for_warn_with_the_html_name() {
     // A child that declares `className` as a prop is given it; everything else gets no class.
-    let styled = "<zb-styled class-name=\"\"><p>{className}</p></zb-styled>";
-    let app = "<script>\n  import './styled.zb'\n  let on = true\n</script>\n<zb-app>\n  <button className=\"more\" onClick={() => (on = !on)}>+</button>\n  <label htmlFor=\"name\">Name</label>\n  <zb-if test={on}><p className={on ? 'a' : 'b'}>x</p></zb-if>\n  <zb-styled className=\"given\"></zb-styled>\n  <p class=\"plain\" for=\"x\">fine</p>\n  <p classname=\"own\">an attribute of the page's own, as far as HTML goes</p>\n</zb-app>";
+    let styled = "<my-styled class-name=\"\"><p>{className}</p></my-styled>";
+    let app = "<script>\n  import './styled.zb'\n  let on = true\n</script>\n<my-app>\n  <button className=\"more\" onClick={() => (on = !on)}>+</button>\n  <label htmlFor=\"name\">Name</label>\n  <zb-if test={on}><p className={on ? 'a' : 'b'}>x</p></zb-if>\n  <my-styled className=\"given\"></my-styled>\n  <p class=\"plain\" for=\"x\">fine</p>\n  <p classname=\"own\">an attribute of the page's own, as far as HTML goes</p>\n</my-app>";
     let loader = |specifier: &str, _from: &str| {
         (specifier == "./styled.zb")
             .then(|| ("styled.zb".to_owned(), styled.to_owned()))
@@ -573,34 +573,34 @@ fn reacts_names_for_class_and_for_warn_with_the_html_name() {
 fn a_dashed_attribute_on_a_child_is_its_camelcase_prop() {
     // `max-value` on the tag is `maxValue`: passed as the prop, counted as given for a required
     // one (`min-value`), and the tag's own wins over a spread's, in either order.
-    let meter = "<zb-meter min-value max-value={5}><p>{minValue}-{maxValue}</p></zb-meter>";
+    let meter = "<my-meter min-value max-value={5}><p>{minValue}-{maxValue}</p></my-meter>";
     let children = files(&[("./meter.zb", meter)]);
     let page = |tag: &str| {
-        format!("<script>\n  import './meter.zb'\n  const rest = {{ maxValue: 9 }}\n</script>\n<zb-app>{tag}</zb-app>")
+        format!("<script>\n  import './meter.zb'\n  const rest = {{ maxValue: 9 }}\n</script>\n<my-app>{tag}</my-app>")
     };
     for (tag, shown) in [
         (
-            "<zb-meter min-value={1} max-value={3}></zb-meter>",
+            "<my-meter min-value={1} max-value={3}></my-meter>",
             "<p>1-3</p>",
         ),
-        ("<zb-meter min-value=\"2\"></zb-meter>", "<p>2-5</p>"),
+        ("<my-meter min-value=\"2\"></my-meter>", "<p>2-5</p>"),
         (
-            "<zb-meter min-value={1} max-value={3} {...rest}></zb-meter>",
-            "<p>1-3</p>",
-        ),
-        (
-            "<zb-meter {...rest} min-value={1} max-value={3}></zb-meter>",
+            "<my-meter min-value={1} max-value={3} {...rest}></my-meter>",
             "<p>1-3</p>",
         ),
         (
-            "<zb-meter min-value={1} {...rest}></zb-meter>",
+            "<my-meter {...rest} min-value={1} max-value={3}></my-meter>",
+            "<p>1-3</p>",
+        ),
+        (
+            "<my-meter min-value={1} {...rest}></my-meter>",
             "<p>1-9</p>",
         ),
     ] {
         let output = html(&page(tag), &children).unwrap_or_else(|error| panic!("{tag}: {error:?}"));
         assert!(output.contains(shown), "{tag}: {output}");
     }
-    let missing = html(&page("<zb-meter max-value={3}></zb-meter>"), &children).unwrap_err();
+    let missing = html(&page("<my-meter max-value={3}></my-meter>"), &children).unwrap_err();
     assert!(
         missing.message.contains("minValue") || missing.message.contains("min-value"),
         "{}",

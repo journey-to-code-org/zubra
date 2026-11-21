@@ -219,6 +219,10 @@ test("redirect() stays on the site unless it says it's leaving", async () => {
   assert.equal((await to('https://evil.example/login'))[0], 500);
   assert.equal((await to('javascript:alert(1)'))[0], 500);
   assert.equal((await to('javascript:alert(1)', '&external'))[0], 500, 'no script URL, even leaving');
+  for (const where of ['/\t/evil.example/login', '/\n\\evil.example/login', '/cart\r']) {
+    assert.equal((await to(where))[0], 500, `control characters are refused: ${JSON.stringify(where)}`);
+    assert.equal((await to(where, '&external'))[0], 500, 'control characters are refused even when leaving');
+  }
   assert.match(String(errors[0]?.message), /another site/);
   assert.deepEqual(await to('https://pay.example/checkout', '&external'), [303, 'https://pay.example/checkout']);
   assert.deepEqual(redirect('/a', 302, { external: true }), redirect('/a', { status: 302, external: true }));

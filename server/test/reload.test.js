@@ -32,7 +32,7 @@ before(async () => {
   writeFileSync(join(components, 'say-pair.zb'), "<script>\n  import './say-word.zb'\n</script>\n<say-pair>\n  <say-word></say-word>\n</say-pair>\n");
   writeFileSync(serverFile, `import { createServer } from 'node:http';
 import { createZubra } from ${JSON.stringify(new URL('../src/index.js', import.meta.url).href)};
-const zubra = createZubra({ components: ${JSON.stringify(components)}, cache: false, reload: process.env.RELOAD !== 'off' });
+const zubra = createZubra({ components: ${JSON.stringify(components)}, production: false, cache: false, reload: process.env.RELOAD !== 'off' });
 createServer((req, res) => {
   if (zubra.handle(req, res)) return;
   const page = zubra.page();

@@ -23,7 +23,7 @@ const LIST: &str = r#"<script>
   <h1>{title}</h1>
   <ul>
     <zb-each items={items} as="item" key={item.id}>
-      <li onclick={remove}><zb-badge label={item.name}></zb-badge> {fmt(item.name)} of {count}</li>
+      <li onclick={remove}><my-badge label={item.name}></my-badge> {fmt(item.name)} of {count}</li>
     </zb-each>
   </ul>
 </x-list>
@@ -48,7 +48,7 @@ fn extract(
     zubra::extract(source, start, end, tag, "list.zb", &loader)
 }
 
-const BADGE: &str = "<zb-badge label=\"\"><b>{label}</b></zb-badge>";
+const BADGE: &str = "<my-badge label=\"\"><b>{label}</b></my-badge>";
 
 fn apply(source: &str, extraction: &Extraction) -> String {
     let mut out = source.to_owned();
@@ -431,8 +431,8 @@ fn the_new_tag_must_be_free() {
         );
     }
     // A component this one imports, by its tag and by its file; an element it already uses.
-    let message = refused(LIST, "<h1>", "</h1>", "zb-badge");
-    assert!(message.contains("already uses <zb-badge>"), "{message}");
+    let message = refused(LIST, "<h1>", "</h1>", "my-badge");
+    assert!(message.contains("already uses <my-badge>"), "{message}");
     let other = LIST.replace(
         "<h1>{title}</h1>",
         "<h1>{title}</h1>\n  <other-thing></other-thing>",

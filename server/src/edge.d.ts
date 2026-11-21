@@ -90,10 +90,13 @@ export interface EdgeOptions {
    */
   streamTimeout?: number;
   /**
-   * Signals mode (experimental): say so when you serve the runtime with its TC39 engine, that is
-   * `@zubra/runtime`'s `dist/production` with `signal-tc39.js` in place of `signal.js`. Not with
-   * `bundle`, whose files hold Zubra's engine. Default `false`.
+   * The reactive engine of the runtime you serve: `'zubra'` (the default), or `'signals'`
+   * (experimental), when you serve it with its TC39 engine, that is `@zubra/runtime`'s
+   * `dist/production` with `signal-tc39.js` in place of `signal.js`. Not with `bundle`, whose
+   * files hold Zubra's engine. Any other value is an error.
    */
+  engine?: 'zubra' | 'signals';
+  /** @deprecated `engine: 'signals'`, under its name in 6.0.0-rc.0. */
   signals?: boolean;
   /** Minify the component modules (and their CSS), with the compiler. Default: `production`, without the DevTools. */
   minify?: boolean;

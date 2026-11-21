@@ -1,6 +1,6 @@
 {
   "name": "@zubra/runtime",
-  "version": "6.0.0-rc.0",
+  "version": "6.0.0",
   "description": "Browser runtime for Zubra compiled components: fine-grained signals, no virtual DOM",
   "license": "ISC",
   "repository": {
@@ -8,6 +8,19 @@
     "url": "git+https://github.com/zubra-js/zubra.git",
     "directory": "runtime"
   },
+  "homepage": "https://github.com/zubra-js/zubra/tree/main/runtime#readme",
+  "bugs": {
+    "url": "https://github.com/zubra-js/zubra/issues"
+  },
+  "keywords": [
+    "zubra",
+    "web components",
+    "custom elements",
+    "signals",
+    "reactivity",
+    "hydration",
+    "ssr"
+  ],
   "type": "module",
   "exports": {
     ".": {

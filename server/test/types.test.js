@@ -12,10 +12,14 @@ const read = (file) => readFileSync(fileURLToPath(new URL(`../src/${file}`, impo
 const UNDOCUMENTED = ['clientModules'];
 
 test('ZubraOptions declares every option createZubra reads', () => {
-  const parameters = read('index.js').match(/export function createZubra\(\{([^\n]*)\} = \{\}\)/)?.[1];
+  // (createZubra checks `engine` and the names, then hands the rest to `create`.)
+  const parameters = read('index.js').match(/\nfunction create\(\{([^\n]*)\} = \{\}\)/)?.[1];
   assert.ok(parameters, "createZubra's options weren't found: has its signature changed?");
   // Each option is `name` or `name = default`; a default can hold commas, so split where a new name starts.
-  const taken = [...parameters.matchAll(/(?:^|,)\s*([A-Za-z]+)\s*(?==|,|$)/g)].map((match) => match[1]);
+  const taken = [...[...parameters.matchAll(/(?:^|,)\s*([A-Za-z]+)\s*(?==|,|$)/g)].map((match) => match[1]), 'engine'];
+  // The names it warns about are the others: its list is every one it reads.
+  const known = JSON.parse(read('index.js').match(/\nconst OPTIONS = (\[[^\]]*\]);/)[1].replaceAll("'", '"'));
+  assert.deepEqual([...known].sort(), [...taken].sort(), "createZubra's OPTIONS (what it doesn't warn about) are what it reads");
   assert.ok(taken.includes('components') && taken.includes('packages'), `not the options: ${taken.join(', ')}`);
   const options = read('index.d.ts').match(/export interface ZubraOptions \{([\s\S]*?)\n\}/)?.[1];
   assert.ok(options, "ZubraOptions wasn't found");

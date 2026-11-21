@@ -47,9 +47,9 @@ In an app made by `npm create zubra` ([the starter app](starter-app.md)), run `n
 From the command line, without a bundler:
 
 ```sh
-zubra check src/components/like-button.zb              # errors and warnings, with suggestions
-zubra compile src/components/like-button.zb --emit js  # the module the browser runs
-zubra compile src/components/like-button.zb            # the HTML a server sends
+npx zubra check src/components/like-button.zb              # errors and warnings, with suggestions
+npx zubra compile src/components/like-button.zb --emit js  # the module the browser runs
+npx zubra compile src/components/like-button.zb            # the HTML a server sends
 ```
 
 ## Props from the script's point of view

@@ -41,7 +41,7 @@ test('a node maps to its component, file and line, with its props and state by n
   const result = await inspect('dt-panel p');
   assert.equal(result.version, 1);
   assert.equal(result.component.tag, 'dt-panel');
-  assert.ok(result.component.file.endsWith('fixtures/devtools/dt-panel.zb'), result.component.file);
+  assert.ok(result.component.file.replaceAll('\\', '/').endsWith('fixtures/devtools/dt-panel.zb'), result.component.file);
   assert.deepEqual(result.component.at, { line: 8, column: 1 });
   assert.equal(named(result.props, 'label'), '"Panel"');
   assert.equal(named(result.state, 'count'), '0');
@@ -165,7 +165,7 @@ test('the extension\'s pane, on a live page: the selection, Open in editor, and 
   await page.click('#pane button[data-line="11"]');
   await page.waitForFunction(() => window.performance.getEntriesByType('resource').some((entry) => entry.name.includes('__open-in-editor')));
   assert.equal(opened.length, 1);
-  assert.match(opened[0], /fixtures\/devtools\/dt-panel\.zb:11:21$/);
+  assert.match(opened[0].replaceAll('\\', '/'), /fixtures\/devtools\/dt-panel\.zb:11:21$/);
 
   // A new selection is said in the status line, not by reading the whole pane out.
   await page.waitForFunction(() => document.querySelector('#pane-status')?.textContent === 'Inspecting <dt-panel>');

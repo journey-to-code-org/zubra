@@ -16,7 +16,7 @@
 //   the return value in a one-use cookie, so the page can render it (`result()`).
 // - A cross-site post is refused (Origin / Sec-Fetch-Site), so forms on other sites can't call it.
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
@@ -52,8 +52,8 @@ const script = (file, production) => readFileSync(new URL(production ? `../dist/
  * request's own protocol.
  * `maxBytes`: the largest post read, files and fields together (10 MB by default; `Infinity`
  * for none). A bigger one gets `{ error: 'Too large' }` (413) and the function doesn't run.
- * `production`: serve the browser scripts minified and cached for an hour (on by default; off
- * with `NODE_ENV=development` or `production: false`, as `@zubra/server`), and refuse to start when a component doesn't compile. In development that component is left
+ * `production`: serve the browser scripts minified (by default unless `NODE_ENV` is `development`),
+ * and refuse to start when a component doesn't compile. In development that component is left
  * out with a warning, so a half-written file doesn't take the server down: its page shows the
  * error when it is rendered, and its functions are served again once it compiles and the server
  * restarts.
@@ -87,8 +87,19 @@ export async function createActions({
     // Written beside it and renamed into place, so another process starting at the same moment
     // (a second worker, a parallel test) never imports a half-written file and finds no actions.
     const writing = `${module}.${process.pid}.${randomUUID()}.tmp`;
-    writeFileSync(writing, rewriteImports(output, (specifier) => pathToFileURL(resolve(dirname(path), specifier)).href));
-    renameSync(writing, module);
+    const source = rewriteImports(output, (specifier) => pathToFileURL(resolve(dirname(path), specifier)).href);
+    writeFileSync(writing, source);
+    try {
+      renameSync(writing, module);
+    } catch (error) {
+      let alreadyWritten = false;
+      try {
+        alreadyWritten = ['EEXIST', 'EPERM'].includes(error.code) && existsSync(module) && readFileSync(module, 'utf8') === source;
+      } finally {
+        unlinkSync(writing);
+      }
+      if (!alreadyWritten) throw error;
+    }
     maps.push((await import(`${pathToFileURL(module).href}?t=${Date.now()}`)).actions);
   }
   const client = script('client.js', production);

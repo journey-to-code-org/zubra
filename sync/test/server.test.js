@@ -122,6 +122,31 @@ const live = (sync, peer, since = 0, signal, key) => sync.fetch(new Request(`htt
 const say = (sync, message, headers = {}) => sync.fetch(new Request('http://localhost/_zb/sync/presence', { method: 'POST', body: JSON.stringify(message), headers: { 'content-type': 'application/json', ...headers } }));
 
 for (const backend of backends) {
+if (backend.name === 'binary') test('binary: a long live backlog streams in order while new changes arrive', { timeout: 30000 }, async () => {
+  const sync = await backend.start();
+  let stream;
+  try {
+    for (let batch = 0; batch < 17; batch++) {
+      const changes = Array.from({ length: 1000 }, (_, i) => change('title', batch * 1000 + i));
+      assert.equal((await push(sync, changes)).status, 200);
+    }
+    stream = events(await live(sync, 'backlog'));
+    const seen = new Set((await soon(stream)).value.data.changes.map((c) => c.value));
+    assert.equal((await push(sync, [change('title', 17000)])).status, 200);
+    let cursor = 0;
+    while (cursor < 17001) {
+      const page = (await soon(stream)).value.data;
+      for (const item of page.changes) seen.add(item.value);
+      cursor = Math.max(cursor, Number(page.cursor));
+    }
+    assert.equal(seen.size, 17001);
+    assert.ok(seen.has(17000));
+  } finally {
+    await stream?.return();
+    sync.close();
+  }
+});
+
 test(`${backend.name}: live: the backlog, then each push as it happens`, { timeout: 5000 }, async () => {
   const sync = await backend.start();
   await push(sync, [change('title', 'before')]);

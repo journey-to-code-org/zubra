@@ -10,7 +10,7 @@ import { useBrowser, open, here, site } from './harness.js';
 
 useBrowser({ 'model-input': join(here, 'fixtures/model-input.zb') });
 
-const src = join(here, '../../src');
+const src = join(here, '../../src').replaceAll('\\', '/');
 
 const RHF_APP = `
 import { createRoot } from 'react-dom/client';

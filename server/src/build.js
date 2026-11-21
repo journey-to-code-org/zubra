@@ -27,6 +27,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createZubra } from './index.js';
+import { engineOf } from './options.js';
 
 const require = createRequire(import.meta.url);
 /** The name the app's module exports @zubra/sync's store module under (core.js reads it). */
@@ -67,8 +68,11 @@ export async function buildApp(options = {}) {
   return build(options, true);
 }
 
-async function build({ keep = [], esbuild, scripts = [], ...options }, whole) {
-  const signals = options.signals === true;
+async function build({ keep = [], esbuild, scripts = [], ...given }, whole) {
+  // The engine checked (and `signals: true` noted) once, here; createZubra below gets `engine`.
+  const { signals: _alias, ...options } = given;
+  options.engine = engineOf(given, '@zubra/server/build', given.warn ?? console.warn);
+  const signals = options.engine === 'signals';
   let bundler = esbuild;
   if (!bundler) {
     try {
@@ -164,7 +168,7 @@ async function build({ keep = [], esbuild, scripts = [], ...options }, whole) {
       bundle.onResolve({ filter: /^\.\/signal\.js$/ }, (args) => (args.resolveDir === production ? { path: join(production, 'signal-tc39.js') } : undefined));
     },
   };
-  if (signals && !existsSync(join(production, 'signal-tc39.js'))) throw new Error('@zubra/server/build: signals: true needs @zubra/runtime 6.0 or later, which has signals mode (signal-tc39.js)');
+  if (signals && !existsSync(join(production, 'signal-tc39.js'))) throw new Error("@zubra/server/build: engine: 'signals' needs @zubra/runtime 6.0 or later, which has signals mode (signal-tc39.js)");
   // remark.js stays the runtime's own file, beside this one: it imports nothing, and is only
   // loaded when server markup needs repair.
   const bundled = (contents) => bundler.build({ stdin: { contents, resolveDir: production, sourcefile: 'app-runtime.js' }, bundle: true, minify: true, format: 'esm', target: 'es2022', write: false, external: ['./remark.js'], logLevel: 'silent', plugins: [...(whole ? [plugin] : []), ...(signals ? [engine] : [])] });
@@ -188,7 +192,7 @@ async function build({ keep = [], esbuild, scripts = [], ...options }, whole) {
   const file = `app-${createHash('sha256').update(code).digest('hex').slice(0, 10)}.js`;
   const built = whole ? { file, code, names, components, scripts: own.length > 0 } : { file, code, names };
   if (sync) built.sync = sync;
-  // (So that a server with a different `signals` refuses it.)
+  // (So that a server with a different engine refuses it.)
   if (signals) built.signals = true;
   return built;
 }

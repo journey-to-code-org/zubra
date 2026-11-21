@@ -56,10 +56,10 @@ When the official results exist, they replace these tables.
 
 **Since 6.0** the default engine is Zubra's own (`runtime/src/signal.js`), and the TC39 API is signals mode (experimental). Against the API on the same effects, in Node (median of 30): creating and disposing 2,000 effects 6.6 ms to 1.5 ms, selecting one row of 1,000 0.54 ms to 0.47 ms, updating 1,000 states in one flush 0.35 ms to 0.30 ms; the engine is 1,685 B compressed against 2,716 B, and what every page loads fell from 16.1 KB to 15.1 KB. An effect there is one node the graph marks directly; on the API it is a Computed and a Watcher's links to it. This section is about 5.x, and about signals mode now.
 
-Compiled components got their reactivity from `runtime/src/signal-impl.js`, Zubra's implementation of the TC39 Signals API (the native `Signal` replaces it where a browser has one). Profiling the benchmark's create and clear found most of the runtime's own time, and most of its garbage collection, in that file and in `effect.js`. Three things cost it, all fixed without changing the API:
+In 5.x, compiled components got their reactivity from `runtime/src/signal-impl.js`, Zubra's implementation of the TC39 Signals API (the native `Signal` replaced it where a browser had one); in 6.0 that is signals mode, and the default is the engine above. Profiling the benchmark's create and clear found most of the runtime's own time, and most of its garbage collection, in that file and in `effect.js`. Three things cost it, all fixed without changing the API:
 
 - **A `WeakMap` from each signal to its internal node.** A `WeakMap` with tens of thousands of keys is a table the garbage collector walks on every collection. Each signal now holds its node in a private field, which is also the check that a method was called on the right kind of object.
-- **`Watcher.getPending()` looked at every watched signal.** Zubra's effects share one Watcher and call `getPending()` on each flush, the pattern the proposal's README shows, so every update cost something for every effect on the page. The Watcher now records computeds as they're marked dirty: O(pending), not O(watched). The one visible difference is the order, listed in `runtime/README.md`.
+- **`Watcher.getPending()` looked at every watched signal.** Zubra's effects shared one Watcher (in signals mode, still do) and called `getPending()` on each flush, the pattern the proposal's README shows, so every update cost something for every effect on the page. The Watcher now records computeds as they're marked dirty: O(pending), not O(watched). The one visible difference is the order, listed in `runtime/README.md`.
 - **Allocation:** five arrays per node made up front, and a `Set` of children per effect, though most have none. Both are now made on first use.
 
 Measured in Node (median ms, each case in a fresh process), against the polyfill and the two fastest signals libraries, which have their own APIs:
@@ -70,7 +70,7 @@ Measured in Node (median ms, each case in a fresh process), against the polyfill
 | 1 write, 1,000 watching effects, 2 re-run | 0.44–0.78 | 0.12–0.13 | 0.39–0.60 | 0.03 | 0.03 |
 | 1 state → 1,000 computeds → effects | 0.6–0.85 | 0.28–0.43 | 0.48–0.54 | 0.05–0.06 | 0.06–0.09 |
 
-The rest of the gap to alien-signals is the API's shape: an effect on the proposal is a `Computed` plus a Watcher entry, about ten objects, where alien-signals' is two. A WebAssembly core was tried too and isn't a way round it: a call into WebAssembly costs about twice a JavaScript call, and a signals core is nothing but small calls.
+The rest of the gap to alien-signals was the API's shape: an effect on the proposal is a `Computed` plus a Watcher entry, about ten objects, where alien-signals' is two. That gap is why 6.0's default engine is Zubra's own, with no Watcher (above). A WebAssembly core was tried too and isn't a way round it: a call into WebAssembly costs about twice a JavaScript call, and a signals core is nothing but small calls.
 
 In the benchmark, with `run.mjs --time --runs 9` (same machine, same run, before and after this change; differences under about 15% are noise on this machine):
 
@@ -102,3 +102,9 @@ Create rows and remove row moved within this machine's noise (about 15%). A CPU 
 ## Server rendering
 
 The comparison with WebUI, FAST, Enhance and WebC (`docs/compared-with-html-first.md`) measures server rendering against those four. The short version: on a page of ten components, WebUI's server is about 15 times faster. Since 5.9.0 Zubra parses a component once, but each component on a page is still its own request to the compiler, with about 30 µs of fixed cost in WebAssembly.
+
+CI compares the compiler's warm render times against the latest release with `benchmarks/server-render.mjs --against <wasm> --max-ratio 3`; any case over three times the release fails. This loose guard catches large regressions, not a production latency target. It measures compiler requests, not HTTP, concurrency or the server's render cache. Load-test actual pages and cache hit rates against the deployment's own latency and throughput targets.
+
+## Sync
+
+The binary streams a live backlog one page at a time and bounds each subscriber's pending live events; a slow subscriber reconnects from its cursor. It still uses a thread per connection, filters scopes after reading a log page, and keeps the full history by default. `--keep-latest` bounds the active log to one row per field, without deleting an existing full log. See [`sync-server/README.md`](../sync-server/README.md) for deployment limits and migration. Measure connection counts, slow clients, history size and sustained writes on the target deployment before setting capacity.

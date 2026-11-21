@@ -9,13 +9,16 @@ import { fileURLToPath } from 'node:url';
 import { createSyncServer, allowAnyone } from '../src/server.js';
 
 const root = fileURLToPath(new URL('../..', import.meta.url));
-export const binaryPath = [process.env.ZUBRA_SYNC, join(root, 'target/release/zubra-sync'), join(root, 'target/debug/zubra-sync')]
+const executable = process.platform === 'win32' ? 'zubra-sync.exe' : 'zubra-sync';
+export const binaryPath = [process.env.ZUBRA_SYNC, join(root, 'target', 'release', executable), join(root, 'target', 'debug', executable)]
   .find((path) => path && existsSync(path));
 
 /** Start the binary on a free port with a fresh log; resolves to `{ base, close }`. */
 export async function startBinary(extra = []) {
+  if (!binaryPath) throw new Error('zubra-sync not found; run cargo build -p zubra-sync or set ZUBRA_SYNC to its path');
   const dir = mkdtempSync(join(tmpdir(), 'zubra-sync-'));
   const child = spawn(binaryPath, ['--port', '0', '--db', join(dir, 'sync.db'), ...extra], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const stopped = new Promise((resolve) => child.once('exit', resolve));
   const base = await new Promise((resolve, reject) => {
     let text = '';
     child.stdout.on('data', (chunk) => {
@@ -24,6 +27,7 @@ export async function startBinary(extra = []) {
       if (match) resolve(match[1].replace('127.0.0.1', 'localhost'));
     });
     child.on('exit', (code) => reject(new Error(`zubra-sync exited (${code})`)));
+    child.on('error', reject);
   });
   // A failing test mustn't leave the binary (and so the test run) hanging.
   child.unref();
@@ -31,9 +35,11 @@ export async function startBinary(extra = []) {
   process.once('exit', () => child.kill());
   return {
     base,
+    stopped,
     close: () => {
+      child.ref();
       child.kill();
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
 }

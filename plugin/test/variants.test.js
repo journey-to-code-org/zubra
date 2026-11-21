@@ -1,6 +1,7 @@
 // Which variant of a component an import gets.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 import { variantFor } from '../src/index.js';
 
 test('the importer decides: React files, Vue files, components, everything else', () => {
@@ -38,11 +39,23 @@ test('a query picks the variant explicitly', () => {
 test('resolveId keeps a variant that is already chosen, with no importer to go by', async () => {
   const { unplugin } = await import('../src/index.js');
   const plugin = unplugin.raw({ framework: 'react' }, { framework: 'vite' });
-  const here = new URL('.', import.meta.url).pathname;
+  const here = fileURLToPath(new URL('.', import.meta.url));
   const file = `${here}apps/react/src/App.tsx`.replace('App.tsx', '../../../../../runtime/test/browser/fixtures/card.zb');
   const { resolve } = await import('node:path');
   const path = resolve(file);
   assert.equal(await plugin.resolveId.call({}, `${path}?zubra=element`, undefined), `${path}?zubra=element`);
   assert.equal(await plugin.resolveId.call({}, path, undefined), `${path}?zubra=react`, 'otherwise the project\'s framework');
   assert.equal(await plugin.resolveId.call({}, './x.js', '/app/App.tsx'), null, 'not a component');
+});
+
+test('framework: vanilla (or element, none, plain) gives plain files the element', async () => {
+  const { unplugin } = await import('../src/index.js');
+  const { resolve } = await import('node:path');
+  const path = resolve(fileURLToPath(new URL('../../runtime/test/browser/fixtures/card.zb', import.meta.url)));
+  for (const framework of ['vanilla', 'element', 'none', 'plain']) {
+    const plugin = unplugin.raw({ framework }, { framework: 'vite' });
+    assert.equal(await plugin.resolveId.call({}, path, undefined), `${path}?zubra=element`, framework);
+  }
+  const react = unplugin.raw({ framework: 'react' }, { framework: 'vite' });
+  assert.equal(await react.resolveId.call({}, path, undefined), `${path}?zubra=react`);
 });

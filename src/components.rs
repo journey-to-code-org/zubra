@@ -71,6 +71,7 @@ fn one_definition_per_tag(component: &ComponentAst, path: &str) -> Result<(), Di
                         format!(", through `{}`", import.specifier)
                     };
                     return Err(Diagnostic::new(
+                        crate::codes::DUPLICATE_TAG_DEFINITION,
                         import.span,
                         format!(
                             "<{tag}> has two definitions: {first} and {second}{through}. A page \
@@ -110,6 +111,7 @@ fn load_from(
     for import in component.script.components.clone() {
         let Some(loader) = loader else {
             return Err(Diagnostic::new(
+                crate::codes::IMPORT_NEEDS_FILE,
                 import.span,
                 format!(
                     "this component imports `{}`; compile it from a file so imports can be found",
@@ -119,12 +121,14 @@ fn load_from(
         };
         let (child_path, source) = loader(&import.specifier, path).map_err(|message| {
             Diagnostic::new(
+                crate::codes::IMPORT_UNREADABLE,
                 import.span,
                 format!("can't load `{}`: {message}", import.specifier),
             )
         })?;
         if stack.contains(&child_path) {
             return Err(Diagnostic::new(
+                crate::codes::IMPORT_CYCLE,
                 import.span,
                 format!("import cycle: {} → {child_path}", stack.join(" → ")),
             ));
@@ -151,12 +155,14 @@ fn load_from(
         })?;
         if component.child(&child.tag).is_some() {
             return Err(Diagnostic::new(
+                crate::codes::DUPLICATE_IMPORT,
                 import.span,
                 format!("<{}> is imported more than once", child.tag),
             ));
         }
         if child.tag == component.tag {
             return Err(Diagnostic::new(
+                crate::codes::SELF_IMPORT,
                 import.span,
                 format!("<{}> can't import itself", child.tag),
             ));
@@ -176,7 +182,9 @@ pub fn filesystem(specifier: &str, from: &str) -> Result<(String, String), Strin
     let base = std::path::Path::new(from)
         .parent()
         .unwrap_or(std::path::Path::new("."));
-    let path = if crate::request::is_relative(specifier) {
+    let path = if std::path::Path::new(specifier).is_absolute() {
+        std::path::PathBuf::from(specifier)
+    } else if crate::request::is_relative(specifier) {
         base.join(specifier)
     } else {
         package_file(base, specifier)?

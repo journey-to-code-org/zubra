@@ -231,6 +231,7 @@ mod tests {
             let found = set.warnings("/a.zb", || {
                 asked += 1;
                 vec![Diagnostic::new(
+                    crate::codes::INTERNAL,
                     crate::diagnostic::Span::new(1, 1),
                     "careful",
                 )]

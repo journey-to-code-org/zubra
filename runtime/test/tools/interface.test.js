@@ -25,9 +25,9 @@ const SOURCE = `<!--
   const titleDefault = "Mikey Nichols"
   const dataDefault = { sample: "sample data", sampleTwo: "additional data" }
 </script>
-<zb-header title={titleDefault} data={dataDefault} tags={["a"]} max-items={3} open={false} label>
+<my-header title={titleDefault} data={dataDefault} tags={["a"]} max-items={3} open={false} label>
   <header><h1>{title}</h1><zb-slot name="actions"></zb-slot><zb-slot></zb-slot></header>
-</zb-header>
+</my-header>
 `;
 
 function compile(...args) {
@@ -53,7 +53,7 @@ test('the manifest is valid against the Custom Elements Manifest schema', () => 
   const [module] = manifest.modules;
   const [element] = module.declarations;
   assert.equal(module.path, 'header.js');
-  assert.equal(element.tagName, 'zb-header');
+  assert.equal(element.tagName, 'my-header');
   assert.equal(element.customElement, true, 'without it, tools treat the class as a plain class');
   assert.equal(element.description, 'A site header.\nPass `data` as JSON in plain HTML.');
   assert.deepEqual(element.attributes.map((a) => [a.name, a.fieldName, a.type.text]), [
@@ -65,7 +65,7 @@ test('the manifest is valid against the Custom Elements Manifest schema', () => 
     ['label', 'label', 'unknown'],
   ]);
   assert.deepEqual(element.slots, [{ name: '' }, { name: 'actions' }], 'the default slot is ""');
-  assert.ok(module.exports.some((e) => e.kind === 'custom-element-definition' && e.name === 'zb-header'));
+  assert.ok(module.exports.some((e) => e.kind === 'custom-element-definition' && e.name === 'my-header'));
 });
 
 test('--module-path sets where the manifest says the module lives', () => {
@@ -83,8 +83,8 @@ function typecheck(name, code) {
 
 test('the declarations type-check correct usage', () => {
   const output = typecheck('good', `
-    import ZbHeader, { tag, type ZbHeaderProps } from './header.js';
-    const el = document.querySelector('zb-header')!;
+    import MyHeader, { tag, type MyHeaderProps } from './header.js';
+    const el = document.querySelector('my-header')!;
     el.title = 'Journey to Code';
     el.data = { sample: 'one', sampleTwo: 'two' };
     el.tags = ['x', 'y'];
@@ -92,9 +92,9 @@ test('the declarations type-check correct usage', () => {
     el.open = true;
     el.label = { anything: true };
     const items: number = el.maxItems;
-    const created: ZbHeader = document.createElement('zb-header');
-    const props: ZbHeaderProps = { label: 'required', maxItems: 2 };
-    const name: 'zb-header' = tag;
+    const created: MyHeader = document.createElement('my-header');
+    const props: MyHeaderProps = { label: 'required', maxItems: 2 };
+    const name: 'my-header' = tag;
     export async function ready() { await el.updateComplete; }
     export { items, created, props, name };
   `);
@@ -103,13 +103,13 @@ test('the declarations type-check correct usage', () => {
 
 test('the declarations reject wrong prop types and missing required props', () => {
   const output = typecheck('bad', `
-    import { type ZbHeaderProps } from './header.js';
-    const el = document.querySelector('zb-header')!;
+    import { type MyHeaderProps } from './header.js';
+    const el = document.querySelector('my-header')!;
     el.maxItems = '3';
     el.data = { sample: 1, sampleTwo: 'two' };
     el.tags = [1];
     el.open = 'yes';
-    const props: ZbHeaderProps = { maxItems: 2 };
+    const props: MyHeaderProps = { maxItems: 2 };
     export { props };
   `);
   const errors = output.split('\n').filter((line) => /error TS\d+/.test(line));
@@ -160,7 +160,7 @@ test('events are in the manifest and type their listeners', () => {
   writeFileSync(join(dir, 'rating.d.ts'), compileFixture('dts'));
   const good = typecheck('events-good', `
     import './rating.js';
-    const el = document.querySelector('zb-rating')!;
+    const el = document.querySelector('my-rating')!;
     el.addEventListener('change', (event) => { const detail: null = event.detail; void detail; });
     el.addEventListener('valuechange', (event) => { const detail: unknown = event.detail; void detail; });
     el.addEventListener('beforevaluechange', (event) => event.preventDefault());
@@ -172,7 +172,7 @@ test('events are in the manifest and type their listeners', () => {
   assert.equal(good, '');
   const bad = typecheck('events-bad', `
     import './rating.js';
-    const el = document.querySelector('zb-rating')!;
+    const el = document.querySelector('my-rating')!;
     el.addEventListener('change', (event) => { const detail: string = event.detail; void detail; });
     export {};
   `);
@@ -296,13 +296,13 @@ test('HTML custom data drives completions in the HTML language service (what VS 
     return service.doComplete(document, document.positionAt(offset), service.parseHTMLDocument(document));
   };
   const tags = complete('<body><zb-|').items.map((item) => item.label);
-  assert.ok(tags.includes('zb-rating'), tags.join(', '));
-  const attributes = complete('<body><zb-rating |></zb-rating>').items;
+  assert.ok(tags.includes('my-rating'), tags.join(', '));
+  const attributes = complete('<body><my-rating |></my-rating>').items;
   const value = attributes.find((item) => item.label === 'value');
   assert.ok(value, attributes.map((item) => item.label).join(', '));
   assert.match(value.documentation?.value ?? value.documentation, /Type: `number`\. Default: `0`\./);
   assert.ok(attributes.some((item) => item.label === 'onvaluechange'));
-  const hover = service.doHover(TextDocument.create('file:///p.html', 'html', 1, '<zb-rating></zb-rating>'), { line: 0, character: 3 },
-    service.parseHTMLDocument(TextDocument.create('file:///p.html', 'html', 1, '<zb-rating></zb-rating>')));
+  const hover = service.doHover(TextDocument.create('file:///p.html', 'html', 1, '<my-rating></my-rating>'), { line: 0, character: 3 },
+    service.parseHTMLDocument(TextDocument.create('file:///p.html', 'html', 1, '<my-rating></my-rating>')));
   assert.match(JSON.stringify(hover), /A two-star rating/);
 });

@@ -3,7 +3,7 @@
  * @fires valuechange - The value changed.
  * @fires change - Committed.
  */
-export default function ZbRating({ value = 0, label = "Rating", onValueChange, onChange }) {
+export default function MyRating({ value = 0, label = "Rating", onValueChange, onChange }) {
   let hovered = null
   const shown = hovered ?? value
   function rate(stars) {

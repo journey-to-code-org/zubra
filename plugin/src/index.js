@@ -29,6 +29,7 @@ import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync, statSy
 import { addProps, zubraImports } from './props.js';
 import { kindOf, tagsIn, withImports } from './auto-import.js';
 import { solidOf } from './solid.js';
+import { engineOf, unknownOptions } from './options.js';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createRequire } from 'node:module';
 
@@ -130,15 +131,38 @@ $zubraRegister(tag, (props, slots) => {
 `;
 }
 
+/** Marks an error as the compiler's verdict on a component (not a crash of this plugin). */
+const COMPILE_ERROR = Symbol('zubra.compileError');
+
+/**
+ * The compiler's error text as an Error: without its leading `error: ` (an Error is printed as
+ * `Error: …` already), and marked as a compile error.
+ */
+function compileError(text) {
+  return Object.assign(new Error(String(text).replace(/^error:\s*/, '')), { [COMPILE_ERROR]: true });
+}
+
+/** The compiler's warnings (one text), one by one, each without its leading `warning: `. */
+export function splitWarnings(text) {
+  if (!text) return [];
+  return text
+    .split(/^(?=warning(?:: |\[[A-Z]+\d+\]: ))/m)
+    .map((one) => one.replace(/^warning(?::\s*|\[([A-Z]+\d+)\]:\s*)/, (_, code) => code ? `[${code}]: ` : '').trimEnd())
+    .filter(Boolean);
+}
+
 // A module of @zubra/runtime, as source or as its production build (installed, or linked).
 const RUNTIME_FILE = /[\\/]runtime[\\/](?:src|dist[\\/]production)[\\/][^\\/]+\.js(?:\?.*)?$/;
 const SIGNALS_ENGINE = /[\\/]runtime[\\/](?:src|dist[\\/]production)[\\/]signal-tc39\.js$/;
 /** Signals mode's engine, beside the runtime module that imports the engine. */
 function signalsEngine(importer) {
   const path = join(dirname(importer.split('?')[0]), 'signal-tc39.js');
-  if (!existsSync(path)) throw new Error(`zubra: signals: true needs @zubra/runtime 6.0 or later (no ${path})`);
+  if (!existsSync(path)) throw new Error(`zubra: engine: 'signals' needs @zubra/runtime 6.0 or later (no ${path})`);
   return path;
 }
+
+/** What the plugin takes (`signals` is `engine: 'signals'`'s old name): the README's Options. */
+const OPTIONS = ['compiler', 'framework', 'dts', 'runtime', 'ssr', 'hydrate', 'compilerModule', 'devtools', 'engine', 'signals', 'autoImport', 'root'];
 
 export const unplugin = createUnplugin((options = {}, meta = {}) => {
   // The compiler: a CLI when one is given (option or $ZUBRA_COMPILER); otherwise the WebAssembly
@@ -157,6 +181,8 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
   }
   const runtime = options.runtime ?? '@zubra/runtime';
   let project = options.framework && options.framework !== 'auto' ? options.framework : null;
+  // `vanilla` is no framework: plain files get the element. (`element`, `none` and `plain` say the same.)
+  if (['vanilla', 'none', 'plain'].includes(project)) project = 'element';
   const typings = options.dts ?? true;
   // `dts: { dir }`: the typings go in the app's own folder instead of beside each component.
   const typingsDir = typeof typings === 'object' && typings.dir ? typings.dir : null;
@@ -175,9 +201,11 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
   // An app that never renders on a server: components compiled without what takes over server
   // markup, so the runtime's hydrate.js stays out of the bundle.
   const clientOnly = options.hydrate === false;
-  // Signals mode (experimental): @zubra/runtime's engine on the TC39 Signals API
-  // (`signal-tc39.js`) in place of Zubra's own (`signal.js`), wherever the runtime imports it.
-  const signals = options.signals === true;
+  // `engine: 'signals'`, signals mode (experimental): @zubra/runtime's engine on the TC39 Signals
+  // API (`signal-tc39.js`) in place of Zubra's own (`signal.js`), wherever the runtime imports it.
+  // (`signals: true` is its name in 6.0.0-rc.0; anything but the two engines is an error.)
+  const signals = engineOf(options, '@zubra/unplugin', console.warn) === 'signals';
+  for (const message of unknownOptions(options, OPTIONS, '@zubra/unplugin')) console.warn(message);
 
   /** CLI flags → a request for the WebAssembly compiler. */
   function asRequest(args) {
@@ -200,7 +228,7 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
   function compile(path, ...args) {
     if (wasm) {
       const response = wasm.compileFile(path, asRequest(args));
-      if (!response.ok) throw new Error(response.error);
+      if (!response.ok) throw compileError(response.error);
       return { code: response.output, warnings: response.warnings.join('').trim() };
     }
     const result = spawnSync(compiler, ['compile', path, ...args], { encoding: 'utf8' });
@@ -208,7 +236,7 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
       throw new Error(`zubra: couldn't run the compiler \`${compiler}\` (${result.error.code ?? result.error.message}). `
         + 'Install @zubra/compiler (the WebAssembly build), install the CLI, or pass { compiler: "/path/to/zubra" }.');
     }
-    if (result.status !== 0) throw new Error(result.stderr.trim() || `zubra: the compiler exited with ${result.status}`);
+    if (result.status !== 0) throw compileError(result.stderr.trim() || `zubra: the compiler exited with ${result.status}`);
     return { code: result.stdout, warnings: result.stderr.trim() };
   }
 
@@ -220,21 +248,36 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
    */
   function fail(context, error, id) {
     const text = String(error.message ?? error);
+    // A compile error's stack is this plugin's own frames, which say nothing about the component:
+    // left out (`stack: ''`). Anything else (a crash in here) keeps its stack.
     const found = located(text, id);
-    if (!found) context.error(text);
-    else context.error(found);
-    throw new Error(text);
+    if (!error?.[COMPILE_ERROR]) {
+      const crash = error instanceof Error ? error : new Error(text);
+      context.error(found ? Object.assign(crash, found) : crash);
+      throw crash;
+    }
+    context.error({ ...(found ?? { message: text }), stack: '' });
+    throw Object.assign(new Error(text), { stack: '' });
   }
 
-  /** A compiler error's text as Vite's overlay takes it: the message, where, and the source line. Null without a place. */
+  /**
+   * A compiler error's text as the bundler takes it: the message, where (`loc`), and the source
+   * line with its caret and help (`frame`). Vite and Rollup print the frame after the message
+   * themselves (and the overlay shows it with a link to the file), so there the message is its
+   * first line alone; the other bundlers show only the message, so it keeps the whole text. Null
+   * without a place.
+   */
   function located(text, id) {
     const at = text.match(/-->\s+(.+?):(\d+):(\d+)/);
     if (!at) return null;
+    const [first, ...rest] = text.split('\n');
+    const framed = ['vite', 'rollup', 'rolldown'].includes(meta.framework);
+    const message = first.replace(/^error(?:\[(\w+)\])?:\s*(.*)$/, (_, code, text) => (code ? `${text} (${code})` : text));
     return {
-      message: `${text.split('\n')[0].replace(/^error:\s*/, '')}\n\n${text}`,
+      message: framed ? message : text,
       id,
       loc: { file: at[1], line: Number(at[2]), column: Number(at[3]) },
-      frame: text.split('\n').slice(1).join('\n'),
+      frame: rest.join('\n'),
       plugin: 'zubra',
     };
   }
@@ -439,7 +482,7 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
       const [specifier, query] = split(source);
       if (!COMPONENT.test(specifier)) return null;
       let path;
-      if (specifier.startsWith('/') && existsSync(specifier)) path = specifier;
+      if (isAbsolute(specifier) && existsSync(specifier)) path = specifier;
       else if (importer && specifier.startsWith('.')) path = resolve(dirname(split(importer)[0]), specifier);
       else {
         const resolved = await this.resolve?.(specifier, importer, { skipSelf: true });
@@ -515,8 +558,6 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
             + `an element given children must be \`shadow\`, or ${ssrFramework === 'Nuxt' ? 'Vue removes what it finds there' : 'React re-renders the page'} (see examples/meta/README.md).`);
         }
       }
-      // (A JSX component is typed by its own source: TypeScript reads the function.)
-      if (typings && path.endsWith('.zb')) writeTypings(this, path);
       // With Vite, a <style> goes through Vite's CSS pipeline; elsewhere it's inlined as written.
       const styles = [];
       if (meta.framework === 'vite' && path.endsWith('.zb') && /<style[\s>]/i.test(readFileSync(path, 'utf8'))) {
@@ -525,6 +566,9 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
       }
       let output;
       try {
+        // (A JSX component is typed by its own source: TypeScript reads the function.) Inside the
+        // try: an error in the typings' compile is the component's, with the overlay's file and frame.
+        if (typings && path.endsWith('.zb')) writeTypings(this, path);
         // In Vite's dev server, what the browser DevTools panel reads: each part's place in the
         // `.zb` file and the script's signals by name (the runtime's development build reads them).
         const devtools = ((dev && meta.framework === 'vite') || devtoolsInBuilds) && !server ? ['--devtools'] : [];
@@ -535,14 +579,15 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
       } catch (error) {
         return fail(this, error, path);
       }
-      if (output.warnings) this.warn(output.warnings);
+      // One warning at a time, each without the compiler's `warning: `, which the bundler adds.
+      for (const warning of splitWarnings(output.warnings)) this.warn(warning);
       // 'use collection' compiles to an import of @zubra/sync: say what to install, rather than
       // leave the bundler to report an unresolved import.
       if (output.code.includes('from "@zubra/sync"')) {
         try {
           createRequire(path).resolve('@zubra/sync');
         } catch {
-          return fail(this, new Error(`${relativePath(path)} starts with 'use collection', which needs @zubra/sync. Install it: npm install @zubra/sync`), path);
+          return fail(this, compileError(`${relativePath(path)} starts with 'use collection', which needs @zubra/sync. Install it: npm install @zubra/sync`), path);
         }
       }
       if (server) return serverRendering ? output.code + serverRenderer(path, compilerModule, runtime) : output.code;
@@ -599,7 +644,7 @@ export const unplugin = createUnplugin((options = {}, meta = {}) => {
           const text = String(error.message ?? error);
           // (Once, from the browser's environment: the terminal says what the overlay says.)
           if (this.environment?.name === 'client') this.environment.logger.error(text, { timestamp: true });
-          throw Object.assign(new Error(text), located(text, options.file) ?? {}, { stack: '' });
+          throw Object.assign(new Error(text), located(text, options.file) ?? {}, error?.[COMPILE_ERROR] ? { stack: '' } : {});
         }
       },
       // Svelte and Solid use the elements directly: in their server builds, the hosts get

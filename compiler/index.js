@@ -28,7 +28,7 @@ export function available() {
 // a long-lived server or dev server must not lose its compiler to one bad input.
 const wasm = restarting(() => {
   if (!module) {
-    if (!available()) throw new Error('@zubra/compiler: zubra.wasm is missing; run `npm run build` in its package (needs Rust with the wasm32-unknown-unknown target)');
+    if (!available()) throw new Error('@zubra/compiler: zubra.wasm is missing; run `npm run build` in its package (needs Rust with the wasm32-unknown-unknown target), or set ZUBRA_COMPILER to a native zubra (`cargo build --release` makes target/release/zubra)');
     module = new WebAssembly.Module(readFileSync(wasmUrl));
   }
   return new WebAssembly.Instance(module, {}).exports;

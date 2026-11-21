@@ -2,7 +2,7 @@
 
 *Zubra 5.0.3, November 2026. For the [Signals proposal](https://github.com/tc39/proposal-signals) champions. The proposal is at Stage 1. Before Stage 2 its authors want production-grade polyfills, and integrations into frameworks tested in real applications. This report is one of each.*
 
-> **Since Zubra 6.0** the default engine is Zubra's own, with the proposal's model and without its API; the API is signals mode, an experimental opt-in (`signals: true`), on which every suite still runs. What follows describes 5.x, where the API was the only engine. The comparison between the two engines, measured on the same components, is the newer evidence for the proposal's cost: see `docs/performance.md`.
+> **Since Zubra 6.0** the default engine is Zubra's own, with the proposal's model and without its API; the API is signals mode, an experimental opt-in (`engine: 'signals'`), on which every suite still runs. What follows describes 5.x, where the API was the only engine. The comparison between the two engines, measured on the same components, is the newer evidence for the proposal's cost: see `docs/performance.md`.
 
 ## What Zubra is
 

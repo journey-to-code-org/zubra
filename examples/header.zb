@@ -5,7 +5,7 @@
     sampleTwo: "additional data"
   }
 </script>
-<zb-header title={titleDefault} data={dataDefault}>
+<my-header title={titleDefault} data={dataDefault}>
   <header>
     <nav>
       <h1>{title}</h1>
@@ -15,4 +15,4 @@
       </menu>
     </nav>
   </header>
-</zb-header>
+</my-header>

@@ -210,12 +210,14 @@ export interface ZubraOptions {
    */
   reload?: boolean;
   /**
-   * Signals mode (experimental): the runtime's reactivity on the TC39 Signals API in place of
-   * Zubra's own engine. `state()` then returns a real `Signal.State`, the runtime's `Signal`
-   * export is the proposal's whole API, and a browser's native `Signal` is used when it has one.
-   * The runtime is served file by file in production too. A built runtime (`runtime`) must be
-   * built with the same option. Default `false`.
+   * The reactive engine. `'zubra'` (the default): Zubra's own. `'signals'` (experimental): the
+   * TC39 Signals API in its place. `state()` then returns a real `Signal.State`, the runtime's
+   * `Signal` export is the proposal's whole API, and a browser's native `Signal` is used when it
+   * has one. The runtime is served file by file in production too. A built runtime (`runtime`)
+   * must be built with the same engine. Any other value is an error.
    */
+  engine?: 'zubra' | 'signals';
+  /** @deprecated `engine: 'signals'`, under its name in 6.0.0-rc.0; development warns. */
   signals?: boolean;
   /**
    * Minify the component modules this server sends (and their CSS), with the compiler: about a

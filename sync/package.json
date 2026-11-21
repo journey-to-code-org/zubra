@@ -1,6 +1,6 @@
 {
   "name": "@zubra/sync",
-  "version": "6.0.0-rc.0",
+  "version": "6.0.0",
   "description": "Local-first state for Zubra components: 'use collection' keeps a component's state in IndexedDB, across reloads, offline, and in step across tabs.",
   "type": "module",
   "main": "./src/index.js",
@@ -34,10 +34,10 @@
   "scripts": {
     "build": "node scripts/build-production.js",
     "test": "node --test \"test/*.test.js\"",
-    "test:binary": "ZUBRA_SYNC_BACKEND=binary node --test test/browser.test.js"
+    "test:binary": "node --import ./test/binary.js --test test/browser.test.js"
   },
   "peerDependencies": {
-    "@zubra/runtime": "^6.0.0-rc.0"
+    "@zubra/runtime": "^6.0.0"
   },
   "devDependencies": {
     "@zubra/compiler": "file:../compiler",
@@ -59,5 +59,18 @@
     "type": "git",
     "url": "git+https://github.com/zubra-js/zubra.git",
     "directory": "sync"
-  }
+  },
+  "homepage": "https://github.com/zubra-js/zubra/tree/main/sync#readme",
+  "bugs": {
+    "url": "https://github.com/zubra-js/zubra/issues"
+  },
+  "keywords": [
+    "zubra",
+    "web components",
+    "custom elements",
+    "local-first",
+    "offline",
+    "indexeddb",
+    "sync"
+  ]
 }

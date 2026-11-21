@@ -1,5 +1,7 @@
 use std::fmt;
 
+pub use crate::codes::Code;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Span {
     pub line: usize,
@@ -14,6 +16,9 @@ impl Span {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Diagnostic {
+    /// The stable code (`ZB2001`), from `crate::codes`: what tools key on, while the message may
+    /// change (docs/diagnostics.md).
+    pub code: Code,
     pub span: Span,
     pub message: String,
     /// An optional suggestion, e.g. "did you mean `title`?".
@@ -23,8 +28,12 @@ pub struct Diagnostic {
 }
 
 impl Diagnostic {
-    pub fn new(span: Span, message: impl Into<String>) -> Self {
+    /// A diagnostic with its stable code. A new kind of diagnostic gets a new code: add it to
+    /// `src/codes.rs` (in its area's range, never reusing a number) and a row to
+    /// docs/diagnostics.md; `tests/diagnostics.rs` checks the two agree.
+    pub fn new(code: Code, span: Span, message: impl Into<String>) -> Self {
         Self {
+            code,
             span,
             message: message.into(),
             help: None,
@@ -55,7 +64,7 @@ impl Diagnostic {
     /// Render for a terminal, with the offending source line and a caret:
     ///
     /// ```text
-    /// error: unknown reference `titel`
+    /// error[ZB2001]: unknown reference `titel`
     ///  --> header.zb:11:11
     ///    |
     /// 11 |       <h1>{titel}</h1>
@@ -73,8 +82,8 @@ impl Diagnostic {
 
     fn render_as(&self, severity: &str, source: &str, path: &str) -> String {
         let mut output = format!(
-            "{severity}: {}\n --> {path}:{}:{}\n",
-            self.message, self.span.line, self.span.column
+            "{severity}[{}]: {}\n --> {path}:{}:{}\n",
+            self.code, self.message, self.span.line, self.span.column
         );
         let normalized = source.replace("\r\n", "\n");
         if let Some(line) = normalized.lines().nth(self.span.line.saturating_sub(1)) {
@@ -122,11 +131,15 @@ mod tests {
     #[test]
     fn renders_source_line_with_caret_and_help() {
         let source = "<p>\n  <h1>{titel}</h1>\n</p>";
-        let diagnostic = Diagnostic::new(Span::new(2, 8), "unknown reference `titel`")
-            .with_help("did you mean `title`?");
+        let diagnostic = Diagnostic::new(
+            crate::codes::UNKNOWN_REFERENCE,
+            Span::new(2, 8),
+            "unknown reference `titel`",
+        )
+        .with_help("did you mean `title`?");
         assert_eq!(
             diagnostic.render(source, "x.zb"),
-            "error: unknown reference `titel`\n --> x.zb:2:8\n  |\n2 |   <h1>{titel}</h1>\n  |        ^\n  = help: did you mean `title`?\n"
+            "error[ZB2001]: unknown reference `titel`\n --> x.zb:2:8\n  |\n2 |   <h1>{titel}</h1>\n  |        ^\n  = help: did you mean `title`?\n"
         );
     }
 }

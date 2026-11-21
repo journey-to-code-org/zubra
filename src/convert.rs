@@ -126,6 +126,7 @@ pub fn convert_component(
     if let Some(error) = parsed.diagnostics.first() {
         let at = error.labels.first().map_or(0, |label| label.offset());
         return Err(Diagnostic::new(
+            crate::codes::CONVERT_SYNTAX,
             at_offset(source, at),
             error.message.to_string(),
         ));
@@ -148,7 +149,7 @@ pub fn convert_component(
             continue;
         }
         if let Some((library, instead)) = react_primitive(module) {
-            return Err(Diagnostic::new(
+            return Err(Diagnostic::new(crate::codes::CONVERT_PRIMITIVE_LIBRARY,
                 at_offset(source, import.span.start),
                 format!("this component is built on {library} (`{module}`), whose React components have no HTML to convert to"),
             )
@@ -288,6 +289,7 @@ pub fn convert_component(
                     }
                     None => {
                         return Err(Diagnostic::new(
+                            crate::codes::CONVERT_NO_SUCH_EXPORT,
                             Span::new(1, 1),
                             format!("no exported component named `{wanted}` in this file"),
                         )
@@ -297,6 +299,7 @@ pub fn convert_component(
             }
             (several, None) if several.len() > 1 => {
                 return Err(Diagnostic::new(
+                    crate::codes::CONVERT_SEVERAL_COMPONENTS,
                     Span::new(1, 1),
                     format!(
                         "this file exports {} components; `zubra convert` converts one at a time",
@@ -312,11 +315,12 @@ pub fn convert_component(
         }
     }
     let Some(function) = function else {
-        return Err(Diagnostic::new(Span::new(1, 1), "no component to convert: `zubra convert` takes a file whose default export is a function component")
+        return Err(Diagnostic::new(crate::codes::CONVERT_NO_COMPONENT, Span::new(1, 1), "no component to convert: `zubra convert` takes a file whose default export is a function component")
             .with_help("write it as `export default function TodoItem({ … }) { … }` (an arrow function or a class isn't converted)"));
     };
     let Some(id) = &function.id else {
         return Err(Diagnostic::new(
+            crate::codes::CONVERT_UNNAMED,
             at_offset(source, function.span.start),
             "the component function needs a name: it becomes the tag",
         ));
@@ -328,6 +332,17 @@ pub fn convert_component(
     let name = if words >= 2 {
         name
     } else if let Some(prefix) = prefix.filter(|prefix| !prefix.is_empty()) {
+        if !prefix.as_bytes()[0].is_ascii_alphabetic()
+            || !prefix
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        {
+            return Err(Diagnostic::new(
+                crate::codes::CONVERT_ONE_WORD_NAME,
+                at_offset(source, id.span.start),
+                "the prefix must start with an ASCII letter and contain only letters, digits and underscores",
+            ));
+        }
         let renamed = format!("{}{}{name}", prefix[..1].to_uppercase(), &prefix[1..]);
         work.edit(id.span.start, id.span.end, &renamed);
         for reference in scoping.get_resolved_references(id.symbol_id()) {
@@ -339,7 +354,7 @@ pub fn convert_component(
         ));
         renamed
     } else {
-        return Err(Diagnostic::new(
+        return Err(Diagnostic::new(crate::codes::CONVERT_ONE_WORD_NAME,
             at_offset(source, id.span.start),
             format!("`{name}` is one word, and a custom element's name needs a hyphen"),
         )
@@ -350,7 +365,7 @@ pub fn convert_component(
     };
     let tag = kebab(&name);
     if let Some(problem) = tag_problem(&tag) {
-        return Err(Diagnostic::new(at_offset(source, id.span.start), problem)
+        return Err(Diagnostic::new(crate::codes::INVALID_TAG_NAME, at_offset(source, id.span.start), problem)
             .with_help("name the function in PascalCase ASCII (`TodoItem` is `<todo-item>`), with a plain word for `--prefix`"));
     }
 
@@ -876,8 +891,14 @@ impl Work<'_> {
         self.edits.iter().any(|(start, _, _)| *start == at)
     }
     fn unsupported(&mut self, at: u32, message: impl Into<String>, help: &str) {
-        self.unsupported
-            .push(Diagnostic::new(at_offset(self.source, at), message).with_help(help));
+        self.unsupported.push(
+            Diagnostic::new(
+                crate::codes::CONVERT_UNFINISHED,
+                at_offset(self.source, at),
+                message,
+            )
+            .with_help(help),
+        );
     }
     fn apply(&self) -> String {
         let mut edits: Vec<&(u32, u32, String)> = self
