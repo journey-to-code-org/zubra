@@ -15,6 +15,18 @@ The app it writes has a starter page of small components to read and copy from (
 
 **Status: 6.x, long-term support.** 6.0.0 starts a long-term-support line: everything [Stability](docs/stability.md) marks Stable (the `.zb` format, the compiled ABI, the CLI, the typings and manifest, the hydration markers and the Stable npm entries) is frozen for 6.x and changes only in a major, not before 7.0, and 6.x gets security and critical fixes for 18 months after 6.0.0. The number counts breaking changes, not years in use: majors came close together before 6.0, while Zubra followed new standards as they landed. Coming from 5.x? [Migrating to 6.0](docs/migrating-to-6.0.md): most apps need no change.
 
+## Built with Zubra
+
+These applications run on the published packages, outside this repository. One component library is shared across five frameworks, a Rust static-site generator pre-renders a widget from that library, and the server apps are complete HTML before any JavaScript runs.
+
+- **[open.parlor](https://github.com/journey-to-code-org/open.parlor)** ([live](https://open-parlor.up.railway.app)) is a family games site of fifty-six card, board, word and arcade games, with houses and tournaments. React, Vue, Svelte, Solid and Angular each own a different part of the site and share one `.zb` component library; the game rooms run on `@zubra/sync`. Its conformance suite runs 214 checks in Chrome, Firefox and WebKit. Each fixture is written the way that framework's own documentation would write it, and a difference is filed as an issue. [The last run](https://journey-to-code-org.github.io/open.parlor/conformance/) is published check by check, with the fixtures to try by hand.
+
+  [![Zubra conformance in open.parlor](https://img.shields.io/endpoint?url=https://journey-to-code-org.github.io/open.parlor/conformance/badge.json)](https://journey-to-code-org.github.io/open.parlor/conformance/)
+
+- **[open.blog](https://github.com/journey-to-code-org/open.blog)** is a static-site generator written in Rust. A theme can ship a portable widget, including open.parlor's `<card-room>`. With the `zubra` command installed where the site builds, the build runs `zubra compile` on the widget's `.zb` source and writes that HTML into the page, so a reader with JavaScript off still sees the widget and a link to the parlor.
+
+- **[Call Store](https://github.com/mnichols08/call-store-)** is a parts-counter call desk built for Southern Auto Supply. **[Tailgate](https://github.com/mnichols08/tailgate)** is a farm-to-door market: one cart across several farms, one payment, and a driver for each farm's order. Both render every page with `@zubra/server` and post forms through `@zubra/actions`, so the pages are complete HTML with JavaScript off and pick up live updates when it runs. Tailgate keeps a farmer's stock and storefront in `@zubra/sync`, edited on the device and synced when the connection returns.
+
 ## A component
 
 ```html

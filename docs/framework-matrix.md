@@ -47,18 +47,18 @@ Each framework's app in `examples/frameworks/` (or `examples/meta/` for the serv
 
 The rows above are Zubra's own apps. [open.parlor](https://github.com/journey-to-code-org/open.parlor) is a separate app that depends on the published packages, and it checks the same claim from the outside: one set of components, used from React, Vue, Svelte, Solid and Angular in different parts of one games site.
 
-Its conformance suite (`packages/conformance` there) writes one fixture six times, once in each framework and once with none, the way each framework's own documentation would have it written, and runs one set of browser checks against all six in Chrome. A check that passes in five and fails in one is a difference in Zubra. Nothing in a framework's page works around one: it is reported here as an issue and listed there as a known difference until it is fixed.
+Its conformance suite (`packages/conformance` there) writes one fixture in React, Vue, Svelte, Solid and Angular, in Preact and Lit, and once with no framework, the way each framework's own documentation would have it written, and runs 214 checks against all of them in Chrome, Firefox and WebKit. A check that passes in one of those and fails in another is a difference in Zubra. Nothing in a framework's page works around one: it is reported here as an issue and listed there as a known difference until it is fixed.
 
 | Checked there | In |
 |---|---|
-| Props, events, two-way binding, slots, named slots arriving and leaving, a dialog, a table, tabs, a component removed and brought back | all five frameworks and plain elements |
+| Props, events, two-way binding, slots, named slots arriving and leaving, a dialog, a table, tabs, a component removed and brought back | React, Vue, Svelte, Solid, Angular, Preact, Lit and plain elements |
 | Each framework's own features around a component: keyed lists, context through a slot, class and style bindings, lazy loading | all five |
 | Portals (`createPortal`, `Teleport`, `Portal`) | React, Vue, Solid |
 | Transitions (`Transition`, `transition:`, `animate.leave`) | Vue, Svelte, Angular |
 | Kept while off the page (`Activity`, `KeepAlive`) | React, Vue |
 | Reactive forms through `zubraModel`: values both ways, validity and touched, `disable()`, `reset()` | Angular |
 
-[The results of its last run](https://journey-to-code-org.github.io/open.parlor/conformance/) are published with the app, with the six fixture pages to try by hand. Its first run, on 5.9, found #261, #262, #267, #268 and #269, all fixed in 5.15.0.
+[The results of its last run](https://journey-to-code-org.github.io/open.parlor/conformance/) are published with the app, with the fixture pages to try by hand. Its first run, on 5.9, found #261, #262, #267, #268 and #269, all fixed in 5.15.0.
 
 It runs on the version of Zubra the app has installed, which can be behind this repository's `main`; the page says which.
 
