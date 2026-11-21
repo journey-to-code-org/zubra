@@ -8,7 +8,9 @@ import { effect } from './effect.js';
 // property names (custom ones included).
 const ATTRIBUTE_NAME = /^[A-Za-z_:][A-Za-z0-9_.:-]*$/;
 const CSS_PROPERTY = /^(?:--[A-Za-z0-9_-]+|[A-Za-z][A-Za-z0-9-]*)$/;
-const safeCssValue = (text) => !/[;{}<\\]/.test(text) && !/(?:url\(|expression\(|@import)/i.test(text);
+// One CSS value, as the server checks a spread's style: no `;`, braces, `<`, backslash,
+// url(), expression() or @import.
+const UNSAFE_CSS = /[;{}<\\]|url\(|expression\(|@import/i;
 
 const see = (section) => ` (see https://github.com/zubra-js/zubra/blob/main/docs/reference.md#${section})`;
 
@@ -102,7 +104,7 @@ export function spread(part, node) {
       if (name === 'style') {
         if (value === null || value === false) continue;
         if (typeof value !== 'object' || Array.isArray(value)) {
-          console.error(`zubra: a spread's style must be an object of properties (set through the CSSOM), not text${see('safety')}:`, value);
+          console.error(`zubra: a spread's style must be an object of properties, not text${see('safety')}:`, value);
           continue;
         }
         for (const [property, propertyValue] of Object.entries(value)) {
@@ -113,8 +115,8 @@ export function spread(part, node) {
           }
           if (own.has(`style:${css}`)) continue;
           if (propertyValue == null || propertyValue === false) continue;
-          if (typeof propertyValue === 'object' || typeof propertyValue === 'function' || !safeCssValue(String(propertyValue))) {
-            console.error(`zubra: a spread's style value isn't a single CSS value, so "${css}" was left out${see('safety')}:`, propertyValue);
+          if (typeof propertyValue === 'object' || typeof propertyValue === 'function' || UNSAFE_CSS.test(String(propertyValue))) {
+            console.error(`zubra: a spread's style value isn't a single CSS value, so it was left out${see('safety')}:`, css, propertyValue);
             continue;
           }
           nextStyles.add(css);
