@@ -2,12 +2,12 @@
 // built and used in Chromium by examples/frameworks/test/create.test.js and the plugin's tests.)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, parse as parsePath } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { FRAMEWORKS, create, parse } from '../index.js';
+import { FRAMEWORKS, create, nodeRequirement, parse } from '../index.js';
 
 const work = () => mkdtempSync(join(tmpdir(), 'create-zubra-'));
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -124,18 +124,31 @@ test('refuses a directory with files in it, and an unknown framework', () => {
   assert.ok(create(join(dir, 'empty'), 'vanilla').length > 0, 'an empty directory is fine');
 });
 
-test('command line: arguments, and a run without a terminal', () => {
+test('command line: arguments, and a run without a terminal', (t) => {
   assert.deepEqual(parse(['app', '--framework', 'vue']), { dir: 'app', framework: 'vue', typescript: null, yes: false, help: false });
   assert.deepEqual(parse(['--template=react', '-y']), { dir: null, framework: 'react', typescript: null, yes: true, help: false });
   assert.equal(parse(['--typescript']).typescript, true);
   assert.equal(parse(['--ts']).typescript, true);
   assert.equal(parse(['--js']).typescript, false);
   assert.throws(() => parse(['a', 'b']), /unexpected argument b/);
+  for (const flag of ['--framework', '-f', '--template', '-t']) {
+    assert.throws(() => parse([flag]), /requires a framework/);
+    assert.throws(() => parse([flag, '--yes']), /requires a framework/);
+  }
+  for (const flag of ['--framework=', '--template=']) assert.throws(() => parse([flag]), /requires a framework/);
   const cwd = work();
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const missingDir = join(cwd, 'missing');
   const entry = fileURLToPath(new URL('../index.js', import.meta.url));
+  const missing = spawnSync(process.execPath, [entry, missingDir, '--framework'], { encoding: 'utf8' });
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /requires a framework/);
+  assert.ok(!existsSync(missingDir));
+  if (!nodeRequirement('svelte').supports(process.versions.node)) return;
   const out = execFileSync(process.execPath, [entry, 'site', '--framework', 'svelte'], { cwd, encoding: 'utf8' });
   assert.match(out, /A Zubra app \(Svelte\) is in site/);
   assert.match(out, /cd site\n {2}npm install/);
+  assert.match(out, /npx playwright install chromium/);
   assert.match(out, /made of the examples in src\/components\//);
   assert.match(readFileSync(join(cwd, 'site/src/App.svelte'), 'utf8'), /<hello-counter/);
   // No terminal and no framework: plain HTML, in zb-app.
@@ -145,11 +158,102 @@ test('command line: arguments, and a run without a terminal', () => {
   const typed = execFileSync(process.execPath, [entry, 'typed', '--framework', 'vanilla', '--typescript'], { cwd, encoding: 'utf8' });
   assert.match(typed, /A Zubra app \(Vanilla: no framework \(plain HTML and JavaScript\), TypeScript\) is in typed/);
   assert.match(typed, /npm run check {3}type-checks the components/);
+  const spaced = execFileSync(process.execPath, [entry, 'my app', '--yes'], { cwd, encoding: 'utf8' });
+  assert.match(spaced, /cd "my app"\n/);
+  const special = execFileSync(process.execPath, [entry, 'app & more', '--yes'], { cwd, encoding: 'utf8' });
+  assert.doesNotMatch(special, /cd app & more/);
+  assert.match(special, /change into the directory/i);
+  if (process.platform === 'win32' && parsePath(cwd).root.toLowerCase() !== parsePath(process.cwd()).root.toLowerCase()) {
+    const crossDrive = join(cwd, 'other drive');
+    const output = execFileSync(process.execPath, [entry, crossDrive, '--yes'], { cwd: process.cwd(), encoding: 'utf8' });
+    assert.ok(output.includes(`PowerShell: cd "${crossDrive}"`));
+    assert.ok(output.includes(`cmd: cd /d "${crossDrive}"`));
+  }
   // No framework is `vanilla`; `element`, `none` and `plain` are its other names.
   for (const alias of ['element', 'none', 'plain']) {
     const made = execFileSync(process.execPath, [entry, alias, '--framework', alias], { cwd, encoding: 'utf8' });
     assert.match(made, /A Zubra app \(Vanilla: no framework/, alias);
     assert.equal(readFileSync(join(cwd, alias, 'index.html'), 'utf8'), readFileSync(join(cwd, 'zb-app/index.html'), 'utf8').replaceAll('zb-app', alias));
+  }
+});
+
+test('starter Node requirements match each toolchain', (t) => {
+  const root = work();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const [framework, accepted, rejected] of [
+    ['react', ['20.19.0', '22.12.0', '23.0.0'], ['20.18.9', '21.0.0', '22.11.9']],
+    ['svelte', ['20.19.0', '22.12.0', '24.0.0'], ['20.18.9', '23.0.0']],
+    ['astro', ['22.23.4', '23.0.0'], ['22.23.3']],
+    ['angular', ['22.22.3', '24.15.0', '26.0.0'], ['22.22.2', '23.0.0', '24.14.9', '25.0.0']],
+    ['server', ['20.19.0', '21.0.0'], ['20.18.9', '19.9.9']],
+  ]) {
+    const requirement = nodeRequirement(framework);
+    for (const version of accepted) assert.ok(requirement.supports(version), `${framework} ${version}`);
+    for (const version of rejected) assert.ok(!requirement.supports(version), `${framework} ${version}`);
+    const dir = join(root, framework);
+    create(dir, framework);
+    assert.equal(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).engines.node, requirement.range);
+  }
+});
+
+test('the command refuses an unsupported Node before writing an app', (t) => {
+  const cwd = work();
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  const entry = fileURLToPath(new URL('../index.js', import.meta.url));
+  const script = `
+    Object.defineProperty(process.versions, 'node', { value: '20.0.0' });
+    process.argv = [process.execPath, ${JSON.stringify(entry)}, 'app', '--framework', 'react', '--yes'];
+    await import(${JSON.stringify(pathToFileURL(entry).href)});
+  `;
+  const { status, stderr } = spawnSync(process.execPath, ['--input-type=module', '-e', script], { cwd, encoding: 'utf8' });
+  assert.equal(status, 1);
+  assert.match(stderr, /react requires Node.*20\.0\.0/);
+  assert.ok(!existsSync(join(cwd, 'app')));
+});
+
+test('the server starter serves pages with both older and current server packages', (t) => {
+  const root = work();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const hasSend of [false, true]) {
+    const dir = join(root, hasSend ? 'current' : 'older');
+    create(dir, 'server');
+    const modules = join(dir, 'node_modules', '@zubra');
+    for (const name of ['server', 'actions']) {
+      mkdirSync(join(modules, name), { recursive: true });
+      writeFileSync(join(modules, name, 'package.json'), '{"type":"module","exports":"./index.js"}');
+    }
+    writeFileSync(join(modules, 'server', 'index.js'), `
+      export function createZubra() {
+        return {
+          handle: () => false,
+          page: () => ({ render: () => '<p>rendered</p>', finish: (html) => html }),
+          errorPage: () => ({ status: 500, type: 'text/plain', body: 'failed' }),
+          ${hasSend ? "send: (req, res, html) => res.writeHead(200, { 'content-type': 'text/html', 'x-used-send': 'yes' }).end(html)," : ''}
+        };
+      }
+    `);
+    writeFileSync(join(modules, 'actions', 'index.js'), `
+      export async function createActions() {
+        return { handle: async () => false, result: (req, set) => set('set-cookie', 'test=1'), script: () => '' };
+      }
+    `);
+    const script = `
+      import { server } from './server.js';
+      await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+      const response = await fetch('http://127.0.0.1:' + server.address().port);
+      console.log(JSON.stringify({ status: response.status, type: response.headers.get('content-type'), cookie: response.headers.get('set-cookie'), sent: response.headers.get('x-used-send'), body: await response.text() }));
+      server.close();
+    `;
+    const { status, stdout, stderr } = spawnSync(process.execPath, ['--input-type=module', '-e', script], { cwd: dir, encoding: 'utf8', env: { ...process.env, NODE_TEST_CONTEXT: '' } });
+    assert.equal(status, 0, stderr);
+    const response = JSON.parse(stdout.trim());
+    assert.equal(response.status, 200);
+    assert.match(response.type, /^text\/html/);
+    assert.equal(response.cookie, 'test=1');
+    assert.match(response.body, /<p>rendered<\/p>/);
+    assert.equal(response.sent, hasSend ? 'yes' : null);
+    if (hasSend) assert.doesNotMatch(stderr, /does not compress pages/);
+    else assert.match(stderr, /does not compress pages/);
   }
 });
 

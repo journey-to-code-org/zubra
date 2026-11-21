@@ -7,7 +7,9 @@ npm install
 npm run dev
 ```
 
-It asks for a framework (none, React, Vue, Svelte, Solid, Preact, Lit, Angular or Astro, or a server-rendered app with no bundler) and whether components should be TypeScript. `npm run dev` opens a page made of small example components. Each one is a file you can open, change and save while the page is running: it updates in place and keeps its state.
+It asks for a framework (none, React, Vue, Svelte, Solid, Preact, Lit, Angular or Astro, or a server-rendered app with no bundler) and whether components should be TypeScript. Open the URL printed by `npm run dev` to see a page made of small example components. Each one is a file you can open, change and save while the page is running: it updates in place and keeps its state.
+
+The creator reports the Node version required by the framework you choose. To run the app's browser tests, install Chromium once with `npx playwright install chromium`.
 
 This page says what's in the app, so you can go straight to the part you need. The [tutorial](01-first-component.md) explains each idea in turn.
 
