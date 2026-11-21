@@ -3,10 +3,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { FRAMEWORKS, create, parse } from '../index.js';
 
 const work = () => mkdtempSync(join(tmpdir(), 'create-zubra-'));
@@ -64,18 +64,40 @@ for (const framework of ['react', 'angular']) {
     assert.equal(pkg.scripts.check, 'zubra check --types src');
     assert.ok(pkg.devDependencies.typescript);
     assert.ok(pkg.devDependencies['@zubra/compiler'], 'the `zubra` command');
-    const tsconfig = readFileSync(join(dir, 'tsconfig.json'), 'utf8');
+    const tsconfig = JSON.parse(readFileSync(join(dir, 'tsconfig.json'), 'utf8'));
     // Angular keeps its own (its compiler needs it); the others get one.
-    if (framework === 'angular') assert.match(tsconfig, /angularCompilerOptions/);
-    else assert.match(tsconfig, /"include": \["src"\]/);
+    if (framework === 'angular') assert.ok(tsconfig.angularCompilerOptions);
+    else assert.deepEqual(tsconfig.include, ['src']);
     // React's .tsx files are typed against the components' typings, so tsc catches a wrong prop.
-    const options = JSON.parse(tsconfig).compilerOptions;
+    const options = tsconfig.compilerOptions;
     assert.equal(options.jsx, framework === 'react' ? 'react-jsx' : options.jsx);
     assert.equal(options.allowArbitraryExtensions, framework === 'react' ? true : undefined);
     assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /npm run check {3}# type-checks the components/);
     assert.match(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), /`npm run check` type-checks every component/);
   });
 }
+
+test('React TypeScript config retains its options with a CRLF template', async (t) => {
+  const dir = work();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const generator = join(dir, 'generator');
+  mkdirSync(generator);
+  for (const name of ['index.js', 'package.json', 'templates']) {
+    cpSync(new URL(`../${name}`, import.meta.url), join(generator, name), { recursive: true });
+  }
+  const template = join(generator, 'templates', 'typescript', 'tsconfig.json');
+  const text = readFileSync(template, 'utf8');
+  const original = JSON.parse(text);
+  writeFileSync(template, text.replace(/\r?\n/g, '\r\n'));
+  const { create: createFromCopy } = await import(pathToFileURL(join(generator, 'index.js')).href);
+  const app = join(dir, 'app');
+  createFromCopy(app, 'react', { typescript: true });
+  const config = JSON.parse(readFileSync(join(app, 'tsconfig.json'), 'utf8'));
+  assert.deepEqual(config, {
+    ...original,
+    compilerOptions: { ...original.compilerOptions, jsx: 'react-jsx', allowArbitraryExtensions: true },
+  });
+});
 
 test('without --typescript, nothing about TypeScript changes', () => {
   const dir = join(work(), 'app');

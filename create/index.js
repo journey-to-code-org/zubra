@@ -59,8 +59,11 @@ export function create(dir, framework, { name = basename(resolve(dir)), typescri
     // `./x.zb` is typed from the `x.d.zb.ts` the build plugin writes beside it (without it, it's
     // `any`, and a wrong prop passes). The other frameworks check their own files their own way.
     if (framework === 'react' && !own) {
-      const config = join(target, 'tsconfig.json');
-      writeFileSync(config, readFileSync(config, 'utf8').replace('"strict": true,\n', '"strict": true,\n    "jsx": "react-jsx",\n    "allowArbitraryExtensions": true,\n'));
+      const path = join(target, 'tsconfig.json');
+      const config = JSON.parse(readFileSync(path, 'utf8'));
+      config.compilerOptions.jsx = 'react-jsx';
+      config.compilerOptions.allowArbitraryExtensions = true;
+      writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
     }
     const manifest = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'));
     manifest.devDependencies = { ...manifest.devDependencies, typescript: manifest.devDependencies?.typescript ?? TYPESCRIPT };
