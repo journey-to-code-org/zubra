@@ -3,9 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/ensure-installed.js",
     "dev": "astro dev",
+    "prebuild": "node scripts/ensure-installed.js",
     "build": "astro build",
+    "prepreview": "node scripts/ensure-installed.js",
     "preview": "astro preview",
+    "pretest": "node scripts/ensure-installed.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
