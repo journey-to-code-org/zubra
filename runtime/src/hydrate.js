@@ -43,6 +43,50 @@ function lostComments(root, template, roots) {
   return elements || !roots ? true : children.some((child) => roots.includes(child.localName));
 }
 
+const directText = (node) => {
+  let text = '';
+  for (let child = node.firstChild; child; child = child.nextSibling) if (child.nodeType === 3) text += child.data;
+  return text;
+};
+
+const pathKey = (path) => (path ?? []).join(',');
+
+/**
+ * The live tree and the template agree at every element: the same markers and tags, the same
+ * static text, and no attribute the template doesn't have unless a part binds it. A slot's
+ * `<!--]-->` or `<?zb ]?>` changes its parent's shape, so the component renders fresh instead of
+ * binding its listener to whatever element followed the early close. A lookalike child (the
+ * template's button, with a visitor's text and `formaction`) is not adopted.
+ */
+function faithful(liveParent, templateParent, parts, path = []) {
+  if (signature(childRange(liveParent)) !== signature(childRange(templateParent))) return false;
+  const livePos = [...positions(liveParent.firstChild, null)];
+  const templatePos = [...positions(templateParent.firstChild, null)];
+  if (livePos.length !== templatePos.length) return false;
+  for (let index = 0; index < livePos.length; index++) {
+    const live = livePos[index];
+    const template = templatePos[index];
+    if (live.nodeType !== 1) continue;
+    const here = path.concat(index);
+    const key = pathKey(here);
+    const writesText = parts.some((part) => part.text && pathKey(part.path) === key);
+    if (!writesText && directText(live) !== directText(template)) return false;
+    const kept = new Set([...template.attributes].map((attr) => attr.name));
+    for (const attr of [...live.attributes]) {
+      const bound = parts.some((part) => pathKey(part.path) === key && (
+        (part.attribute && part.attribute.toLowerCase() === attr.name)
+        || (attr.name === 'class' && (part.classes || part.toggle))
+        || (attr.name === 'style' && part.style)
+      ));
+      if (bound) continue;
+      if (!kept.has(attr.name)) live.removeAttribute(attr.name);
+      else if (template.getAttribute(attr.name) !== attr.value) live.setAttribute(attr.name, template.getAttribute(attr.name));
+    }
+    if (!faithful(live, template, parts, here)) return false;
+  }
+  return true;
+}
+
 /** @internal What interface 4 output names as `hydrating`: taking over server markup. */
 export const $hydrate = {
   /**
@@ -60,7 +104,7 @@ export const $hydrate = {
   adopt(root, template, parts, claimed, filled) {
     const stripped = claimed && hasComment(template) && !hasComment(root);
     const restored = stripped && !!remarker?.remark(root, template, parts, { blueprint, isOpen, isClose, read: $r, untrack, State, filled });
-    const nodes = signature(childRange(root)) === signature(childRange(template)) ? locate(childRange(root), parts, true) : null;
+    const nodes = faithful(root, template, parts) ? locate(childRange(root), parts, true) : null;
     return [nodes, stripped && !restored];
   },
 };
