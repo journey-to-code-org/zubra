@@ -17,19 +17,38 @@ const prerelease = version.includes('-');
 const range = prerelease ? `^${version}` : `^${version.replace(/^(\d+\.\d+)\..*/, '$1.0')}`;
 
 test('every package has the release version', () => {
-  for (const path of ['compiler', 'create', 'plugin', 'runtime', 'server', 'editors/language-server', 'editors/vscode']) {
+  for (const path of ['compiler', 'create', 'plugin', 'runtime', 'server', 'actions', 'sync', 'router', 'prettier-plugin', 'editors/language-server', 'editors/vscode', 'editors/devtools']) {
     // A prerelease leaves the VS Code extension on the last release: the Marketplace takes only numbers.
-    if (prerelease && path === 'editors/vscode') assert.match(json(`${path}/package.json`).version, /^\d+\.\d+\.\d+$/, path);
+    if (prerelease && (path === 'editors/vscode' || path === 'editors/devtools')) assert.match(json(`${path}/package.json`).version, /^\d+\.\d+\.\d+$/, path);
     else assert.equal(json(`${path}/package.json`).version, version, path);
   }
   assert.match(readFileSync(join(repo, 'Cargo.toml'), 'utf8'), new RegExp(`^version = "${version.replaceAll('.', '\\.')}"$`, 'm'));
+  for (const path of ['editors/language-server', 'editors/vscode']) {
+    const lock = json(`${path}/package-lock.json`);
+    const expected = json(`${path}/package.json`).version;
+    assert.equal(lock.version, expected, `${path} lockfile`);
+    assert.equal(lock.packages[''].version, expected, `${path} lockfile root`);
+  }
+  assert.equal(json('editors/vscode/package-lock.json').packages['../language-server'].version, version, 'linked language server');
+  assert.equal(json('editors/devtools/manifest.json').version, json('editors/devtools/package.json').version);
 });
 
-test('the plugin and the server ask for this release of the compiler and the runtime', () => {
-  for (const path of ['plugin', 'server']) {
+test('packages ask for this release of the Zubra packages they use', () => {
+  for (const [path, names] of Object.entries({
+    plugin: ['@zubra/compiler', '@zubra/runtime'],
+    server: ['@zubra/compiler', '@zubra/runtime'],
+    actions: ['@zubra/compiler', '@zubra/server'],
+    sync: ['@zubra/runtime'],
+    router: ['@zubra/compiler', '@zubra/server'],
+  })) {
     const pkg = json(`${path}/package.json`);
     const wanted = { ...pkg.peerDependencies, ...pkg.dependencies };
-    for (const name of ['@zubra/compiler', '@zubra/runtime']) assert.equal(wanted[name], range, `${path}: ${name}`);
+    const root = json(`${path}/package-lock.json`).packages[''];
+    const locked = { ...root.peerDependencies, ...root.dependencies };
+    for (const name of names) {
+      assert.equal(wanted[name], range, `${path}: ${name}`);
+      assert.equal(locked[name], range, `${path} lockfile: ${name}`);
+    }
   }
 });
 
@@ -68,6 +87,34 @@ test('scripts/bump-version.sh moves that range with the version', () => {
   }
 });
 
+test('version bumps keep editor lockfiles in step, including prereleases', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-bump-editors-'));
+  try {
+    const script = readFileSync(join(repo, 'scripts/bump-version.sh'), 'utf8');
+    const start = script.indexOf('for f in compiler/package-lock.json');
+    const end = script.indexOf('# sync installs', start);
+    assert.ok(start !== -1 && end !== -1);
+    const block = script.slice(start, end);
+    for (const path of ['compiler', 'plugin', 'runtime', 'server', 'actions', 'sync', 'router', 'prettier-plugin', 'editors/language-server', 'editors/vscode']) {
+      mkdirSync(join(dir, path), { recursive: true });
+      cpSync(join(repo, path, 'package-lock.json'), join(dir, path, 'package-lock.json'));
+    }
+    const bump = (version) => execFileSync('sh', ['-c', `set -e; v=${version}; V='[0-9][0-9A-Za-z.-]*'; ${block}`], { cwd: dir });
+    const lock = (path) => JSON.parse(readFileSync(join(dir, path, 'package-lock.json'), 'utf8'));
+    const extension = lock('editors/vscode').version;
+    bump('6.1.0-rc.0');
+    assert.equal(lock('editors/language-server').packages[''].version, '6.1.0-rc.0');
+    assert.equal(lock('editors/vscode').version, extension);
+    assert.equal(lock('editors/vscode').packages['../language-server'].version, '6.1.0-rc.0');
+    bump('6.1.0');
+    assert.equal(lock('editors/language-server').version, '6.1.0');
+    assert.equal(lock('editors/vscode').packages[''].version, '6.1.0');
+    assert.equal(lock('editors/vscode').packages['../language-server'].version, '6.1.0');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('command names point at their file without "./", the form npm 11 keeps when publishing', () => {
   // npm 11 drops a bin written "./cli.js" ("script name … was invalid and removed"), so the
   // package would install without its command.
@@ -83,6 +130,14 @@ test('the release version has its notes in CHANGELOG.md', () => {
   const notes = execFileSync(process.execPath, [join(repo, 'scripts/release-notes.mjs'), version], { encoding: 'utf8' });
   assert.ok(notes.trim().length > 0);
   assert.doesNotMatch(notes, /^## /m, 'only this version\'s section');
+});
+
+test('the 6.0.0 release notes include the release candidate', { skip: version !== '6.0.0' }, () => {
+  const notes = execFileSync(process.execPath, [join(repo, 'scripts/release-notes.mjs'), '6.0.0'], { encoding: 'utf8' });
+  const candidate = execFileSync(process.execPath, [join(repo, 'scripts/release-notes.mjs'), '6.0.0-rc.0'], { encoding: 'utf8' });
+  const headings = (text) => [...text.matchAll(/^- \*\*(.+?)\*\*/gm)].map((match) => match[1]);
+  const released = new Set(headings(notes));
+  for (const heading of headings(candidate)) assert.ok(released.has(heading), `6.0.0 notes omit: ${heading}`);
 });
 
 // npm's trusted publishing and provenance check the package against the repository it was built in:

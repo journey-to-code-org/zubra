@@ -1,6 +1,6 @@
 {
   "name": "@zubra/router",
-  "version": "6.0.0-rc.0",
+  "version": "6.0.0",
   "description": "Serve Zubra components that say 'use route <path>' as pages, with a server-only load, for apps with no host framework.",
   "type": "module",
   "main": "./src/index.js",
@@ -22,8 +22,8 @@
     "urlpattern-polyfill": "10.1.0"
   },
   "peerDependencies": {
-    "@zubra/compiler": "^6.0.0-rc.0",
-    "@zubra/server": "^6.0.0-rc.0"
+    "@zubra/compiler": "^6.0.0",
+    "@zubra/server": "^6.0.0"
   },
   "devDependencies": {
     "@zubra/compiler": "file:../compiler",
