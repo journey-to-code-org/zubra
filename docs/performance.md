@@ -102,3 +102,9 @@ Create rows and remove row moved within this machine's noise (about 15%). A CPU 
 ## Server rendering
 
 The comparison with WebUI, FAST, Enhance and WebC (`docs/compared-with-html-first.md`) measures server rendering against those four. The short version: on a page of ten components, WebUI's server is about 15 times faster. Since 5.9.0 Zubra parses a component once, but each component on a page is still its own request to the compiler, with about 30 µs of fixed cost in WebAssembly.
+
+CI compares the compiler's warm render times against the latest release with `benchmarks/server-render.mjs --against <wasm> --max-ratio 3`; any case over three times the release fails. This loose guard catches large regressions, not a production latency target. It measures compiler requests, not HTTP, concurrency or the server's render cache. Load-test actual pages and cache hit rates against the deployment's own latency and throughput targets.
+
+## Sync
+
+The binary streams a live backlog one page at a time and bounds each subscriber's pending live events; a slow subscriber reconnects from its cursor. It still uses a thread per connection, filters scopes after reading a log page, and keeps the full history by default. `--keep-latest` bounds the active log to one row per field, without deleting an existing full log. See [`sync-server/README.md`](../sync-server/README.md) for deployment limits and migration. Measure connection counts, slow clients, history size and sustained writes on the target deployment before setting capacity.

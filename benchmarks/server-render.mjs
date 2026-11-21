@@ -2,7 +2,7 @@
 // (docs/compared/coexist: a table, a form field, a quantity control), in the WebAssembly build
 // users get, as `@zubra/server` asks for them.
 //
-//   node benchmarks/server-render.mjs [--renders 2000] [--against <another zubra.wasm>]
+//   node benchmarks/server-render.mjs [--renders 2000] [--against <another zubra.wasm>] [--max-ratio 3]
 //
 // With `--against` (a released build, say: `npm pack @zubra/compiler@5.14.0` and its
 // zubra.wasm), both are timed in the same process, in alternating batches, and compared: the
@@ -15,6 +15,11 @@ import { createCompiler } from '../compiler/core.js';
 const args = process.argv.slice(2);
 const option = (name, fallback) => (args.includes(name) ? args[args.indexOf(name) + 1] : fallback);
 const RENDERS = Number(option('--renders', 2000));
+const MAX_RATIO = args.includes('--max-ratio') ? Number(option('--max-ratio')) : null;
+if (!Number.isInteger(RENDERS) || RENDERS < 1) throw new Error('--renders must be a positive integer');
+if (MAX_RATIO !== null && (!args.includes('--against') || !Number.isFinite(MAX_RATIO) || MAX_RATIO <= 0)) {
+  throw new Error('--max-ratio needs --against and a positive finite number');
+}
 const BATCHES = 9;
 const here = fileURLToPath(new URL('..', import.meta.url));
 const compiler = (path) => createCompiler(new WebAssembly.Module(readFileSync(path)));
@@ -64,6 +69,7 @@ function batch(zubra, body, count) {
 }
 
 console.log(`| Render | ${other ? 'other | built | built / other' : 'built'} |\n|---|${other ? '---:|---:|---:' : '---:'}|`);
+let exceeded = false;
 for (const [name, body, slower] of CASES) {
   const count = Math.max(10, Math.round(RENDERS / BATCHES / slower));
   // (Said, not refused: a release may change the HTML on purpose.)
@@ -76,5 +82,11 @@ for (const [name, body, slower] of CASES) {
     times.built.push(batch(built, asked.built, count));
   }
   const b = median(times.built);
-  console.log(other ? `| ${name} | ${Math.round(median(times.other))} µs | ${Math.round(b)} µs | ${(b / median(times.other)).toFixed(2)} |` : `| ${name} | ${Math.round(b)} µs |`);
+  const ratio = other ? b / median(times.other) : null;
+  console.log(other ? `| ${name} | ${Math.round(median(times.other))} µs | ${Math.round(b)} µs | ${ratio.toFixed(2)} |` : `| ${name} | ${Math.round(b)} µs |`);
+  if (MAX_RATIO !== null && ratio > MAX_RATIO) {
+    console.error(`${name}: ${ratio.toFixed(2)} exceeds the maximum ratio ${MAX_RATIO}`);
+    exceeded = true;
+  }
 }
+if (exceeded) process.exitCode = 1;
