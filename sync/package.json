@@ -34,7 +34,7 @@
   "scripts": {
     "build": "node scripts/build-production.js",
     "test": "node --test \"test/*.test.js\"",
-    "test:binary": "ZUBRA_SYNC_BACKEND=binary node --test test/browser.test.js"
+    "test:binary": "node --import ./test/binary.js --test test/browser.test.js"
   },
   "peerDependencies": {
     "@zubra/runtime": "^6.0.0-rc.0"
