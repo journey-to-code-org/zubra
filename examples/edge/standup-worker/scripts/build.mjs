@@ -21,7 +21,8 @@ mkdirSync(join(out, '_zubra/runtime'), { recursive: true });
 for (const file of readdirSync(runtime)) if (file.endsWith('.js')) cpSync(join(runtime, file), join(out, '_zubra/runtime', file));
 const sync = dirname(resolve('@zubra/sync'));
 mkdirSync(join(out, '_zubra/sync'), { recursive: true });
-for (const file of ['index.js', 'connect.js', 'webrtc.js']) cpSync(join(sync, file), join(out, '_zubra/sync', file));
+// connect.js imports fields.js, and follow.js is the presence module a page loads beside them.
+for (const file of ['index.js', 'connect.js', 'fields.js', 'webrtc.js', 'follow.js']) cpSync(join(sync, file), join(out, '_zubra/sync', file));
 mkdirSync(join(out, '_zb'), { recursive: true });
 cpSync(resolve('@zubra/actions/client'), join(out, '_zb/actions.js'));
 console.log(`src/actions/: ${routes.join(', ')}\npublic/: the runtime, @zubra/sync and the actions script`);
