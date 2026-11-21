@@ -4,6 +4,8 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+## 6.0.2 — 2026-11-21
+
 ### Fixed
 
 - **Framework server rendering drops hostile host attributes.** `renderToString` (what an Astro page's attributes go through) wrote every extra host attribute into the HTML, name and all, so a visitor's `"><script>` or `onmouseover` ran when the page was parsed. A name that isn't an attribute name, a string event handler, `innerHTML` and its kin, an object, and an unsafe URL (`javascript:`, `data:`, `vbscript:`, including one hidden by a character reference) are left off, as a spread already left them off.
