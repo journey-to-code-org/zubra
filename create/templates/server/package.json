@@ -3,8 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/ensure-installed.js",
     "dev": "node --watch-path=src --watch-path=server.js server.js --dev",
+    "prestart": "node scripts/ensure-installed.js",
     "start": "node server.js",
+    "pretest": "node scripts/ensure-installed.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {

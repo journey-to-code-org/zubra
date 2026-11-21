@@ -4,6 +4,12 @@ All notable changes. The format follows [Keep a Changelog](https://keepachangelo
 
 ## Unreleased
 
+## 6.0.1 — 2026-11-21
+
+### Fixed
+
+- **A starter script run before `npm install` says to install.** `npm create zubra` installs nothing, and its last lines say to run `npm install` and then `npm run dev`. Running `dev`, `build`, `preview` or `test` first (and `start` in the server app, and `check` with `--typescript`) asked the shell for `vite` or `astro`, or started the server, which then could not import its packages. Git Bash reported `vite: command not found`, which reads as if the app never included Vite. Those scripts now run `scripts/ensure-installed.js` first (`predev` and the rest), and it stops with `Dependencies are not installed. Run npm install, then npm run dev.` Once `node_modules` is there, the check is quiet. New apps only: an app already created can copy `scripts/ensure-installed.js` and the `pre*` lines from the template.
+
 ## 6.0.0
 
 Zubra 6.0 makes its own reactive engine the default, with TC39 Signals as an experimental mode. It also makes production mode and closed Sync reads the defaults, and starts the 6.x long-term-support line. [Migrating to 6.0](docs/migrating-to-6.0.md) covers the changes for 5.x users. These notes include the release candidate and the changes made since it.

@@ -31,6 +31,10 @@ for (const framework of Object.keys(FRAMEWORKS).filter((framework) => framework 
     assert.equal(pkg.dependencies['@zubra/runtime'], `^${version}`);
     assert.equal(pkg.devDependencies['@zubra/unplugin'], `^${version}`);
     assert.ok(pkg.scripts.dev && pkg.scripts.build && pkg.scripts.test);
+    assert.ok(paths.includes('scripts/ensure-installed.js'));
+    for (const name of ['dev', 'build', 'preview', 'test']) {
+      assert.equal(pkg.scripts[`pre${name}`], 'node scripts/ensure-installed.js', `${framework} pre${name}`);
+    }
     const config = files.find((file) => /^(vite|astro)\.config\./.test(file));
     assert.match(readFileSync(join(dir, config), 'utf8'), /@zubra\/unplugin\/(vite|astro)/);
     assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /^# My App/);
@@ -62,6 +66,7 @@ for (const framework of ['react', 'angular']) {
     assert.match(readFileSync(join(dir, 'src/components/hello-counter.zb'), 'utf8'), /<script lang="ts">\n {2}interface Props \{/);
     const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
     assert.equal(pkg.scripts.check, 'zubra check --types src');
+    assert.equal(pkg.scripts.precheck, 'node scripts/ensure-installed.js');
     assert.ok(pkg.devDependencies.typescript);
     assert.ok(pkg.devDependencies['@zubra/compiler'], 'the `zubra` command');
     const tsconfig = JSON.parse(readFileSync(join(dir, 'tsconfig.json'), 'utf8'));
@@ -279,6 +284,10 @@ test('the server app: a Node server, a form with a server function, no bundler, 
   // `start` is production, the default.
   assert.equal(manifest.scripts.dev, 'node --watch-path=src --watch-path=server.js server.js --dev');
   assert.equal(manifest.scripts.start, 'node server.js');
+  assert.ok(paths.includes('scripts/ensure-installed.js'));
+  for (const name of ['dev', 'start', 'test']) {
+    assert.equal(manifest.scripts[`pre${name}`], 'node scripts/ensure-installed.js', `server pre${name}`);
+  }
   const server = readFileSync(join(dir, 'server.js'), 'utf8');
   assert.match(server, /if \(process\.argv\.includes\('--dev'\)\) process\.env\.NODE_ENV = 'development';/);
   // Compiled once and kept, in development too (an edit is still picked up); the page compressed
@@ -323,9 +332,42 @@ test('the server app: a Node server, a form with a server function, no bundler, 
   const typed = join(work(), 'typed-shop');
   create(typed, 'server', { typescript: true });
   assert.equal(JSON.parse(readFileSync(join(typed, 'package.json'), 'utf8')).scripts.check, 'zubra check --types src');
+  assert.equal(JSON.parse(readFileSync(join(typed, 'package.json'), 'utf8')).scripts.precheck, 'node scripts/ensure-installed.js');
   assert.match(readFileSync(join(typed, 'src/components/hello-counter.zb'), 'utf8'), /in place, keeping its count/);
   assert.match(readFileSync(join(typed, 'README.md'), 'utf8'), /^npm run check {3}# type-checks the components[^\n]*\nnpm test {8}# starts the server/m);
   assert.match(readFileSync(join(typed, 'AGENTS.md'), 'utf8'), /`npm run check` type-checks every component/);
+});
+
+test('npm run dev before install says to install, and does not ask the shell for the dev server', (t) => {
+  const root = work();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const framework of ['react', 'astro', 'server']) {
+    const dir = join(root, framework);
+    create(dir, framework);
+    // cmd runs `npm` on Windows. `shell: true` warns, and spawning `npm.cmd` directly does not run.
+    const run = process.platform === 'win32'
+      ? spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', 'npm', 'run', 'dev'], { cwd: dir, encoding: 'utf8', timeout: 20_000, env: { ...process.env, NODE_TEST_CONTEXT: '' } })
+      : spawnSync('npm', ['run', 'dev'], { cwd: dir, encoding: 'utf8', timeout: 20_000, env: { ...process.env, NODE_TEST_CONTEXT: '' } });
+    const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
+    assert.equal(run.status, 1, output);
+    assert.equal(run.signal, null, output);
+    assert.match(output, /Dependencies are not installed\. Run npm install, then npm run dev\./);
+    assert.doesNotMatch(output, /command not found|ERR_MODULE_NOT_FOUND|Cannot find package/);
+  }
+  // Once dependencies are installed the check is quiet, and the other scripts name themselves.
+  mkdirSync(join(root, 'react', 'node_modules'));
+  const installed = spawnSync(process.execPath, ['scripts/ensure-installed.js'], { cwd: join(root, 'react'), encoding: 'utf8' });
+  assert.equal(installed.status, 0, installed.stderr);
+  assert.equal(installed.stderr, '');
+  for (const [event, again] of [['prestart', 'npm start'], ['pretest', 'npm test'], ['precheck', 'npm run check']]) {
+    const named = spawnSync(process.execPath, ['scripts/ensure-installed.js'], {
+      cwd: join(root, 'server'),
+      encoding: 'utf8',
+      env: { ...process.env, npm_lifecycle_event: event },
+    });
+    assert.equal(named.status, 1);
+    assert.match(named.stderr, new RegExp(`Run npm install, then ${again.replace(/[.]/g, '\\.')}\\.`));
+  }
 });
 
 // A starter's own `npm test` without Playwright's Chromium: it fails at once, says how to install

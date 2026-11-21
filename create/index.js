@@ -11,7 +11,8 @@
 // pages rendered by @zubra/server and a form's function run by @zubra/actions, with no build
 // step. With --typescript the counter is `<script lang="ts">`, and
 // `npm run check` type-checks it (`zubra check --types`). Nothing is installed: the last lines
-// say what to run.
+// say what to run. A script run before that (`predev` and the rest) says to install, instead
+// of the shell reporting that `vite` is missing.
 import { cpSync, existsSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -82,7 +83,7 @@ export function create(dir, framework, { name = basename(resolve(dir)), typescri
     }
     const manifest = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'));
     manifest.devDependencies = { ...manifest.devDependencies, typescript: manifest.devDependencies?.typescript ?? TYPESCRIPT };
-    manifest.scripts = { ...manifest.scripts, check: 'zubra check --types src' };
+    manifest.scripts = { ...manifest.scripts, precheck: 'node scripts/ensure-installed.js', check: 'zubra check --types src' };
     writeFileSync(join(target, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
     // And the README and AGENTS.md say so.
     const readme = join(target, 'README.md');
