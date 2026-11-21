@@ -1,5 +1,7 @@
 export interface Diagnostic {
   file: string;
+  /** Stable diagnostic code, such as ZB2001. */
+  code: string;
   line: number;
   column: number;
   severity: 'error' | 'warning';
@@ -31,7 +33,7 @@ export interface Options {
   noImports?: boolean;
   cssImport?: string;
   cssImportInline?: string;
-  framework?: 'react' | 'vue' | 'svelte' | 'solid' | 'solid2' | 'vanilla' | 'none';
+  framework?: 'react' | 'vue' | 'svelte' | 'solid' | 'solid2' | 'vanilla' | 'element' | 'none' | 'plain';
   modulePath?: string;
   props?: Record<string, unknown>;
   slots?: Record<string, string>;
