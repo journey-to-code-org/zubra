@@ -48,7 +48,8 @@ const regionOpen = (mark) => mark === '[' || mark === '[!' || mark === '[?';
 /**
  * Static text only. A `{expr}` the server filled in is the text node after an anchor (`<?zb ?>`
  * or `<!---->`), and a region's rows add their own text between its markers. Neither is in the
- * template, so neither can disagree with it.
+ * template, so neither can disagree with it. Whitespace alone doesn't either: stripping a marker
+ * joins the spaces around it, and remark accepts that.
  */
 const staticText = (node) => {
   let text = '';
@@ -59,7 +60,7 @@ const staticText = (node) => {
     const skip = depth || child.nodeType !== 3 || mark === '';
     if (regionOpen(mark)) depth++;
     else if (mark === ']' && depth) depth--;
-    else if (!skip && !(previous && marker(previous) === '')) text += child.data;
+    else if (!skip && !(previous && marker(previous) === '') && child.data.trim()) text += child.data;
     previous = child;
   }
   return text;

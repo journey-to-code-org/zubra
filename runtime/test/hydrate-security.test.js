@@ -75,6 +75,20 @@ function comment(data = '') {
   return { nodeType: 8, data, nextSibling: null, firstChild: null };
 }
 
+function kids(parent, nodes) {
+  for (let index = 0; index < nodes.length - 1; index++) nodes[index].nextSibling = nodes[index + 1];
+  parent.firstChild = nodes[0] ?? null;
+  return parent;
+}
+
+test('whitespace a stripped marker joined still matches, and a different word does not', () => {
+  const templateUl = kids(el('ul'), [text('\n    '), pi('['), pi(']'), text('\n  ')]);
+  const liveUl = kids(el('ul'), [text('\n    \n      '), pi('['), el('li', { text: 'tea' }), pi(']'), text('\n  ')]);
+  assert.ok(Array.isArray($hydrate.adopt(chain([liveUl]), chain([templateUl]), [], false, [])[0]));
+  const changed = kids(el('ul'), [text('\n    extra'), pi('['), pi(']'), text('\n  ')]);
+  assert.equal($hydrate.adopt(chain([changed]), chain([templateUl]), [], false, [])[0], null);
+});
+
 test('text the server put after an anchor, and text inside a region, still matches the template', () => {
   const mood = el('i', { text: 'glad' });
   const live = chain([text('Hello '), el('b', { text: 'there' }), pi(''), text(', Ada! '), mood, text(' to see you.')]);
