@@ -2,6 +2,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { compareVersions, pickVersion, plan } from './canary.mjs';
+import { previousPublished } from './published.mjs';
+
+test('a release whose tarball is not up yet is compared with the newest compiler that is', () => {
+  assert.equal(previousPublished(['5.23.0', '6.0.0', '6.0.0-rc.0'], '6.0.0'), '6.0.0-rc.0');
+  assert.equal(previousPublished(['6.0.0-rc.0', '5.23.0'], '6.0.0'), '6.0.0-rc.0');
+  assert.throws(() => previousPublished(['6.0.0'], '6.0.0'), /no published/);
+});
 
 test('versions order as semver, prereleases before their release', () => {
   const ordered = ['1.0.0-alpha', '1.0.0-alpha.1', '1.0.0-alpha.beta', '1.0.0-beta', '1.0.0-beta.2', '1.0.0-beta.11', '1.0.0-rc.1', '1.0.0', '1.0.1', '1.10.0', '2.0.0-rc.21', '2.0.0'];
