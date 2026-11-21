@@ -71,7 +71,7 @@ test('scripts/bump-version.sh moves that range with the version', () => {
 test('command names point at their file without "./", the form npm 11 keeps when publishing', () => {
   // npm 11 drops a bin written "./cli.js" ("script name … was invalid and removed"), so the
   // package would install without its command.
-  for (const path of ['compiler', 'create', 'editors/language-server']) {
+  for (const path of ['compiler', 'create', 'actions', 'editors/language-server']) {
     for (const [name, file] of Object.entries(json(`${path}/package.json`).bin)) {
       assert.doesNotMatch(file, /^\.\//, `${path}: bin ${name}`);
     }

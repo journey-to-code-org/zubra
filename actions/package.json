@@ -49,7 +49,7 @@
     "playwright": "1.63.0"
   },
   "bin": {
-    "zubra-actions": "./bin/zubra-actions.js"
+    "zubra-actions": "bin/zubra-actions.js"
   },
   "files": [
     "src",
