@@ -3,8 +3,8 @@
 // native CLI (`cargo build`). Skipped when zubra.wasm is missing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,6 +83,27 @@ test('errors and warnings come back rendered and as diagnostics', { skip }, () =
     ['warning', 1, "rename the prop if that isn't intended (e.g. `title-text`)"],
     ['error', 2, 'did you mean `title`?'],
   ]);
+  assert.deepEqual(response.diagnostics.map((d) => d.code), ['ZB4019', 'ZB2001']);
+});
+
+test('public types accept framework aliases and expose diagnostic codes', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-compiler-types-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const declaration = join(repo, 'compiler/index.js').replaceAll('\\', '/');
+  writeFileSync(join(dir, 'check.ts'), `
+import type { Diagnostic, Options } from ${JSON.stringify(declaration)};
+const frameworks: Options['framework'][] = ['react', 'vue', 'svelte', 'solid', 'solid2', 'vanilla', 'element', 'none', 'plain'];
+declare const diagnostic: Diagnostic;
+const code: string = diagnostic.code;
+// @ts-expect-error unknown framework
+const invalid: Options['framework'] = 'unknown';
+// @ts-expect-error diagnostic codes are strings
+const number: number = diagnostic.code;
+void [frameworks, code, invalid, number];
+`);
+  const tsc = join(repo, 'compiler/node_modules/typescript/bin/tsc');
+  const run = spawnSync(process.execPath, [tsc, '--noEmit', '--strict', '--skipLibCheck', '--module', 'esnext', '--moduleResolution', 'bundler', join(dir, 'check.ts')], { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
 });
 
 test('large requests and many requests in a row', { skip }, () => {
