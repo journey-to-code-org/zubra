@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { production, bundle, BUNDLE, PRIVATE } from '../../scripts/build-production.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -139,7 +139,7 @@ test('bundle(): a name is given only by the module it belongs to, and a module t
 // the unit tests, the 5,000-seed comparison with signal-polyfill among them, pass on the build
 // itself; and none of the names is something the typings promise.
 test('the unit tests pass on dist/production, where private fields have short names', () => {
-  const run = spawnSync(process.execPath, ['--import', join(root, 'test/tools/on-production/register.mjs'), '--test', '--test-reporter=tap', ...readdirSync(join(root, 'test')).filter((name) => name.endsWith('.test.js')).map((name) => join(root, 'test', name))], { encoding: 'utf8', env: { ...process.env, NODE_TEST_CONTEXT: undefined } });
+  const run = spawnSync(process.execPath, ['--import', pathToFileURL(join(root, 'test/tools/on-production/register.mjs')).href, '--test', '--test-reporter=tap', ...readdirSync(join(root, 'test')).filter((name) => name.endsWith('.test.js')).map((name) => join(root, 'test', name))], { encoding: 'utf8', env: { ...process.env, NODE_TEST_CONTEXT: undefined } });
   const count = (what) => Number(run.stdout.match(new RegExp(`^# ${what} (\\d+)`, 'm'))?.[1]);
   assert.equal(count('fail'), 0, run.stdout.split('\n').filter((line) => line.startsWith('not ok')).join('\n'));
   assert.ok(count('pass') > 400, `only ${count('pass')} tests ran`);
