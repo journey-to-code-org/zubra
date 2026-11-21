@@ -1,7 +1,17 @@
 name: CI
 
+# Branch pushes, pull requests, and tags that remain (a release's v* tag).
+# release-check.yml creates release-check-<run id>-<attempt> with RELEASE_TOKEN
+# and deletes it in the same step. RELEASE_TOKEN starts push workflows, so
+# tags-ignore excludes that prefix: a checkout of the tag fails once it is
+# gone. scripts/ci-trigger.test.js locks the prefix. Both filters are set on
+# purpose: a tags filter alone would stop CI on branch pushes.
 on:
   push:
+    branches:
+      - "**"
+    tags-ignore:
+      - "release-check-*"
   pull_request:
 
 permissions:
@@ -25,6 +35,8 @@ jobs:
       - run: scripts/package-binary.test.sh
       # The weekly canary's choice of framework versions (.github/workflows/canary.yml).
       - run: node --test scripts/canary.test.js
+      # Which refs start this workflow: branch pushes and release tags do, release-check tags do not.
+      - run: node --test scripts/ci-trigger.test.js
       # The repository's own components are laid out by zubra fmt.
       - run: cargo run --locked -- fmt --check .
 

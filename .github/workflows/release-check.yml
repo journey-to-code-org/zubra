@@ -5,7 +5,11 @@ name: Release check
 # - the version's CHANGELOG.md section exists, for the release notes;
 # - the token release.yml tags with (RELEASE_TOKEN, or the workflow's own) can make a tag here: this
 #   makes a throwaway tag on the PR's head commit and removes it. 5.8.0 found that out only after
-#   its npm packages were public.
+#   its npm packages were public. The tag is release-check-<run id>-<attempt>, created in this
+#   repository (github.repository). CI ignores that prefix and still runs on a release's v* tag
+#   (ci.yml, scripts/ci-trigger.test.js): RELEASE_TOKEN starts push workflows, and the tag is
+#   deleted in this job before a checkout of it can succeed. The run id keeps concurrent release
+#   checks on distinct tags.
 #
 # Two jobs, so the PR's own code never runs beside a token that can write: `notes` checks out and
 # runs the PR (scripts/release-notes.mjs) with a read-only token and no stored credentials; `tag`
