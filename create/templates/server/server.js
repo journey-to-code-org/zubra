@@ -22,11 +22,13 @@ const components = 'src/components';
 // `cache` keeps what was compiled; in development an edit to a .zb file is still in the next
 // page (the folder's files are checked for changes first), without compiling every component
 // on every request.
-// `compress` sends the page and the modules in Brotli or gzip (a fifth to a third of the bytes);
+// `compress` sends the modules, and with a recent @zubra/server the page too, in Brotli or gzip;
 // take it out (here, and in createActions) if your host or a proxy in front compresses already.
 // `reload`: in development, when this server is back from a restart, the components that changed
 // are swapped into the open page (keeping their state), and any other change reloads it.
 const zubra = createZubra({ components, cache: true, compress: true, reload: !production });
+const sendsPages = typeof zubra.send === 'function';
+if (!sendsPages) console.warn('This @zubra/server does not compress pages. Upgrade it to a release with zubra.send, or compress pages at your proxy.');
 // The functions marked 'use server' in the components, served at /_zb/action/<tag>/<name>.
 const actions = await createActions({ components, compress: true });
 
@@ -47,7 +49,8 @@ export const server = createServer(async (req, res) => {
     const sent = actions.result(req, (name, value) => res.setHeader(name, value));
     // (Rendered before the status is sent: a component that doesn't compile is a 500, not a 200.)
     const html = home(sent?.value);
-    zubra.send(req, res, html);
+    if (sendsPages) zubra.send(req, res, html);
+    else res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(html);
   } catch (error) {
     console.error(error);
     // In development the page says what the terminal says (a component's error comes with its

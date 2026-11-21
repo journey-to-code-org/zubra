@@ -103,6 +103,21 @@ test('the server starter in production: an error is a 500 that says nothing of i
   }
 });
 
+test('the server starter compresses the rendered page with the current server package', async () => {
+  findCompiler();
+  const dir = starter('server-compression');
+  const app = await running(dir, 'start', 4393);
+  try {
+    const response = await fetch(app.origin, { headers: { 'accept-encoding': 'gzip' } });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-encoding'), 'gzip');
+    assert.match(await response.text(), /<hello-counter/);
+  } finally {
+    await app.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("the server starter's own test passes, in JavaScript and with --typescript", () => {
   findCompiler();
   for (const typescript of [false, true]) {

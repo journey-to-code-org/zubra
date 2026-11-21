@@ -15,6 +15,7 @@ npm test        # starts the server and uses the page in Chromium, with JavaScri
 - `src/components/` holds the components: one `.zb` file each, with its script, styles and template. The server compiles them as they're asked for.
 - `src/notes.js` is the data, an array in memory. Put a database behind it.
 - The page works before its JavaScript arrives, and the form works with JavaScript off. `npm test` checks both.
+- A recent `@zubra/server` compresses the page as well as modules. Older releases serve the page uncompressed and print a warning; upgrade or configure your proxy to compress it.
 - `AGENTS.md` and `skills/` tell a coding agent how to write the components and the server, so it doesn't have to learn Zubra from the source. `AGENTS.md` is also the quickest summary for a person.
 
 ## The page you see
