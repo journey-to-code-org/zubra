@@ -86,3 +86,54 @@ test('the binary reads and extends the same SQLite file as sqliteLog()', { skip:
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('the binary latest log migrates old cursors and shares its updates with sqliteLog', { skip: !binaryPath && 'zubra-sync not built' }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zubra-sync-latest-'));
+  const path = join(dir, 'shared.db');
+  try {
+    const old = await sqliteLog(path);
+    await old.append([
+      change('title', 'first', '000000000000001-00000-a'),
+      change('done', false, '000000000000002-00000-a'),
+      change('title', 'second', '000000000000003-00000-a'),
+    ]);
+    const oldCursor = await old.head();
+    old.close();
+
+    const binary = await startBinary(['--db', path, '--open', '--keep-latest']);
+    try {
+      const migrated = await (await fetch(`${binary.base}/_zb/sync/pull?since=${oldCursor}`)).json();
+      assert.deepEqual(migrated.changes.map((c) => c.value), [false, 'second']);
+      assert.ok(migrated.cursor > oldCursor);
+      for (const item of [change('title', 'new', '000000000000004-00000-a'), change('title', 'stale', '000000000000002-00000-a')]) {
+        const response = await fetch(`${binary.base}/_zb/sync/push`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ changes: [item] }) });
+        assert.equal(response.status, 200);
+      }
+    } finally {
+      binary.close();
+      await binary.stopped;
+    }
+
+    const shared = await sqliteLog(path, { keep: 'latest' });
+    let all;
+    try {
+      all = await shared.after(0);
+      assert.deepEqual(all.changes.map((c) => c.value), [false, 'new']);
+      assert.deepEqual((await shared.after(oldCursor)).changes.map((c) => c.value), [false, 'new']);
+    } finally {
+      shared.close();
+    }
+
+    const again = await startBinary(['--db', path, '--open', '--keep-latest']);
+    try {
+      const reopened = await (await fetch(`${again.base}/_zb/sync/pull?since=0`)).json();
+      assert.deepEqual(reopened.changes.map((c) => c.value), [false, 'new']);
+      assert.equal(reopened.cursor, all.cursor);
+    } finally {
+      again.close();
+      await again.stopped;
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
