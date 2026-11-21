@@ -54,3 +54,18 @@ test('a lookalike child with different text is not adopted, and an extra URL att
   assert.equal(button.getAttribute('formaction'), null);
   assert.equal(button.getAttribute('type'), 'button');
 });
+
+function comment(data = '') {
+  return { nodeType: 8, data, nextSibling: null, firstChild: null };
+}
+
+test('text the server put after an anchor, and text inside a region, still matches the template', () => {
+  const mood = el('i', { text: 'glad' });
+  const live = chain([text('Hello '), el('b', { text: 'there' }), pi(''), text(', Ada! '), mood, text(' to see you.')]);
+  const template = chain([text('Hello '), el('b', { text: 'there' }), comment(), el('i'), text(' to see you.')]);
+  const [nodes] = $hydrate.adopt(live, template, [{ path: [2], text: () => 'glad' }], false, []);
+  assert.equal(nodes[0], mood);
+  const rows = chain([text('\n'), pi('['), text('\n    '), el('li', { text: '#2 LINUS' }), pi(']'), text('\n')]);
+  const skeleton = chain([text('\n'), pi('['), pi(']'), text('\n')]);
+  assert.ok(Array.isArray($hydrate.adopt(rows, skeleton, [], false, [])[0]));
+});

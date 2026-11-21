@@ -2,7 +2,7 @@
 // by the template's shape, finding the parts in it, and putting back markers something stripped
 // (remark.js, loaded only then). Compiled components import it (`hydrating: $hydrate`) unless
 // their app never renders on a server (@zubra/unplugin's `hydrate: false`).
-import { $r, blueprint, childRange, hasContent, isClose, isOpen, locate, positions } from './element.js';
+import { $r, blueprint, childRange, hasContent, isClose, isOpen, locate, marker, positions } from './element.js';
 import { State, untrack } from './signal.js';
 
 let remarker = null; // remark.js, once loaded
@@ -43,9 +43,25 @@ function lostComments(root, template, roots) {
   return elements || !roots ? true : children.some((child) => roots.includes(child.localName));
 }
 
-const directText = (node) => {
+const regionOpen = (mark) => mark === '[' || mark === '[!' || mark === '[?';
+
+/**
+ * Static text only. A `{expr}` the server filled in is the text node after an anchor (`<?zb ?>`
+ * or `<!---->`), and a region's rows add their own text between its markers. Neither is in the
+ * template, so neither can disagree with it.
+ */
+const staticText = (node) => {
   let text = '';
-  for (let child = node.firstChild; child; child = child.nextSibling) if (child.nodeType === 3) text += child.data;
+  let depth = 0;
+  let previous = null;
+  for (let child = node.firstChild; child; child = child.nextSibling) {
+    const mark = child.nodeType === 1 ? null : marker(child);
+    const skip = depth || child.nodeType !== 3 || mark === '';
+    if (regionOpen(mark)) depth++;
+    else if (mark === ']' && depth) depth--;
+    else if (!skip && !(previous && marker(previous) === '')) text += child.data;
+    previous = child;
+  }
   return text;
 };
 
@@ -70,7 +86,7 @@ function faithful(liveParent, templateParent, parts, path = []) {
     const here = path.concat(index);
     const key = pathKey(here);
     const writesText = parts.some((part) => part.text && pathKey(part.path) === key);
-    if (!writesText && directText(live) !== directText(template)) return false;
+    if (!writesText && staticText(live) !== staticText(template)) return false;
     const kept = new Set([...template.attributes].map((attr) => attr.name));
     for (const attr of [...live.attributes]) {
       const bound = parts.some((part) => pathKey(part.path) === key && (

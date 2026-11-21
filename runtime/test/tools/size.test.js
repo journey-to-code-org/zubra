@@ -158,8 +158,9 @@ for (const [entry, budget] of Object.entries(ADAPTERS)) {
 // page's own script gets from the bare `@zubra/runtime`. So there are two figures. The base:
 // 15.9 KB, where every page loaded 19.5. The whole: 20.3 KB, 0.55 KB over what it was, since the
 // helpers are two more files (provide.js, and base.js itself) and small files compress worse.
+// 20.5 KB until hydration compares static text only, about 40 B.
 const SERVED = 16 * 1024;
-const SERVED_WHOLE = 20.5 * 1024;
+const SERVED_WHOLE = 20.625 * 1024;
 
 for (const [entry, budget, what] of [['base.js', SERVED, 'what every page loads'], ['core.js', SERVED_WHOLE, 'the whole script API']]) {
   test(`dist/production as served fits its budget: ${what}`, (t) => {

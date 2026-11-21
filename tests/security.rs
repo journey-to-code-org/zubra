@@ -74,7 +74,10 @@ fn a_character_reference_cannot_hide_a_javascript_url() {
     assert!(html.contains("<a>go</a>"), "{html}");
     assert!(!html.contains("<a href"), "{html}");
     // One escape of the host prop: the parser sees `javascript&#58;…`, not `javascript:`.
-    assert!(html.contains("href=\"javascript&amp;#58;alert(1)\""), "{html}");
+    assert!(
+        html.contains("href=\"javascript&amp;#58;alert(1)\""),
+        "{html}"
+    );
     assert!(!html.contains("href=\"javascript:"), "{html}");
 }
 
@@ -85,8 +88,14 @@ fn a_single_quoted_attribute_cannot_become_a_second_attribute() {
         r#"{"name":" ontoggle=alert(1) open "}"#,
     )
     .unwrap();
-    assert!(html.contains("<details title=\"&quot; ontoggle=alert(1) open &quot;\">x</details>"), "{html}");
-    assert!(html.contains("title=\"she said &quot;hello&quot;\""), "{html}");
+    assert!(
+        html.contains("<details title=\"&quot; ontoggle=alert(1) open &quot;\">x</details>"),
+        "{html}"
+    );
+    assert!(
+        html.contains("title=\"she said &quot;hello&quot;\""),
+        "{html}"
+    );
     assert!(html.contains("title=\"a&amp;b\""), "{html}");
     assert!(!html.contains("title=\"a&amp;amp;b\""), "{html}");
 }
@@ -98,7 +107,10 @@ fn imagesrcset_is_checked_like_srcset() {
         r#"{"src":"javascript:alert(1) 1x, https://example.com/a.png"}"#,
     )
     .unwrap();
-    assert!(html.contains("<link rel=\"preload\" as=\"image\">"), "{html}");
+    assert!(
+        html.contains("<link rel=\"preload\" as=\"image\">"),
+        "{html}"
+    );
     assert!(!html.contains("imagesrcset"), "{html}");
 }
 
