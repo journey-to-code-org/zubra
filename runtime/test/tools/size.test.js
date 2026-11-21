@@ -51,8 +51,9 @@ const BUDGETS = {
   // that isn't one CSS value is left off, the same check a spread already makes; the pattern is
   // new in this entry, about 30 B, to 18.875 KB. Hydration adopts server markup only when every
   // element's markers, static text and unbound attributes match the template, about 200 B, to
-  // 19.25 KB.)
-  'src/index.js': { gzip: 19.25 * 1024 },
+  // 19.25 KB. An adopted element also loses an event handler, srcdoc or ping, about 40 B, to
+  // 19.3 KB.)
+  'src/index.js': { gzip: 19.3 * 1024 },
   // The production build (the `production` export condition): the same, without hot reloading
   // (12.5 KB until 3.2, 13 KB until 4.2, 13.5 KB until `animate`, 14 KB until the list work,
   // 14.25 KB until the faster Signals core, 14.75 KB until rows without markers, 15 KB until
@@ -158,9 +159,10 @@ for (const [entry, budget] of Object.entries(ADAPTERS)) {
 // page's own script gets from the bare `@zubra/runtime`. So there are two figures. The base:
 // 15.9 KB, where every page loaded 19.5. The whole: 20.3 KB, 0.55 KB over what it was, since the
 // helpers are two more files (provide.js, and base.js itself) and small files compress worse.
-// 20.5 KB until hydration compares static text only, about 40 B.
+// 20.5 KB until hydration compares static text only, about 40 B, then skips a child
+// component's rendered tree, about 15 B more.
 const SERVED = 16 * 1024;
-const SERVED_WHOLE = 20.625 * 1024;
+const SERVED_WHOLE = 20.75 * 1024;
 
 for (const [entry, budget, what] of [['base.js', SERVED, 'what every page loads'], ['core.js', SERVED_WHOLE, 'the whole script API']]) {
   test(`dist/production as served fits its budget: ${what}`, (t) => {
@@ -189,7 +191,8 @@ for (const [entry, budget, what] of [['base.js', SERVED, 'what every page loads'
 // build, about 145 B. 14 KB until a list's rows were found by remembered places, about 230 B.
 // 14.25 KB until a named slot could be passed on to a child component's slot, about 60 B.
 // 14.5 KB until server markup is adopted only when it matches the template, about 40 B here.
-const BUNDLED = 14.625 * 1024;
+// 14.625 KB until that check skips a child component's own tree, about 60 B.
+const BUNDLED = 14.75 * 1024;
 
 test('dist/bundled/zubra.js fits its budget, under the file-by-file build', (t) => {
   const size = gzipSync(readFileSync(join(here, '../../dist/bundled/zubra.js'), 'utf8')).length;

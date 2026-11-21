@@ -67,12 +67,22 @@ const staticText = (node) => {
 
 const pathKey = (path) => (path ?? []).join(',');
 
+// Removed when the template doesn't set it and no part binds. URLs, event handlers, `srcdoc` and
+// `ping` are the ones a visitor's markup can use; `data` is an object's URL. Anything else stays:
+// a page's own child can match the template's shape (`id` on a slotted span) and must keep it.
+const STRIPPED = new Set(['href', 'src', 'action', 'formaction', 'poster', 'cite', 'background', 'codebase', 'data', 'longdesc', 'manifest', 'profile', 'usemap', 'srcset', 'imagesrcset', 'xlink:href', 'srcdoc', 'ping']);
+
+const stripped = (name) => {
+  const lower = name.toLowerCase();
+  return STRIPPED.has(lower) || (lower.length > 2 && lower.startsWith('on'));
+};
+
 /**
- * The live tree and the template agree at every element: the same markers and tags, the same
- * static text, and no attribute the template doesn't have unless a part binds it. A slot's
- * `<!--]-->` or `<?zb ]?>` changes its parent's shape, so the component renders fresh instead of
- * binding its listener to whatever element followed the early close. A lookalike child (the
- * template's button, with a visitor's text and `formaction`) is not adopted.
+ * The live tree and the template agree at every element: the same markers and tags, and the same
+ * static text. A slot's `<!--]-->` or `<?zb ]?>` changes its parent's shape, so the component
+ * renders fresh instead of binding its listener to whatever element followed the early close. A
+ * child component is its own template, so this walk doesn't enter one. A URL, an event handler,
+ * `srcdoc` or `ping` the template doesn't have and no part binds is removed.
  */
 function faithful(liveParent, templateParent, parts, path = []) {
   if (signature(childRange(liveParent)) !== signature(childRange(templateParent))) return false;
@@ -85,8 +95,6 @@ function faithful(liveParent, templateParent, parts, path = []) {
     if (live.nodeType !== 1) continue;
     const here = path.concat(index);
     const key = pathKey(here);
-    const writesText = parts.some((part) => part.text && pathKey(part.path) === key);
-    if (!writesText && staticText(live) !== staticText(template)) return false;
     const kept = new Set([...template.attributes].map((attr) => attr.name));
     for (const attr of [...live.attributes]) {
       const bound = parts.some((part) => pathKey(part.path) === key && (
@@ -94,10 +102,13 @@ function faithful(liveParent, templateParent, parts, path = []) {
         || (attr.name === 'class' && (part.classes || part.toggle))
         || (attr.name === 'style' && part.style)
       ));
-      if (bound) continue;
-      if (!kept.has(attr.name)) live.removeAttribute(attr.name);
-      else if (template.getAttribute(attr.name) !== attr.value) live.setAttribute(attr.name, template.getAttribute(attr.name));
+      if (bound || kept.has(attr.name) || !stripped(attr.name)) continue;
+      live.removeAttribute(attr.name);
     }
+    // A child component hydrates against its own template. Its rendered children are not this one.
+    if (live.localName.includes('-')) continue;
+    const writesText = parts.some((part) => pathKey(part.path) === key && (part.text || (part.attribute === 'value' && live.localName === 'textarea')));
+    if (!writesText && staticText(live) !== staticText(template)) return false;
     if (!faithful(live, template, parts, here)) return false;
   }
   return true;

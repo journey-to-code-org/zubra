@@ -47,12 +47,28 @@ test('a lookalike child with different text is not adopted, and an extra URL att
   const template = chain([el('button', { text: 'Delete', attrs: { type: 'button' } })]);
   const hostile = chain([el('button', { text: 'Win a prize', attrs: { type: 'button', formaction: 'https://evil.example/post' } })]);
   assert.equal($hydrate.adopt(hostile, template, [{ path: [0], on: 'click', handler: () => () => {} }], false, [])[0], null);
-  const button = el('button', { text: 'Delete', attrs: { type: 'button', formaction: 'https://evil.example/post' } });
+  const button = el('button', { text: 'Delete', attrs: { type: 'button', id: 'blank', formaction: 'https://evil.example/post', onmouseover: 'alert(1)', srcdoc: '<script>alert(1)</script>' } });
   const live = chain([button]);
   const [nodes] = $hydrate.adopt(live, template, [{ path: [0], on: 'click', handler: () => () => {} }], false, []);
   assert.equal(nodes[0], button);
   assert.equal(button.getAttribute('formaction'), null);
+  assert.equal(button.getAttribute('onmouseover'), null);
+  assert.equal(button.getAttribute('srcdoc'), null);
+  assert.equal(button.getAttribute('id'), 'blank');
   assert.equal(button.getAttribute('type'), 'button');
+});
+
+test('a child component is compared with its own template, so this one leaves its rendered children alone', () => {
+  const card = el('my-card', { attrs: { formaction: 'https://evil.example/post', onmouseover: 'alert(1)' } });
+  const inner = el('button', { text: 'Go', attrs: { formaction: 'https://evil.example/child' } });
+  card.firstChild = inner;
+  const live = chain([card]);
+  const [nodes] = $hydrate.adopt(live, chain([el('my-card')]), [{ path: [0], on: 'click', handler: () => () => {} }], false, []);
+  assert.equal(nodes[0], card);
+  assert.equal(card.getAttribute('formaction'), null);
+  assert.equal(card.getAttribute('onmouseover'), null);
+  assert.equal(inner.getAttribute('formaction'), 'https://evil.example/child');
+  assert.equal(inner.localName, 'button');
 });
 
 function comment(data = '') {
