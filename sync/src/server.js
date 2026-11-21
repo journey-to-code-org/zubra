@@ -89,6 +89,9 @@ export function memoryLog({ keep = 'all' } = {}) {
 
 function latestInMemory() {
   const rows = new Map(); // collection, key, field → { change, seq }
+  // Sequence order permits a binary search by cursor. Rewrites leave tombstones until compaction.
+  let ordered = [];
+  let obsolete = 0;
   let seq = 0;
   return {
     async append(more) {
@@ -96,13 +99,38 @@ function latestInMemory() {
         const id = JSON.stringify([change.collection, change.key, change.field]);
         const had = rows.get(id);
         if (had && had.change.clock >= change.clock) continue;
-        rows.set(id, { change: structuredClone(change), seq: ++seq });
+        const row = { change: structuredClone(change), seq: ++seq, live: true };
+        if (had) {
+          had.live = false;
+          obsolete++;
+        }
+        rows.set(id, row);
+        ordered.push(row);
+      }
+      if (obsolete > rows.size) {
+        ordered = ordered.filter((row) => row.live);
+        obsolete = 0;
       }
       return seq;
     },
     async after(cursor, limit = 1000) {
       const from = Number(cursor) || 0;
-      const page = [...rows.values()].filter((row) => row.seq > from).sort((a, b) => a.seq - b.seq).slice(0, limit);
+      let low = 0;
+      let high = ordered.length;
+      while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        if (ordered[mid].seq <= from) low = mid + 1;
+        else high = mid;
+      }
+      const count = Number(limit);
+      const max = Number.isNaN(count) ? 0 : Math.trunc(count);
+      let page = [];
+      for (let i = low; i < ordered.length; i++) {
+        if (max === 0) break;
+        if (ordered[i].live) page.push(ordered[i]);
+        if (max > 0 && page.length >= max) break;
+      }
+      if (max < 0) page = page.slice(0, max);
       return { changes: page.map((row) => structuredClone(row.change)), cursor: page.length ? page[page.length - 1].seq : from };
     },
     head: async () => seq,

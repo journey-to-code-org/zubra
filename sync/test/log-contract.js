@@ -95,4 +95,18 @@ export const latestContract = [
     await log.append([on('a', 2, t(4))]);
     assert.deepEqual(await shown(log), ['k1.b=1', 'k1.c=1', 'k1.a=2']);
   }],
+  ['pages across repeated rewrites skip old values and retain cursor order', async (log) => {
+    await log.append([on('a', 1, t(1)), on('b', 1, t(1)), on('c', 1, t(1))]);
+    for (let n = 2; n <= 8; n++) await log.append([on('a', n, t(n))]);
+    await log.append([on('b', 9, t(9))]);
+    await log.append([on('c', 10, t(10))]);
+    assert.deepEqual(await log.after(0, 0), { changes: [], cursor: 0 });
+    const first = await log.after(0, 1);
+    assert.deepEqual(first.changes.map((c) => [c.field, c.value]), [['a', 8]]);
+    const second = await log.after(first.cursor, 1);
+    assert.deepEqual(second.changes.map((c) => [c.field, c.value]), [['b', 9]]);
+    const last = await log.after(second.cursor, 1);
+    assert.deepEqual(last.changes.map((c) => [c.field, c.value]), [['c', 10]]);
+    assert.deepEqual(await log.after(last.cursor, 1), { changes: [], cursor: last.cursor });
+  }],
 ].map(([name, run]) => ({ name, run, transactional: false }));
